@@ -1,0 +1,50 @@
+name: Yukh reconciliation
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Issue number to reconcile
+        type: number
+        required: true
+      mode:
+        description: Reconciliation mode
+        type: choice
+        options: [dry-run, apply]
+        required: true
+        default: dry-run
+      confirm_apply:
+        description: Explicitly authorize apply
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: yukh-${{ github.repository }}-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out policy
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Reconcile issue
+        uses: nomed/yukh@e862f109bb038f8ec0699e42ac2da11c9ef42549 # v0.7.0
+        with:
+          issue-number: ${{ github.event.issue.number || inputs.issue_number }}
+          project-number: ${{ vars.YUKH_PROJECT_NUMBER }}
+          policy-path: .yukh/project.yaml
+          mode: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'dry-run' }}
+          apply-enabled: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_apply || false }}
+          github-token: ${{ secrets.YUKH_PROJECT_TOKEN }}

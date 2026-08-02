@@ -1,0 +1,68 @@
+site_name: Yukh MCP
+site_description: A zero-trust capability gateway for safe agent operations.
+site_url: https://nomed.github.io/yukh-mcp/
+repo_url: https://github.com/nomed/yukh-mcp
+repo_name: nomed/yukh-mcp
+copyright: Copyright &copy; 2026 Yukh MCP contributors
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Concepts:
+      - Why Yukh: concepts/why-yukh.md
+  - Architecture:
+      - Overview: architecture/overview.md
+  - Security:
+      - Security model: security/security-model.md
+      - Threat model: security/threat-model.md
+  - Community:
+      - Roadmap: community/roadmap.md
+      - Brand: community/brand.md
