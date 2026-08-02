@@ -1,0 +1,37 @@
+name: Capability or feature
+description: Propose a governed capability or product feature.
+title: "[Feature]: "
+labels: ["type:feature", "status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the user outcome before proposing implementation. Security-boundary changes require an RFC.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or operator problem should Yukh solve?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable success without prescribing internals.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and trust-boundary impact
+      description: Identify identities, resources, credentials, approvals, mutations, and new boundaries.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Include failure paths and verification evidence.
+    validations:
+      required: true
