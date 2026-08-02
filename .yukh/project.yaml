@@ -10,6 +10,30 @@ contract:
   schema: 1
 
 fields:
+  kind:
+    project_field: Work Type
+    required: true
+    values:
+      gate: Gate
+      epic: Epic
+      feature: Feature
+      task: Task
+      bug: Bug
+      technical_debt: Technical Debt
+  area:
+    project_field: Area
+    ownership: extension
+    required: true
+    values:
+      governance: Governance
+      security: Security
+      architecture: Architecture
+      runtime: Runtime
+      provider: Provider
+      audit: Audit
+      delivery: Delivery
+      documentation: Documentation
+      release: Release
   priority:
     project_field: Priority
     required: true
