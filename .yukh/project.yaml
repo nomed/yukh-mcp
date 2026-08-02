@@ -1,0 +1,47 @@
+version: 1
+
+project:
+  owner: nomed
+  repository: yukh-mcp
+  name: Yukh
+
+contract:
+  marker: yukh
+  schema: 1
+
+fields:
+  priority:
+    project_field: Priority
+    required: true
+    values:
+      P0: P0
+      P1: P1
+      P2: P2
+      P3: P3
+  size:
+    project_field: Size
+    values:
+      XS: XS
+      S: S
+      M: M
+      L: L
+      XL: XL
+  estimate:
+    project_field: Estimate
+    type: number
+  iteration:
+    project_field: Iteration
+  status:
+    project_field: Status
+    derived: true
+
+defaults:
+  execution: hybrid
+
+scheduling:
+  automatic_iteration: false
+
+safety:
+  overwrite_human_values: false
+  fail_on_unknown_values: true
+  comment_on_validation_error: true
