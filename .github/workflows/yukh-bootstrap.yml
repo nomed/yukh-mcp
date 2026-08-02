@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
 
       - name: Bootstrap Project schema
-        uses: nomed/yukh@e862f109bb038f8ec0699e42ac2da11c9ef42549 # v0.7.0
+        uses: nomed/yukh@adea7e08dee4a882cc4cf7a1061437295b3c04eb # v0.9.1
         with:
           operation: bootstrap-project
           project-number: 5
