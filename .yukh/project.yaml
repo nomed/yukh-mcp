@@ -62,6 +62,10 @@ fields:
 defaults:
   execution: hybrid
 
+workflow:
+  in_progress_status: In progress
+  review_status: In review
+
 scheduling:
   automatic_iteration: false
 
