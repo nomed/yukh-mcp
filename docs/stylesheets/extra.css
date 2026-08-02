@@ -1,0 +1,26 @@
+:root {
+  --yukh-brand: #7c3aed;
+  --yukh-brand-light: #a78bfa;
+  --yukh-brand-dark: #5b21b6;
+  --yukh-surface-dark: #09090b;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: var(--yukh-surface-dark);
+  --md-accent-fg-color: var(--yukh-brand-light);
+}
+
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--yukh-brand-dark);
+  --md-accent-fg-color: var(--yukh-brand);
+}
+
+.md-header,
+.md-tabs {
+  background: var(--yukh-surface-dark);
+}
+
+.md-typeset .md-button--primary {
+  background-color: var(--yukh-brand);
+  border-color: var(--yukh-brand);
+}
