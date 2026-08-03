@@ -344,3 +344,27 @@ This review authorizes only the inert consumer contract. It does not authorize
 an HTTP adapter, Coordination client import, endpoint, credential,
 authentication profile, real nonce consumption, real lease, gateway wiring,
 provider invocation, mutation, deployment, or release claim.
+
+## Proposed stable Coordination adapter review — 2026-08-03
+
+- Governing issue: #47
+- Proposed architecture: RFC-0005
+- Scope: MCP-owned HTTPS translation to the immutable Coordination primitives
+  v1 contract and synthetic loopback qualification
+- Proposed new trust boundaries: MCP to request authenticator; MCP across TLS to
+  untrusted Coordination framing and responses
+
+| Threat | Proposed control | Residual risk / dependency |
+| --- | --- | --- |
+| lifecycle binding is substituted or narrowed | one canonical MCP scope digest covers subject, capability, resources, environment, plan, approval, operation, expiry and epoch | canonical vectors require review before implementation |
+| attacker redirects requests or abuses ambient network configuration | exact HTTPS base URI and fixed routes; redirects, proxy discovery and caller-selected targets forbidden | DNS and TLS trust remain deployment-specific |
+| credential or lease capability leaks | explicit bounded authenticator, private redacted capability wrapper, closed errors and no raw-body diagnostics | concrete key custody and runtime memory handling need deployment review |
+| timeout causes unsafe replay | one bounded request, abort once, no retry; ambiguous outcomes deny and require lifecycle reconciliation | availability loss can stop protected operations |
+| malformed response becomes authority | independent closed response validation and route-specific outcomes; transport success never implies MCP authorization or provider success | upstream compatibility drift requires immutable re-review |
+| copied client couples trust domains | platform APIs and public wire contract only; no upstream source, bundle, schema or client import | independent implementation may contain semantic defects requiring conformance tests |
+
+The upstream RFC and executable schema currently disagree about acquisition
+contention (`contended` outcome versus `409 conflict`). RFC-0005 remains draft
+and implementation is blocked until the normative behavior is clarified. This
+review authorizes no adapter, endpoint, credential, request, gateway wiring,
+provider execution, mutation, deployment, or live apply.
