@@ -11,8 +11,9 @@ immutable pinning or workflow permissions.
 
 ## Work completed
 
-- Updated official checkout, Python, Pages configuration, Pages artifact, and
-  Scorecard artifact Actions to current reviewed Node 24 releases.
+- Updated official checkout, Node setup, Python setup, Pages configuration,
+  Pages artifact, and Scorecard artifact Actions to current reviewed Node 24
+  releases.
 - Applied shared Action updates consistently across all workflows.
 - Added a regression test for the reviewed Node 24 pins.
 
