@@ -259,3 +259,25 @@ This review authorizes only the inert development skeleton. Non-loopback
 deployment, authentication, authorization integration, a real capability,
 provider access, credentials, persistence, or production readiness requires a
 separate accepted threat-model impact review.
+
+## CI and supply-chain baseline review — 2026-08-03
+
+- Governing issue: #10
+- Scope: pull-request CI, dependency review, CodeQL, Scorecard, Dependabot,
+  workflow pinning/permissions, and branch/release protection plan
+- New trust boundaries: third-party workflow actions, dependency registries,
+  hosted runners, code-scanning ingestion, and retained analysis artifacts
+
+| Threat | Control | Residual risk |
+| --- | --- | --- |
+| untrusted PR obtains authority | `pull_request` only, read-only default permissions, no secrets/OIDC/publication, no persisted checkout credential | hosted runner and action compromise remain possible |
+| action tag or dependency substitution | actions pinned to full SHA; npm lock and install scripts disabled; exact direct versions; automated pin test | Python transitive dependencies and Node base image lack full digest locks |
+| vulnerable dependency enters source | dependency review and npm audit fail at moderate severity; Dependabot coverage | advisory databases can lag and malicious packages may have no advisory |
+| vulnerable source reaches main | always-on formatting/type/test/build/docs/container gate plus CodeQL security-extended | static analysis and tests are incomplete proofs |
+| workflow gains excess token authority | explicit workflow/job permissions; publication separated from validation | repository setting changes require periodic external audit |
+| Scorecard or scanner publishes sensitive data | source contains no secrets; Scorecard public publishing disabled; bounded five-day SARIF artifact | filenames and findings remain repository-visible security metadata |
+| unsupported release-integrity claim | documented evidence gates; no release workflow; SBOM/signing/SLSA are roadmap only | issue #13 and deployment controls remain incomplete |
+
+This baseline authorizes source validation and security-analysis uploads only.
+It does not authorize package/container publication, a signing identity, release
+credentials, OIDC federation, or a production release.
