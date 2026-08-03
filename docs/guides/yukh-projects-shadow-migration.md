@@ -11,6 +11,12 @@ bounded step summary and the one-day redacted report artifact against the last
 verified legacy dry-run. Explain every operation or diagnostic difference in
 the migration pull request before requesting controlled apply.
 
+The current migration has one explicit schema blocker: `area` requires the
+distinct `Area` contract and must never be mapped to `Component`. The accepted
+read-only contract and non-executable Phase A plan are recorded in the
+[Project 5 Area contract](../reference/project-5-area-contract.md). Creating the
+field remains a separately authorized Phase B operation.
+
 Do not trigger a fresh legacy backlog audit merely to populate comparison
 evidence. Reuse the last verified legacy result unless a reviewer identifies a
 specific missing observation. This avoids returning development automation to
