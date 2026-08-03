@@ -39,14 +39,15 @@ is not wired into the gateway. Nonces and lease handles are sensitive runtime
 material: they must never enter logs, audit evidence, errors, model context, or
 durable repository context.
 
-Real integration remains blocked until `nomed/yukh-coordination#71` is merged
-and its stable consumer contract is reviewed. That future increment must adapt
-the stable contract at this port; it must not copy Coordination components into
-Yukh MCP.
-
 RFC-0005 now governs an MCP-native adapter implementation behind this port. The
 adapter uses fixed Coordination primitives v1 routes, exact lifecycle-derived
 digests, explicit authentication and an injected fetch-compatible transport.
-It remains disconnected from the gateway. The current implementation candidate
-has synthetic transport conformance evidence; its required ephemeral loopback
-TLS qualification is still pending and no real endpoint profile exists.
+It is merged and qualified over verified synthetic loopback TLS, and remains
+disconnected from the gateway.
+
+Issue #50 and draft RFC-0006 propose the first disabled-by-default real staging
+connection. It depends on the separate deployable server profile proposed by
+`nomed/yukh-coordination#90`, uses explicit private trust and short-lived DPoP
+material, and permits only a synthetic qualification runner. Until both RFCs
+are accepted and separately implemented, no endpoint, credential, real request,
+gateway wiring, provider execution, mutation or live apply is authorized.
