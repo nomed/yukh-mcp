@@ -1,41 +1,21 @@
-name: Runtime
+name: CI
 
 on:
   pull_request:
-    paths:
-      - "apps/**"
-      - "packages/**"
-      - "test/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig*.json"
-      - "Dockerfile"
-      - "compose.yaml"
-      - ".github/workflows/runtime.yml"
   push:
     branches: [main]
-    paths:
-      - "apps/**"
-      - "packages/**"
-      - "test/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig*.json"
-      - "Dockerfile"
-      - "compose.yaml"
-      - ".github/workflows/runtime.yml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: runtime-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -48,8 +28,11 @@ jobs:
           node-version: "24.6.0"
           cache: npm
 
-      - name: Install locked dependencies
+      - name: Install locked Node.js dependencies
         run: npm ci --ignore-scripts
+
+      - name: Check formatting
+        run: npm run format:check
 
       - name: Typecheck
         run: npm run typecheck
@@ -60,8 +43,21 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=moderate
+      - name: Audit all Node.js dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+
+      - name: Install locked documentation dependencies
+        run: python -m pip install --requirement requirements-docs.txt
+
+      - name: Build documentation strictly
+        run: mkdocs build --strict
 
       - name: Build inert container
         run: docker build --tag yukh-mcp:test .

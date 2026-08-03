@@ -6,9 +6,12 @@ import type { RuntimeConfig } from "../../packages/config/src/runtime-config.js"
 import { createLogger } from "../../packages/logging/src/logger.js";
 
 const config: RuntimeConfig = {
-  host: "127.0.0.1", port: 0,
-  allowedHosts: ["127.0.0.1"], allowedOrigins: [],
-  maxBodyBytes: 1_024, shutdownTimeoutMs: 1_000,
+  host: "127.0.0.1",
+  port: 0,
+  allowedHosts: ["127.0.0.1"],
+  allowedOrigins: [],
+  maxBodyBytes: 1_024,
+  shutdownTimeoutMs: 1_000,
 };
 
 async function runtimeTest(run: (base: URL, lines: string[]) => Promise<void>): Promise<void> {
@@ -45,13 +48,25 @@ test("health, readiness, and unknown routes are bounded", async () => {
 
 test("host, origin, and body bounds reject before MCP handling", async () => {
   await runtimeTest(async (base) => {
-    const badHost = await fetch(new URL("/mcp", base), { method: "POST", headers: { host: "attacker.example", "content-type": "application/json" }, body: "{}" });
+    const badHost = await fetch(new URL("/mcp", base), {
+      method: "POST",
+      headers: { host: "attacker.example", "content-type": "application/json" },
+      body: "{}",
+    });
     assert.equal(badHost.status, 400);
 
-    const badOrigin = await fetch(new URL("/mcp", base), { method: "POST", headers: { origin: "https://attacker.example", "content-type": "application/json" }, body: "{}" });
+    const badOrigin = await fetch(new URL("/mcp", base), {
+      method: "POST",
+      headers: { origin: "https://attacker.example", "content-type": "application/json" },
+      body: "{}",
+    });
     assert.equal(badOrigin.status, 403);
 
-    const oversized = await fetch(new URL("/mcp", base), { method: "POST", headers: { "content-type": "application/json" }, body: "x".repeat(1_025) });
+    const oversized = await fetch(new URL("/mcp", base), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "x".repeat(1_025),
+    });
     assert.equal(oversized.status, 413);
   });
 });
@@ -74,7 +89,11 @@ test("MCP initializes and discovers no operational surface", async () => {
 test("logs contain bounded metadata but no request body", async () => {
   await runtimeTest(async (base, lines) => {
     const marker = "do-not-retain-this-body";
-    await fetch(new URL("/mcp", base), { method: "POST", headers: { "content-type": "application/json" }, body: marker });
+    await fetch(new URL("/mcp", base), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: marker,
+    });
     assert.equal(lines.join("\n").includes(marker), false);
   });
 });

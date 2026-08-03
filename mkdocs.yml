@@ -65,6 +65,7 @@ nav:
   - Security:
       - Security model: security/security-model.md
       - Threat model: security/threat-model.md
+      - Supply-chain baseline: security/supply-chain.md
   - Community:
       - Roadmap: community/roadmap.md
       - Brand: community/brand.md
