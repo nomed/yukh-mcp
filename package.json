@@ -12,6 +12,7 @@
     "build": "tsc --project tsconfig.build.json",
     "start": "node dist/apps/gateway/src/main.js",
     "dev": "tsx apps/gateway/src/main.ts",
+    "demo": "tsx apps/demo/src/main.ts",
     "format:check": "prettier --check apps packages test/runtime package.json tsconfig.json tsconfig.build.json compose.yaml '.github/**/*.yml'",
     "test": "node --test test/contracts/*.test.mjs test/supply-chain/*.test.mjs && npm run test:runtime",
     "test:contracts": "node --test test/contracts/*.test.mjs",

@@ -61,7 +61,7 @@ function json(target: ServerResponse, status: number, value: object): void {
   target.end(body);
 }
 
-function createInertMcpServer(): McpServer {
+export function createInertMcpServer(): McpServer {
   return new McpServer(
     { name: "yukh-mcp", version: "0.0.0" },
     {
@@ -77,9 +77,10 @@ function createInertMcpServer(): McpServer {
 export function createGatewayRuntime(
   config: RuntimeConfig,
   logger: Logger = createLogger(),
+  createServerInstance: () => McpServer = createInertMcpServer,
 ): GatewayRuntime {
   let ready = false;
-  const mcp = createMcpHandler(() => createInertMcpServer(), { legacy: "stateless" });
+  const mcp = createMcpHandler(createServerInstance, { legacy: "stateless" });
   const server: Server = createServer(async (request, response) => {
     const correlation_ref = correlationRef();
     response.setHeader("x-request-id", correlation_ref);
