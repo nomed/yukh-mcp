@@ -1,0 +1,9 @@
+.git
+.github
+.context
+coverage
+dist
+docs
+node_modules
+test
+*.log

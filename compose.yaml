@@ -1,0 +1,26 @@
+services:
+  gateway:
+    build:
+      context: .
+    environment:
+      YUKH_HOST: 0.0.0.0
+      YUKH_ALLOWED_HOSTS: localhost,127.0.0.1
+    ports:
+      - "127.0.0.1:3000:3000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 1.0
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

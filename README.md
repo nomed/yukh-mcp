@@ -34,6 +34,11 @@ policy evaluation to the exact request, combines deny-overrides deterministicall
 and rejects decision replay without implementing identity, policy, or provider
 integrations.
 
+The [inert runtime skeleton](docs/architecture/runtime-skeleton.md) initializes
+the official MCP Streamable HTTP transport and supports empty capability
+discovery. It exposes no operational tool, resource, prompt, provider, or
+credential path.
+
 ## Principles
 
 - Capability, not custody.
