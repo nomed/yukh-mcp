@@ -1,8 +1,10 @@
 # RFC-0001 — Versioned capability contract
 
-- Status: Draft
+- Status: Accepted
 - Authors: Codex
 - Created: 2026-08-03
+- Accepted: 2026-08-03
+- Decider: project owner
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/5
 
 ## Summary
@@ -599,5 +601,5 @@ The project owner approved the proposed resolutions on 2026-08-03:
    is accepted for the Foundation slice and can evolve only through compatibility
    review.
 
-No design question remains open in this draft. Final acceptance still requires
-review of the complete updated text and an explicit status decision.
+No design question remains open. This accepted record is immutable; future
+changes require a superseding RFC and compatibility review.
