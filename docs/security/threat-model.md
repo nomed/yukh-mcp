@@ -281,3 +281,24 @@ separate accepted threat-model impact review.
 This baseline authorizes source validation and security-analysis uploads only.
 It does not authorize package/container publication, a signing identity, release
 credentials, OIDC federation, or a production release.
+
+## Local read-only node provider implementation review — 2026-08-03
+
+- Governing issue: #8
+- Scope: network-free `node.inspect` definition, configured-root resolver,
+  authorization-enforced invocation boundary, bounded metadata result, and tests
+- New trust boundary: capability invocation to a local read-only filesystem provider
+
+| Threat | Control | Residual risk |
+| --- | --- | --- |
+| traversal or absolute-path escape | relative path grammar, canonical configured roots, containment checks before observation | platform path semantics require qualification on every supported OS |
+| symbolic-link escape | every path component is inspected and any symlink is rejected; canonical target is checked again | filesystem replacement races remain possible without an OS-level directory-handle sandbox |
+| authorization bypass | malformed requests fail before authorization; denied requests record zero provider attempts | the injected authorizer is not yet connected to an authenticated transport or durable decision enforcer |
+| malicious or oversized provider output | closed runtime schema, 4 KiB serialized bound, invalid output withheld as `provider_protocol_error` | metadata such as requested relative paths may still be sensitive in a deployment-specific root |
+| content or credential disclosure | capability returns file type, size, modification time, source, and freshness only; no contents or directory listing | file names supplied by an authorized caller remain visible in its own result |
+| accidental public authority | inert MCP discovery remains empty and no provider configuration is loaded by the listener | a future MCP binding requires identity, policy, configuration, and audit review |
+
+This review authorizes the network-free experimental provider boundary and its
+tests only. It does not authorize MCP exposure, production roots, credentials,
+non-loopback deployment, filesystem contents, directory enumeration, mutation,
+or a claim that application-level checks eliminate local TOCTOU races.
