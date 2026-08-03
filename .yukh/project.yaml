@@ -22,7 +22,7 @@ fields:
       bug: Bug
       technical_debt: Technical Debt
   area:
-    project_field: Component
+    project_field: Area
     ownership: extension
     required: true
     values:
