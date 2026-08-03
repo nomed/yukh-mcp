@@ -1,10 +1,18 @@
 # RFC-0005 — Stable Coordination consumer adapter
 
-- Status: Draft
+- Status: Accepted
 - Authors: Codex
 - Created: 2026-08-03
+- Accepted: 2026-08-03
+- Decider: project owner
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/47
 - Depends on: RFC-0002, RFC-0003, RFC-0004
+
+The project owner explicitly accepted this RFC on 2026-08-03. Acceptance
+authorizes only the separately reviewed MCP-native adapter implementation and
+synthetic loopback HTTPS qualification described here. It does not authorize a
+real endpoint, credential, gateway wiring, provider execution, mutation,
+deployment, public listener, or live apply.
 
 ## Summary
 
@@ -18,8 +26,8 @@ the reviewed wire contract only. It does not copy or import Coordination source,
 generated schemas, bundles, clients, storage adapters, authentication providers,
 or deployment configuration.
 
-Acceptance would authorize only a separately reviewed adapter implementation
-and synthetic loopback HTTPS qualification. It would not authorize a real
+Acceptance authorizes only a separately reviewed adapter implementation and
+synthetic loopback HTTPS qualification. It does not authorize a real
 endpoint, credential, gateway wiring, provider execution, mutation, deployment,
 public listener, or live apply.
 
