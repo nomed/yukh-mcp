@@ -61,6 +61,7 @@ nav:
       - Project charter: concepts/project-charter.md
   - Architecture:
       - Overview: architecture/overview.md
+      - Inert runtime skeleton: architecture/runtime-skeleton.md
   - Security:
       - Security model: security/security-model.md
       - Threat model: security/threat-model.md

@@ -9,10 +9,23 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test",
-    "test:contracts": "node --test test/contracts/*.test.mjs"
+    "build": "tsc --project tsconfig.build.json",
+    "start": "node dist/apps/gateway/src/main.js",
+    "dev": "tsx apps/gateway/src/main.ts",
+    "test": "node --test test/contracts/*.test.mjs && npm run test:runtime",
+    "test:contracts": "node --test test/contracts/*.test.mjs",
+    "test:runtime": "tsx --test test/runtime/*.test.ts",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
-    "ajv": "8.20.0"
+    "@modelcontextprotocol/server": "2.0.0",
+    "ajv": "8.20.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@types/node": "24.10.1",
+    "tsx": "4.20.6",
+    "typescript": "7.0.2"
   }
 }

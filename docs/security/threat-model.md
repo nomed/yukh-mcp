@@ -233,3 +233,29 @@ This review authorizes no store, key, identity resolver, export service,
 provider, mutation, or production integrity claim. Each deployment profile must
 document durability, confidentiality, checkpoint custody, access, retention,
 backup deletion, recovery, and monitoring evidence.
+
+## Inert MCP runtime implementation review — 2026-08-03
+
+- Governing issue: #6
+- Scope: Node.js listener, stateless MCP initialization and empty discovery,
+  configuration, health/readiness, closed operational logs, tests, and Compose
+- New trust boundary: unauthenticated network client to inert gateway listener
+
+The runtime exposes no operational capability, provider, credential, target
+resolver, policy adapter, approval service, task API, audit store, or mutation
+path. Its controls and residual risks are:
+
+| Threat | Control | Residual risk |
+| --- | --- | --- |
+| DNS rebinding or virtual-host confusion | exact host allowlist on `/mcp`; wildcard bind requires explicit configuration | reverse-proxy host rewriting requires a future deployment profile |
+| cross-origin browser invocation | any `Origin` is denied unless exactly allowlisted | non-browser clients have no Origin and authentication is not implemented |
+| oversized or slow request | content-length and streamed byte bound before SDK parsing; request/header/keep-alive timeouts, connection and per-socket request ceilings | distributed rate limiting still needs a deployment edge profile |
+| protocol parser or SDK defect | official modular SDK pinned to 2.0.0; strict TypeScript; protocol integration tests; empty registries | dependency compromise and future protocol drift remain possible |
+| accidental operational authority | empty tools/resources/prompts; no provider or credential modules; discovery test asserts empty lists | later capability registration requires its own review |
+| log disclosure or injection | closed records, server-generated correlation, no headers/body/URL/error text | stdout transport, retention, and integrity are not RFC-0004 audit |
+| container privilege or exhaustion | non-root user, read-only Compose filesystem, dropped capabilities, no-new-privileges, CPU/memory/PID bounds | base image is tag-pinned, not digest-qualified; #10 remains open |
+
+This review authorizes only the inert development skeleton. Non-loopback
+deployment, authentication, authorization integration, a real capability,
+provider access, credentials, persistence, or production readiness requires a
+separate accepted threat-model impact review.
