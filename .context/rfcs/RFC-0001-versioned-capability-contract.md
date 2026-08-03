@@ -172,17 +172,28 @@ a field whose semantics select or supply:
 Strings remain valid domain data when their interpretation is bounded by the
 capability definition. Schema validation alone cannot prove semantic safety, so
 registration additionally requires provider conformance and human design
-review. A provider that interprets ordinary data as unrestricted executable
-input violates the contract.
+review. Automated field-name filtering is defense in depth, not proof that a
+provider treats data safely. A provider that interprets ordinary data as
+unrestricted executable input violates the contract even when its schema passes
+every mechanical check.
 
-`operation.class` is one of `read`, `mutate`, or `mixed`. `mixed` is permitted
-only when one request deterministically selects a definition-declared path and
-the plan exposes the selected effects before apply.
+`operation.class` is `read` or `mutate`. Contract version 1 has no `mixed`
+class. A domain that supports observation and mutation exposes separate
+capability identities, for example `service.inspect` and `service.restart`, so
+policy and discovery never depend on an input-selected authority path.
 
 `operation.effects` is a non-empty set selected from a versioned gateway
 registry. Contract version 1 defines `observe`, `create`, `update`, `delete`,
-`execute_bounded`, and `emit`. `execute_bounded` means a fixed provider operation
-with typed data; it never means arbitrary command execution.
+and `emit`. These describe domain effects, not provider mechanisms. An operation
+such as a service restart is represented by a specific capability and its
+declared domain effects; contract version 1 has no generic execution effect.
+
+`read` means the capability declares no intentional change to target resource
+state. It does not claim that implementation mechanics are physically free of
+cache updates, access-time changes, audit writes, quota consumption, or similar
+bounded internal effects. Those effects MUST NOT expand target authority, MUST
+be documented during provider qualification, and MUST remain within declared
+resource, time, output, and concurrency limits.
 
 ### Schemas
 
@@ -236,7 +247,7 @@ to policy and cannot lower policy requirements.
 - `transactional` additionally declares an atomic provider boundary, without
   implying distributed atomicity.
 
-`mutation.destructive: true` requires `operation.class` to include mutation,
+`mutation.destructive: true` requires `operation.class: mutate`,
 `approval.mode: explicit`, `max_attempts: 1`, no automatic retry, declared stop
 conditions, and a rollback or explicit non-recoverability statement. A mismatch
 between effects and mutation metadata invalidates registration.
@@ -292,9 +303,11 @@ satisfies success for a mutation.
 
 `rollback.mode` is `not_applicable`, `compensating`, `restore`, or
 `unavailable`. Mutation definitions MUST declare one exact value. `unavailable`
-requires rationale, explicit approval, elevated risk review, and documented
-operator recovery. Rollback is a separately authorized, planned, and verified
-capability; it is never an automatic hidden retry.
+requires risk level `high` or `critical`, explicit approval, `max_attempts: 1`,
+retry policy `never`, a reviewed non-recoverability rationale, documented stop
+conditions, and an operator recovery procedure. A compensating operation is not
+described as guaranteed rollback: it can fail and requires its own authorization,
+plan, execution, and verification. Rollback is never an automatic hidden retry.
 
 ## Capability request
 
@@ -362,6 +375,7 @@ status: succeeded
 resource_ref: node-example-01
 environment: development
 attempts: 1
+implementation_ref: impl_sha256_example2f90
 started_at: 2026-08-03T00:00:00Z
 finished_at: 2026-08-03T00:00:01Z
 output: {}
@@ -380,6 +394,15 @@ Output and error records are size bounded and schema validated. Evidence is
 referenced by opaque identifier; secrets, credentials, raw prompts, private
 reasoning, and unrestricted provider output are forbidden.
 
+`implementation_ref` identifies the exact qualified provider implementation
+used for the attempt through an opaque, non-sensitive, integrity-verifiable
+reference. It MUST bind to build or artifact provenance in protected evidence
+without disclosing an internal endpoint, credential, deployment identifier, or
+consumer topology. Capability version identifies public behavior;
+`implementation_ref` identifies the code or artifact that supplied it. Retries
+that would cross implementation references stop unless policy explicitly
+requires a fresh plan.
+
 ## Error taxonomy
 
 Every failure uses a stable code, phase, retry classification, sanitized message,
@@ -394,7 +417,7 @@ Contract version 1 reserves these top-level codes:
 | Code | Meaning | Retry classification |
 | --- | --- | --- |
 | `unsupported_contract_version` | Record version is unsupported | never |
-| `capability_not_found` | Exact capability identity/version is unavailable or undisclosed | never |
+| `capability_not_found` | Exact capability identity/version is unavailable or not disclosed | never |
 | `invalid_request` | Request shape or field is invalid | after_correction |
 | `schema_validation_failed` | Input or output violates the declared schema | after_correction for input; never for provider output |
 | `scope_resolution_failed` | Resource or environment cannot be resolved safely | after_correction |
@@ -428,6 +451,12 @@ every invocation receives a fresh server-side decision. Definitions never expose
 provider identity, credentials, internal endpoints, policy contents, or target
 inventory beyond explicitly authorized public metadata.
 
+Externally, an unknown capability and a capability withheld by discovery use
+the same `capability_not_found` status, response shape, and observably equivalent
+behavior within documented timing controls. Authorized security operators may
+distinguish `unknown` from `not_disclosed` only in access-controlled, redacted
+audit evidence. That distinction never appears in ordinary client diagnostics.
+
 ## Registration and conformance
 
 A definition is accepted into the server registry only when:
@@ -439,6 +468,8 @@ A definition is accepted into the server registry only when:
 - schemas and provider behavior contain no unrestricted execution or credential
   channel;
 - provider qualification proves input/output bounds and negative cases;
+- a versioned, integrity-verifiable implementation reference and its provenance
+  are available to protected execution evidence;
 - threat-model impact and required RFC review are complete;
 - examples are synthetic and contain no sensitive identifiers.
 
@@ -554,16 +585,19 @@ escape.
 
 ## Open questions
 
-Human acceptance is requested for these choices:
+The project owner approved the proposed resolutions on 2026-08-03:
 
-1. Is JSON Schema 2020-12 with the restricted embedded profile the correct
-   schema basis for contract version 1?
-2. Should `mixed` operation class exist in version 1, or should every read and
-   mutation path require a separate capability identity?
-3. Is `rollback.mode: unavailable` acceptable for high-risk non-destructive
-   mutation with explicit approval, or should it be forbidden until a later
-   contract version?
-4. Should discovery hide nonexistent and unauthorized capabilities behind one
-   indistinguishable result to reduce enumeration?
-5. Are the initial effect and error registries small and precise enough for the
-   Foundation slice?
+1. Contract version 1 uses JSON Schema 2020-12 with the restricted embedded
+   profile defined above.
+2. Contract version 1 has no `mixed` operation class; read and mutation use
+   separate capability identities.
+3. `rollback.mode: unavailable` is permitted only under the elevated controls
+   defined above; compensating operations are not represented as guarantees.
+4. Unknown and undisclosed capabilities are externally indistinguishable while
+   remaining distinguishable to authorized operators in protected audit.
+5. Contract version 1 removes `execute_bounded`; the remaining effect registry
+   is accepted for the Foundation slice and can evolve only through compatibility
+   review.
+
+No design question remains open in this draft. Final acceptance still requires
+review of the complete updated text and an explicit status decision.
