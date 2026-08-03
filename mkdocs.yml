@@ -7,12 +7,12 @@ copyright: Copyright &copy; 2026 Yukh MCP contributors
 
 theme:
   name: material
-  logo: assets/logo.svg
-  favicon: assets/logo.svg
+  logo: assets/repository-mark.svg
+  favicon: assets/repository-mark.svg
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
+      primary: black
       accent: deep purple
       toggle:
         icon: material/brightness-7

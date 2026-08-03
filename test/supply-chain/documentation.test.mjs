@@ -12,6 +12,13 @@ test("documentation exposes the four reader intents", async () => {
   }
 });
 
+test("documentation uses the black header and canonical component mark", async () => {
+  const config = await read("mkdocs.yml");
+
+  assert.equal((config.match(/primary: black/g) ?? []).length, 2);
+  assert.match(config, /logo: assets\/repository-mark\.svg/);
+});
+
 test("documentation uses SVG and contains no Mermaid source", async () => {
   const [navigation, architecture] = await Promise.all([
     read("mkdocs.yml"),
