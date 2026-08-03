@@ -151,3 +151,29 @@ RFCs are superseded rather than edited.
 
 Until those records are accepted, this model establishes constraints and stop
 conditions; it does not authorize operational capabilities or production use.
+
+## Capability contract implementation review — 2026-08-03
+
+- Governing issue: #5
+- Accepted architecture: RFC-0001
+- Scope: network-free schemas, validator, synthetic fixtures, and tests
+- New trust boundary: none
+
+The contract package processes untrusted record and embedded-schema data but
+does not accept network traffic, resolve identity or policy, invoke a provider,
+hold credentials, persist audit events, or mutate a target.
+
+Implementation-specific threats and controls are:
+
+| Threat | Control | Residual risk |
+| --- | --- | --- |
+| schema bombs or recursive references | node/depth/property limits; remote and cyclic references rejected before compilation | complex but acyclic schemas still consume bounded local CPU |
+| regular-expression denial of service | pattern length and construct restrictions; provider schema review remains mandatory | the conservative filter is not a formal regex complexity proof |
+| prototype or credential channel through property names | closed objects; dangerous and credential-shaped names rejected; input values excluded from diagnostics | semantic intent still requires human provider review |
+| diagnostic disclosure or nondeterminism | allowlisted messages without values; stable path/code ordering; 64-item cap; repeatability tests | paths reveal only submitted field names |
+| malicious or incompatible dependency | exact Ajv version and lockfile; install scripts disabled in validation; dependency audit evidence | registry and build-environment integrity remain governed by #10 |
+| invalid provider output represented as success | result and output validation; mutating success requires verified postconditions | real verification semantics remain governed by #4 and #9 |
+
+No operational capability is authorized by this review. A first provider,
+listener, authentication profile, policy adapter, plan executor, or audit store
+requires another threat-model impact review under its governing issue and RFC.

@@ -1,0 +1,10 @@
+{
+  "error_version": 1,
+  "code": "schema_validation_failed",
+  "phase": "validate",
+  "retry": "after_correction",
+  "message": "request validation failed",
+  "diagnostics": [
+    { "code": "schema_required", "path": "/input/include", "message": "required field is missing" }
+  ]
+}

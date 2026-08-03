@@ -1,0 +1,9 @@
+{
+  "request_version": 1,
+  "request_id": "req_example7f3a",
+  "capability": { "id": "node.inspect", "version": "1.0.0" },
+  "resource": { "kind": "node", "ref": "node-example-01" },
+  "environment": "development",
+  "input": { "include": ["health", "platform"] },
+  "idempotency_key": null
+}
