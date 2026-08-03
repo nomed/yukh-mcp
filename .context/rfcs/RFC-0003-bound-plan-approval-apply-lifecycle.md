@@ -4,7 +4,7 @@
 - Authors: Codex
 - Created: 2026-08-03
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/4
-- Depends on: RFC-0001, RFC-0002, issue #9
+- Depends on: RFC-0001, RFC-0002, RFC-0004
 
 ## Summary
 
@@ -56,7 +56,7 @@ bounded, and fail-closed.
 - specify idempotency, attempts, ambiguous completion, and unsafe retry rules;
 - require declared verification evidence before success;
 - make partial failure and rollback availability explicit;
-- define transition evidence requirements for the audit contract in issue #9.
+- define transition evidence requirements under the RFC-0004 audit contract.
 
 ## Non-goals
 
@@ -85,8 +85,8 @@ The roles are deliberately separate:
    expand authority.
 6. The **verifier** evaluates declared postconditions from bounded observations.
    Where policy requires independence, it is distinct from the provider result.
-7. The **audit sink** accepts sanitized evidence under the contract governed by
-   issue #9. Audit unavailability follows the operation's declared phase rules
+7. The **audit sink** accepts sanitized evidence under RFC-0004. Audit
+   unavailability follows that contract's phase-aware failure rules
    and never fabricates success.
 
 Project assignment, Coordination membership, issue status, model output, and
@@ -238,7 +238,7 @@ invocation it MUST:
 6. re-observe and compare all preconditions;
 7. acquire the declared concurrency or exclusivity control;
 8. durably reserve the plan, approval, idempotency key, and attempt number;
-9. persist the required pre-effect evidence candidate under issue #9 rules;
+9. durably commit the required pre-effect RFC-0004 events;
 10. construct the provider command from registered typed data.
 
 Failure before step 10 produces no provider call. A crash after durable
@@ -357,11 +357,12 @@ Raw prompts, private reasoning, credentials, tokens, endpoints, provider bodies,
 policy source, personal data, and sensitive attribute/precondition values are
 forbidden.
 
-Issue #9 defines the final envelope, causation/ordering model, redaction,
-integrity, retention, export, and sink failure behavior. This RFC cannot become
-implementation-authorizing while that dependency is unresolved. The lifecycle
-schemas may reference an abstract `evidence_candidate_ref` but MUST NOT invent a
-competing audit envelope.
+RFC-0004 defines the envelope, event registry, causation/ordering model,
+redaction, integrity verification, retention, export, and phase-aware sink
+failure behavior. Lifecycle records reference RFC-0004 event identifiers and
+MUST NOT invent a competing audit envelope. Required evidence must commit before
+provider start; after provider start, failure follows RFC-0004 recovery-journal
+and withheld-success semantics because a possible effect cannot be erased.
 
 ## Failure semantics
 
@@ -389,7 +390,7 @@ mode, retry behavior, or digest-covered field is breaking unless every older
 consumer fails closed. Unknown versions and registry values deny.
 
 Accepted records are immutable. Compatible optional evidence metadata is
-allowed only after issue #9 proves that old consumers ignore it safely without
+allowed only when RFC-0004 consumers ignore it safely without
 changing authorization, transition, or success semantics.
 
 ## Validation and acceptance evidence
@@ -406,18 +407,19 @@ Implementation requires, at minimum:
 - partial-step and independent-step failure fixtures;
 - verification tests proving provider success alone cannot produce success;
 - rollback conflict, failure, and unknown-outcome tests;
-- sanitized diagnostics and evidence fixtures under the accepted #9 envelope;
+- sanitized diagnostics and evidence fixtures under accepted RFC-0004;
 - threat-model review and explicit owner acceptance before implementation.
 
 ## Rollout
 
-1. Accept this RFC only after issue #9 supplies a compatible evidence contract.
+1. Accept this RFC through explicit project-owner review.
 2. Add network-free schemas and pure state-transition validators.
 3. Add an in-memory reference lifecycle for tests, clearly non-production.
 4. Integrate fresh RFC-0002 authorization and verified approval assertions.
 5. Add durable idempotency/attempt storage behind a reviewed interface.
-6. Implement a read-only vertical slice before any mutation provider.
-7. Review each provider and deployment profile separately.
+6. Implement RFC-0004 lifecycle evidence against a test writer and verifier.
+7. Implement a read-only vertical slice before any mutation provider.
+8. Review each provider and deployment profile separately.
 
 No rollout step authorizes a mutating provider until its capability RFC,
 provider threat review, identity/approval integrity profile, audit sink, and
@@ -453,9 +455,9 @@ current authorization, preconditions, verification, and evidence.
 
 ### Define the audit envelope here
 
-Rejected because issue #9 owns cross-lifecycle evidence, integrity, retention,
-and export. This RFC defines required facts and transitions without fragmenting
-that contract.
+Rejected because accepted RFC-0004 owns cross-lifecycle evidence, integrity,
+retention, and export. This RFC uses its event registry without fragmenting that
+contract.
 
 ## Security considerations
 
@@ -464,15 +466,15 @@ retry, false success, and hidden partial failure. Residual risks remain around
 approval identity proof, planner/provider compromise, observation integrity,
 distributed atomicity, durable reservation availability, independent verifier
 quality, audit sink integrity, and operator handling of unknown outcomes. These
-must be addressed by issue #9 and later identity, provider, storage, and
-deployment profiles; this RFC makes no production-security claim.
+are bounded by RFC-0004 but still require later identity, provider, storage,
+checkpoint, and deployment profiles; this RFC makes no production-security
+claim.
 
 ## Open questions
 
 The following must resolve before acceptance:
 
-1. Issue #9 must define the compatible evidence envelope and sink failure rules.
-2. The approval identity and assertion integrity profile must be selected before
+1. The approval identity and assertion integrity profile must be selected before
    integrating a real approval authority.
-3. Durable reservation storage semantics require a deployment-specific design
+2. Durable reservation storage semantics require a deployment-specific design
    before mutation is enabled.

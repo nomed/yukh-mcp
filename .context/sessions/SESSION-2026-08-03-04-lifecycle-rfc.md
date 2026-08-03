@@ -3,7 +3,7 @@
 - Date: 2026-08-03
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/4
 - Branch: `agent/issue-4-lifecycle-rfc`
-- Status: proposed RFC drafted; review PR pending
+- Status: proposed RFC updated after RFC-0004 acceptance; owner review pending
 
 ## Outcome
 
@@ -12,13 +12,12 @@ authorization, stale-precondition invalidation, durable idempotency reservation,
 ambiguous completion, verification-gated success, partial effects, and rollback
 as a new authorized lifecycle. Added the corresponding threat-model delta.
 
-## Dependency found
+## Audit dependency resolution
 
-Issue #4 explicitly depends on open issue #9. RFC-0003 therefore defines the
-required transition facts and evidence candidates but does not invent the final
-audit envelope. It remains Proposed and cannot authorize implementation until
-#9 supplies compatible ordering, integrity, redaction, retention, export, and
-sink-failure semantics.
+Issue #4 depended on issue #9. Accepted RFC-0004 now supplies the event registry,
+ordering, integrity verification, redaction, retention, export, and phase-aware
+sink-failure semantics. RFC-0003 has been reconciled to that contract and remains
+Proposed pending explicit project-owner acceptance.
 
 ## Boundary
 
