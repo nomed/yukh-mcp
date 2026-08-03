@@ -1,8 +1,9 @@
 # Yukh Projects shadow migration
 
 The `Yukh Projects shadow reconciliation` workflow audits one Project 5 issue
-without mutation. It pins the immutable `yukh-projects` v1.3.3 commit
-`e086e89395808377845567325b3a0fa73ef6e926` and accepts no apply mode, approval
+without mutation. It pins the immutable `yukh-projects` v1.3.4 commit
+`21731941c96525802ee1e31c6df9e888ceab07e7` and selects the bounded
+`legacy-shadow` adapter. It accepts no apply mode, approval
 artifact, or write credential.
 
 Run it manually with the exact issue number selected for comparison. Review the
