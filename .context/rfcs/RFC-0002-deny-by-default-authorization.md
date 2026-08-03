@@ -368,7 +368,7 @@ unenforceable obligations deny.
 
 Initial obligation categories are:
 
-- `explicit_approval` before apply;
+- `approval_required` before apply;
 - `evidence_profile` before result release;
 - `verification_profile` after provider execution and before success;
 - `redaction_profile` before output or error release;
@@ -406,18 +406,22 @@ an unvalidated decision and never decides whether the subject is authorized.
 Defense-in-depth provider checks may narrow or reject but cannot expand the
 gateway decision.
 
-## Freshness, reuse, and re-evaluation
+## Freshness and re-evaluation
 
 Decision lifetime is finite and bounded by the shortest of policy revision
 validity, attribute freshness, authentication context, capability registration,
 resource observation, gateway maximum, and any stricter constraint.
 
-Version 1 permits reuse only inside the same gateway process for an identical
-request digest and exact immutable bindings before expiry. Reuse is an
-optimization, not an authority source. Revocation, policy revision, attribute
-change, capability re-registration, subject/session change, resource change,
-environment change, process restart, or inability to prove freshness
-invalidates reuse.
+Version 1 does not reuse allow decisions. Every invocation constructs a fresh
+authorization request, obtains a current evaluation, and produces a distinct
+decision. This deliberately excludes positive-decision caches while revocation,
+attribute freshness, policy distribution, and lifecycle behavior are still
+being established. A later cache or reuse mechanism requires a superseding RFC,
+bounded invalidation proof, negative revocation tests, and compatibility review.
+
+Deny results MAY be rate-limited or coalesced only as an availability control
+when doing so cannot become an allow, disclose existence-sensitive differences,
+or replace the evidence required for an actual invocation attempt.
 
 Mutating apply always re-evaluates authorization against current bindings. A
 previous allow, plan, or approval cannot suppress that evaluation. If the new
@@ -479,7 +483,7 @@ Implementations MUST cover at least:
 - evaluator times out, returns unknown fields, mismatched digest, duplicate
   statements, unknown enum, oversized response, or invalid implementation ref;
 - policy changes after plan or approval and before apply;
-- cached allow is presented after revocation, process restart, or freshness loss;
+- a previous allow is presented for reuse or after revocation/freshness loss;
 - client error probing attempts to distinguish nonexistent from unauthorized
   resource or capability;
 - reason text or attributes attempt to inject secrets into evidence.
@@ -512,7 +516,7 @@ client/gateway, gateway/provider, and runtime/audit boundaries.
   produces deny.
 
 Implementation requires a threat-model impact review covering the selected
-policy evaluator library/process, attribute adapters, bundle loading, cache,
+policy evaluator library/process, attribute adapters, bundle loading,
 revocation, and timing side channels. No evaluator or adapter is accepted by
 this RFC.
 
@@ -549,7 +553,7 @@ network-free reference evaluator/enforcer pass:
   failures are added;
 - negative cross-subject/resource/environment/version/input/policy replay tests;
 - constraint intersection and obligation accumulation/conflict fixtures;
-- stale attribute, policy change, revocation, cache invalidation, and apply-time
+- stale attribute, policy change, revocation, forbidden reuse, and apply-time
   re-evaluation fixtures;
 - stable sanitized diagnostics and evidence without sensitive values;
 - strict bounds for every collection, record, lifetime, and evaluator response.
@@ -607,15 +611,18 @@ personal data, policy internals, and sensitive topology.
 
 ## Open questions
 
-Human acceptance is requested for these choices:
+The project owner approved the proposed resolutions on 2026-08-03:
 
-1. Should version 1 continue to exclude every form of delegation and
-   impersonation, including explicit agent-on-behalf-of chains?
-2. Is all-or-nothing authorization for multi-resource requests the correct
-   Foundation behavior?
-3. Should in-process allow-decision reuse be permitted under the exact binding
-   and invalidation rules, or should version 1 re-evaluate every invocation?
-4. Should `explicit_approval` be an authorization obligation, or should policy
-   emit only a generic approval requirement interpreted entirely by #4?
-5. Are `human` and `workload` sufficient subject kinds for version 1, with agent
-   identity represented as a workload rather than a separate authority kind?
+1. Version 1 excludes delegation and impersonation, including agent-on-behalf-of
+   chains. A future delegation model requires its own RFC.
+2. Multi-resource authorization is all-or-nothing; partial authorization is not
+   representable in version 1.
+3. Allow decisions are never reused in version 1. Every invocation is evaluated
+   again under current bindings.
+4. Policy emits the generic `approval_required` obligation. The approval
+   mechanism and exact plan binding belong to #4.
+5. Version 1 subject kinds are `human` and `workload`; an agent is represented
+   through workload identity and receives no special authority kind.
+
+No design question remains open in this draft. Final acceptance still requires
+review of the complete updated text and an explicit status decision.
