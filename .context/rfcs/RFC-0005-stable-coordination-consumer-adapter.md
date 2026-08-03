@@ -76,6 +76,7 @@ The reviewed immutable baseline and SHA-256 evidence is:
 | `RFC-0015-client-neutral-coordination-primitives-api.md` | `f78477b43e4056b504b0062d39c658b9b097987eb41cb55eea54747e7859440f` |
 | `RFC-0017-two-phase-capability-authorization.md` | `4c86d664a8eb97760c0d75d76d48c9eb1581c2c1af4d7a1f48fbdc8c2feb10de` |
 | `RFC-0019-bounded-capability-accounting.md` | `b300262cd7efc61bdfc578d896ef2661241f876b89a6cef65f89cde1859788e8` |
+| `RFC-0021-lease-acquisition-contention-response.md` | `bc9a46d84d546c5e0d2db8583aef4c43a834c048c9c5bb2a323be88cf8d8d89c` |
 
 These digests are review evidence, not runtime downloads. The MCP build does not
 fetch or embed the artifacts. Any later upstream baseline requires a new focused
@@ -232,16 +233,16 @@ in the same implementation PR to carry epoch/expiry and remove synthetic
 evidence fields. Tests must prove existing gateway and demo discovery remain
 unchanged and inert.
 
-The upstream RFC text says lease acquisition may return `contended`, while the
-merged schema, bundled client, and handler represent contention as a `409`
-`conflict` Problem Details response and accept only `acquired` as a successful
-outcome. This proposal does not choose silently between conflicting sources.
-Implementation is blocked until the upstream contract owner confirms the
-normative behavior or publishes an immutable correction.
+Coordination RFC-0021, merged in PR #85 at
+`91c1e5097e47026f63c34126a379949833bb7e00`, resolves the earlier acquisition
+contention discrepancy. A contended acquisition is normatively bounded Problem
+Details with HTTP `409` and code `conflict`; `contended` is not a successful
+`2xx` outcome. This matches the reviewed schema, bundled client, handler, and
+existing HTTP test. The upstream compatibility blocker is resolved.
 
 ## Rollout and rollback
 
-1. Resolve the acquisition-contention contract discrepancy.
+1. Verify the accepted RFC-0021 acquisition-contention clarification. Complete.
 2. Accept this RFC explicitly.
 3. Revise the inert MCP port and freeze canonical digest vectors.
 4. Implement the adapter with platform APIs only.
@@ -283,7 +284,5 @@ Reconciliation is explicit and lifecycle-aware; the adapter never retries.
 
 ## Open questions
 
-1. Will Coordination make `contended` a closed `2xx` outcome or confirm `409`
-   `conflict` as the normative acquisition-contention result?
-2. Which deployment-specific authentication and TLS profile will later be
+1. Which deployment-specific authentication and TLS profile will later be
    accepted for a real endpoint? This does not block synthetic implementation.

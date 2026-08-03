@@ -14,13 +14,13 @@ digests, binding translation, explicit authentication, closed response
 validation, secret capability handling, timeout/no-retry behavior, synthetic
 qualification, rollback, and exclusions.
 
-## Stop condition
+## Acceptance gate
 
-No adapter was implemented. The accepted upstream RFC describes acquisition
-contention as `contended`, while the merged schema, client and handler use a
-`409 conflict` Problem Details response and accept only `acquired` as success.
-Implementation remains blocked until the normative behavior is clarified and
-the MCP owner explicitly accepts RFC-0005.
+No adapter was implemented. Coordination RFC-0021, merged in PR #85 at
+`91c1e5097e47026f63c34126a379949833bb7e00`, resolves acquisition contention as
+bounded `409 conflict` Problem Details and excludes `contended` as a successful
+outcome. The upstream blocker is resolved. Implementation remains gated only on
+explicit MCP owner acceptance and merge of RFC-0005.
 
 No Coordination component was copied or imported and no real request,
 credential, endpoint, gateway wiring, provider execution, mutation, deployment,

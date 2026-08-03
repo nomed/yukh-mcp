@@ -363,8 +363,9 @@ provider invocation, mutation, deployment, or release claim.
 | malformed response becomes authority | independent closed response validation and route-specific outcomes; transport success never implies MCP authorization or provider success | upstream compatibility drift requires immutable re-review |
 | copied client couples trust domains | platform APIs and public wire contract only; no upstream source, bundle, schema or client import | independent implementation may contain semantic defects requiring conformance tests |
 
-The upstream RFC and executable schema currently disagree about acquisition
-contention (`contended` outcome versus `409 conflict`). RFC-0005 remains draft
-and implementation is blocked until the normative behavior is clarified. This
+Coordination RFC-0021, merged in PR #85 at
+`91c1e5097e47026f63c34126a379949833bb7e00`, resolves acquisition contention as
+bounded `409 conflict` Problem Details and excludes `contended` as a successful
+outcome. RFC-0005 remains draft pending explicit MCP owner acceptance. This
 review authorizes no adapter, endpoint, credential, request, gateway wiring,
 provider execution, mutation, deployment, or live apply.
