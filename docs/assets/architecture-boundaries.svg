@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 390" role="img" aria-labelledby="title desc">
+  <title id="title">Yukh MCP authority boundaries</title>
+  <desc id="desc">Client intent enters the gateway. Identity and policy gate a typed provider operation. The provider reaches the target without exposing credentials. Verification produces structured evidence.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0 10 5 0 10Z" fill="#7C3AED"/>
+    </marker>
+    <style>
+      .box{fill:#fff;stroke:#18181b;stroke-width:2}.gate{fill:#f3e8ff;stroke:#7c3aed;stroke-width:3}.label{font:600 22px system-ui,sans-serif;fill:#18181b}.note{font:16px system-ui,sans-serif;fill:#52525b}.flow{fill:none;stroke:#7c3aed;stroke-width:4;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1200" height="390" rx="24" fill="#fafafa"/>
+  <rect class="box" x="35" y="80" width="190" height="110" rx="14"/>
+  <text class="label" x="130" y="125" text-anchor="middle">MCP client</text>
+  <text class="note" x="130" y="155" text-anchor="middle">intent only</text>
+  <rect class="gate" x="285" y="45" width="250" height="180" rx="14"/>
+  <text class="label" x="410" y="105" text-anchor="middle">Yukh gateway</text>
+  <text class="note" x="410" y="140" text-anchor="middle">identity + policy</text>
+  <text class="note" x="410" y="170" text-anchor="middle">typed capability</text>
+  <rect class="box" x="595" y="80" width="210" height="110" rx="14"/>
+  <text class="label" x="700" y="125" text-anchor="middle">Provider</text>
+  <text class="note" x="700" y="155" text-anchor="middle">holds credentials</text>
+  <rect class="box" x="865" y="80" width="210" height="110" rx="14"/>
+  <text class="label" x="970" y="125" text-anchor="middle">Target</text>
+  <text class="note" x="970" y="155" text-anchor="middle">bounded resource</text>
+  <rect class="box" x="595" y="270" width="210" height="85" rx="14"/>
+  <text class="label" x="700" y="307" text-anchor="middle">Verification</text>
+  <text class="note" x="700" y="335" text-anchor="middle">postconditions</text>
+  <rect class="box" x="865" y="270" width="210" height="85" rx="14"/>
+  <text class="label" x="970" y="307" text-anchor="middle">Evidence</text>
+  <text class="note" x="970" y="335" text-anchor="middle">closed + redacted</text>
+  <path class="flow" d="M225 135H275"/>
+  <path class="flow" d="M535 135H585"/>
+  <path class="flow" d="M805 135H855"/>
+  <path class="flow" d="M970 200V250H815"/>
+  <path class="flow" d="M805 312H855"/>
+</svg>

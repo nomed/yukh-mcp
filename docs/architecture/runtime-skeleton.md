@@ -50,23 +50,7 @@ messages, stack traces, client identity, and MCP payloads are excluded.
 These logs are operational diagnostics, not RFC-0004 protected audit evidence.
 No audit durability or integrity claim is made.
 
-## Local use
-
-```sh
-npm ci --ignore-scripts
-npm run typecheck
-npm test
-npm run build
-npm start
-```
-
-The Compose path publishes only to host loopback and applies a read-only root
-filesystem, non-root runtime user, dropped Linux capabilities, no-new-privileges,
-and CPU, memory, PID, and temporary-filesystem bounds:
-
-```sh
-docker compose up --build
-```
+For local commands, use [Run the inert gateway](../how-to/run-inert-gateway.md).
 
 The base-image tag is version-pinned but not digest-pinned. Image provenance,
 digest selection, SBOM, signing, and release qualification remain governed by

@@ -3,41 +3,49 @@ title: Yukh MCP
 description: A zero-trust capability gateway for safe agent operations.
 ---
 
-# Give agents capability, not custody.
+# Run Yukh MCP locally
 
-**Yukh MCP is a policy-governed gateway for safe, auditable, and verifiable AI operations.**
+Yukh MCP gives agents typed, policy-governed capabilities without exposing
+credentials or unrestricted shell access.
 
-Agents should not need custody of infrastructure credentials or unrestricted shell access. Yukh exposes typed capabilities, evaluates explicit policy, produces a deterministic plan, requires the appropriate approval, verifies the outcome, and records structured evidence.
+!!! warning "Foundation"
 
-[Explore the concepts](concepts/why-yukh.md){ .md-button .md-button--primary }
-[Read the security model](security/security-model.md){ .md-button }
+    Yukh MCP is not production-ready. The ordinary gateway is inert. The
+    supported demo uses only synthetic local data and in-memory evidence.
 
-## The operating contract
+Requires Node.js 22 or newer:
 
-```text
-intent → capability → policy → plan → approval → execution → verification → audit
+```sh
+npm ci --ignore-scripts
+npm run demo
 ```
 
-<div class="grid cards" markdown>
+The command needs no credentials or configuration. It runs one allowed
+`node.inspect` request and one denial, then exits.
 
--   :material-shield-lock-outline:{ .lg .middle } **Deny by default**
+[Run the demo](guides/read-only-demo.md){ .md-button .md-button--primary }
+[Understand the architecture](architecture/overview.md){ .md-button }
 
-    Authorization is explicit, scoped, contextual, and independently enforced.
+## Choose a path
 
--   :material-file-tree-outline:{ .lg .middle } **Plan first**
+- **Evaluate it:** run the [read-only demo](guides/read-only-demo.md).
+- **Inspect the process:** start the [inert gateway](how-to/run-inert-gateway.md).
+- **Integrate contracts:** use the [contract reference](reference/contracts.md).
+- **Review safety:** read the [security model](security/security-model.md).
 
-    Mutations become inspectable plans before they become effects.
+## Current boundary
 
--   :material-check-decagram-outline:{ .lg .middle } **Verify outcomes**
+Available today:
 
-    Exit code zero is not proof that the intended state exists.
+- versioned capability and authorization contracts;
+- network-free validators and fixtures;
+- an inert MCP Streamable HTTP gateway;
+- a synthetic `node.inspect` demo.
 
--   :material-text-box-search-outline:{ .lg .middle } **Produce evidence**
+Not available:
 
-    Decisions, approvals, execution, verification, and rollback remain auditable.
-
-</div>
-
-## Status
-
-Yukh MCP is in foundation. Security boundaries and public contracts are being designed openly before operational capabilities are implemented.
+- production deployment;
+- real credentials or targets;
+- operational tools on the ordinary gateway;
+- persistent audit storage;
+- mutating capabilities.

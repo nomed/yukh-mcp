@@ -1,22 +1,22 @@
-# Why Yukh
+# Why Yukh MCP
 
-Most remote-operation MCP servers expose command execution. That approach gives a model syntax-level power while leaving policy, intent, verification, and evidence to prompts.
+Generic command execution gives a model broad syntax-level power. Prompts then
+carry responsibilities that belong at the server boundary: authorization,
+scope, approval, verification, and evidence.
 
-Yukh MCP takes a different position:
+Yukh MCP exposes a smaller interface:
 
-> An agent receives a governed capability, not custody of credentials or infrastructure.
+- a named, versioned capability;
+- typed input and output;
+- an exact subject, resource, environment, and policy binding;
+- server-side provider authority;
+- explicit verification and redacted evidence.
 
-A capability is typed, versioned, scoped to resources and environments, evaluated by policy, and paired with evidence. Mutations follow plan, approval, apply, verification, and rollback semantics.
+For mutations, the server adds a bound plan and any required approval before
+apply. Execution success alone is never verification.
 
-The [project charter](project-charter.md) turns this position into explicit
-audience, scope, terminology, and design-review criteria.
+This boundary makes clients replaceable and keeps credentials outside model
+context. It does not make Yukh MCP an orchestrator, project tracker, or agent
+supervisor.
 
-## Non-goals
-
-Yukh MCP is not:
-
-- an unrestricted remote shell broker;
-- a replacement for configuration management or orchestration systems;
-- a credential vault exposed to models;
-- an approval mechanism implemented only in prompts;
-- a system that treats successful process termination as verified intent.
+See the [project charter](project-charter.md) for formal scope and terminology.
