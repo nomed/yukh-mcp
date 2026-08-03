@@ -103,9 +103,10 @@ unknown fields or failed redaction stop the response rather than pass through.
 An actor suppresses a denial, substitutes correlation identifiers, reorders
 events, or deletes evidence. Events bind request, decision, plan, execution, and
 verification identifiers and include integrity and ordering metadata. Audit
-write authority is separated from ordinary provider authority. The initial
-model does not yet claim immutable or independently witnessed storage; those
-limitations must remain explicit until #9 supplies an accepted design.
+write authority is separated from ordinary provider authority. RFC-0004 defines
+hash-chained, integrity-verifiable evidence and explicitly does not claim
+immutable or independently witnessed storage without a qualified deployment
+profile.
 
 ### Supply-chain compromise
 
@@ -150,7 +151,8 @@ RFCs are superseded rather than edited.
   accumulation, and one-shot decision consumption. External identity and policy
   adapters, durable replay state, and production enforcement remain absent.
 - #5 defines the versioned capability contract and bounded provider semantics.
-- #9 defines audit envelopes, redaction, retention, ordering, and integrity.
+- RFC-0004 defines audit envelopes, redaction, retention, ordering, integrity
+  verification, and the limits of those guarantees. No backend is implemented.
 - #10 qualifies repository, CI, dependency, and release supply-chain controls.
 
 Until those records are accepted, this model establishes constraints and stop
@@ -176,11 +178,35 @@ Implementation-specific threats and controls are:
 | prototype or credential channel through property names | closed objects; dangerous and credential-shaped names rejected; input values excluded from diagnostics | semantic intent still requires human provider review |
 | diagnostic disclosure or nondeterminism | allowlisted messages without values; stable path/code ordering; 64-item cap; repeatability tests | paths reveal only submitted field names |
 | malicious or incompatible dependency | exact Ajv version and lockfile; install scripts disabled in validation; dependency audit evidence | registry and build-environment integrity remain governed by #10 |
-| invalid provider output represented as success | result and output validation; mutating success requires verified postconditions | real verification semantics remain governed by #4 and #9 |
+| invalid provider output represented as success | result and output validation; mutating success requires verified postconditions | real verification semantics remain governed by #4 and evidence uses RFC-0004 |
 
 No operational capability is authorized by this review. A first provider,
 listener, authentication profile, policy adapter, plan executor, or audit store
 requires another threat-model impact review under its governing issue and RFC.
+
+## Proposed mutation lifecycle review — 2026-08-03
+
+- Governing issue: #4
+- Proposed architecture: RFC-0003
+- Scope: plan, approval, apply, verification, partial failure, and rollback
+- New trust boundaries: approval authority, durable attempt reservation,
+  provider apply, target observation, and verifier
+
+RFC-0003 proposes controls before any mutating implementation exists:
+
+| Threat | Proposed control | Residual risk / dependency |
+| --- | --- | --- |
+| plan or approval substitution | canonical digests bind subject, capability, input, target, environment, policy, observations, plan, and approval | approval identity and assertion integrity profile is not selected |
+| stale-plan execution | fresh authorization and immediate server-side precondition re-observation before apply | observation source integrity is provider/deployment specific |
+| duplicate or unsafe retry | durable exact-binding reservation, capability attempt ceiling, no retry from ambiguous completion | durable storage and distributed atomicity are not designed |
+| provider reports false success | declared postconditions and independent verification where required | verifier independence and target identity need provider review |
+| partial effect is hidden | append-only per-step outcomes, aggregate `partial_effect`, and operator-review state | operator response process is not defined |
+| rollback overwrites newer state | rollback is a new authorized lifecycle with current preconditions | safe compensation may be unavailable |
+| evidence omission or reordering | RFC-0004 event registry, durable pre-effect commit, causal correlation, hash chaining, and checkpoints | durable writer, journal, and checkpoint deployment profiles remain unselected |
+
+This review changes no operational boundary and authorizes no implementation.
+RFC-0004 now satisfies the audit-contract dependency; RFC-0003 still requires
+explicit project-owner acceptance before it can authorize implementation.
 
 ## Proposed audit evidence contract review — 2026-08-03
 
