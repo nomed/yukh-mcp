@@ -1,7 +1,7 @@
 # SESSION-2026-08-03-02 — Capability contract implementation
 
 - Governing issue: #5
-- Pull request: pending
+- Pull request: #31
 - Status: implementation ready for review
 
 ## Objective
