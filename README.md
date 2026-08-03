@@ -32,6 +32,10 @@ Yukh MCP is in its foundation phase. Public contracts and security boundaries ar
 - Security decisions are public and reviewable.
 - Vendor-neutral MCP interoperability.
 
+The [project charter](docs/concepts/project-charter.md) defines these principles
+operationally, identifies the intended audience and use cases, and supplies the
+review questions and terminology used to keep the boundary testable.
+
 ## Project
 
 Work is coordinated through [GitHub Issues](https://github.com/nomed/yukh-mcp/issues) and the [Yukh project](https://github.com/users/nomed/projects/5).
