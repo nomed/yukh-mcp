@@ -12,6 +12,7 @@ contract:
 fields:
   kind:
     project_field: Work Type
+    target: issue_type
     required: true
     values:
       gate: Gate
@@ -21,7 +22,7 @@ fields:
       bug: Bug
       technical_debt: Technical Debt
   area:
-    project_field: Area
+    project_field: Component
     ownership: extension
     required: true
     values:

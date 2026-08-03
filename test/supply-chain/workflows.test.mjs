@@ -104,6 +104,11 @@ test("Yukh Projects shadow policy is versioned with its workflow", () => {
   assert.match(source, /^version: 1$/mu);
   assert.match(source, /^  repository: yukh-mcp$/mu);
   assert.match(source, /^  marker: yukh$/mu);
+  assert.match(
+    source,
+    /^  kind:\n    project_field: Work Type\n    target: issue_type$/mu,
+  );
+  assert.match(source, /^  area:\n    project_field: Component$/mu);
   assert.match(source, /^  status:\n    project_field: Status\n    derived: true$/mu);
   assert.match(source, /^  overwrite_human_values: false$/mu);
 });
