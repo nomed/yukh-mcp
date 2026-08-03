@@ -1,4 +1,9 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer, request as httpsRequest } from "node:https";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   COORDINATION_MEDIA_TYPE,
@@ -49,6 +54,132 @@ function adapter(transport: CoordinationTransport) {
     transport,
   });
 }
+
+function loopbackTransport(certificate: Buffer): CoordinationTransport {
+  return async (target, init) =>
+    await new Promise<Response>((resolve, reject) => {
+      const headers = Object.fromEntries(new Headers(init.headers).entries());
+      const request = httpsRequest(
+        target,
+        {
+          method: init.method,
+          headers,
+          ca: certificate,
+          rejectUnauthorized: true,
+          signal: init.signal ?? undefined,
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer) => chunks.push(chunk));
+          response.on("end", () => {
+            resolve(
+              new Response(Buffer.concat(chunks), {
+                status: response.statusCode ?? 500,
+                headers: response.headers as Record<string, string>,
+              }),
+            );
+          });
+        },
+      );
+      request.on("error", reject);
+      request.end(init.body as string);
+    });
+}
+
+test("qualifies one exact request across a verified synthetic loopback TLS socket", async () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "yukh-mcp-coordination-tls-"));
+  chmodSync(fixtureRoot, 0o700);
+  const keyPath = join(fixtureRoot, "key.pem");
+  const certificatePath = join(fixtureRoot, "certificate.pem");
+  try {
+    execFileSync(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        keyPath,
+        "-out",
+        certificatePath,
+        "-days",
+        "1",
+        "-subj",
+        "/CN=127.0.0.1",
+        "-addext",
+        "subjectAltName=IP:127.0.0.1",
+      ],
+      { stdio: "ignore" },
+    );
+    chmodSync(keyPath, 0o600);
+    const certificate = readFileSync(certificatePath);
+    const server = createServer(
+      { key: readFileSync(keyPath), cert: certificate },
+      (request, response) => {
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer) => chunks.push(chunk));
+        request.on("end", () => {
+          assert.equal(request.method, "POST");
+          assert.equal(request.url, "/coordination-primitives/v1/leases:acquire");
+          assert.equal(request.headers.accept, COORDINATION_MEDIA_TYPE);
+          assert.equal(request.headers["content-type"], COORDINATION_MEDIA_TYPE);
+          assert.equal(request.headers.authorization, "synthetic-credential");
+          assert.equal(request.headers.dpop, "synthetic-proof");
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<
+            string,
+            unknown
+          >;
+          assert.deepEqual(Object.keys(body), [
+            "epoch",
+            "expires_at",
+            "holder_digest",
+            "scope_digest",
+          ]);
+          const payload = JSON.stringify({
+            expires_at: binding.expires_at,
+            fencing_token: 11,
+            lease_capability: "opaque-loopback-capability",
+            outcome: "acquired",
+            specversion: "1",
+          });
+          response.writeHead(200, {
+            "cache-control": "no-store",
+            "content-type": COORDINATION_MEDIA_TYPE,
+          });
+          response.end(payload);
+        });
+      },
+    );
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    try {
+      const address = server.address();
+      assert(address && typeof address === "object");
+      const consumer = createHttpsCoordinationConsumer({
+        baseUri: `https://127.0.0.1:${address.port}/`,
+        deadlineMs: 1_000,
+        authenticate: async () => ({
+          credential: "synthetic-credential",
+          proof: "synthetic-proof",
+        }),
+        transport: loopbackTransport(certificate),
+      });
+      const acquired = await consumer.acquireLease({ request_version: 1, binding });
+      assert.equal(acquired.outcome, "acquired");
+      assert.equal(acquired.fencing_token, 11);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
 
 test("maps MCP bindings to one closed acquire request without raw identities", async () => {
   let calls = 0;

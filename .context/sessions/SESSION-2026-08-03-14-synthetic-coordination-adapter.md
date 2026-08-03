@@ -3,7 +3,7 @@
 - Date: 2026-08-03
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/47
 - Branch: `agent/issue-47-synthetic-coordination-adapter`
-- Status: implementation candidate complete; TLS loopback qualification pending
+- Status: implementation and TLS loopback qualification complete
 
 ## Outcome
 
@@ -26,9 +26,11 @@ error normalization, deadline and one-call behavior. The adapter is not wired
 into the gateway and no Coordination component, endpoint, real credential,
 provider execution, mutation, deployment or live apply exists.
 
-The accepted RFC additionally requires a real synthetic loopback HTTPS server.
-That qualification remains pending because the repository must not commit a
-private key and the implementation may not add a subprocess or dependency to
-generate one. The current injected transport evidence is not represented as a
-real TLS crossing; the PR must remain draft until a compliant ephemeral TLS
-fixture is reviewed or the owner explicitly narrows that qualification.
+The accepted RFC's loopback requirement is qualified by a test-only HTTPS
+server on `127.0.0.1`. A fixed-argument OpenSSL invocation generates a one-day
+self-signed certificate and private key in a mode-`0700` temporary directory;
+the key is mode `0600`, is trusted only by the test transport, and the complete
+fixture is removed in `finally`. Certificate verification remains enabled.
+This owner-authorized test helper is absent from the runtime and build output,
+adds no dependency, uses no shell, and does not weaken the product prohibition
+on subprocesses or ambient trust.

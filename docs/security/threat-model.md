@@ -376,8 +376,8 @@ mutation, deployment, public listener, or live apply.
 - Governing issue: #47
 - Accepted architecture: RFC-0005
 - Scope: MCP-native digest translation, closed HTTPS framing, explicit
-  authenticator/transport ports, secret capability wrapper, and synthetic
-  transport conformance
+  authenticator/transport ports, secret capability wrapper, synthetic
+  transport conformance, and verified loopback TLS qualification
 
 The implementation imports no Coordination code or artifact and is not wired
 into the gateway. Exact HTTPS targets, fixed routes, canonical bounded bodies,
@@ -386,9 +386,12 @@ deadline and no retry enforce the accepted boundary. Raw identities and nonce
 values are replaced by domain-separated digests; lease capabilities reject JSON
 and redact string/inspection output.
 
-The synthetic tests do not yet cross a real TLS socket. Ephemeral loopback TLS
-qualification remains required without committing private keys, adding a
-dependency or invoking a subprocess. Until that evidence exists, the adapter
-PR remains draft and no compatibility-complete claim is made. No endpoint,
-credential, gateway wiring, provider execution, mutation, deployment, public
-listener or live apply is authorized.
+The loopback qualification crosses a real TLS socket on `127.0.0.1` with
+certificate verification enabled. Its owner-authorized test-only helper invokes
+OpenSSL with fixed arguments and no shell to generate a one-day certificate and
+private key in a private temporary directory, then removes all fixture material
+in `finally`. No key is committed, no dependency is added, and subprocess use is
+absent from runtime and build output. This evidence does not select or qualify
+production trust, DNS, identity, key custody, or endpoint configuration. No real
+endpoint, credential, gateway wiring, provider execution, mutation, deployment,
+public listener or live apply is authorized.
