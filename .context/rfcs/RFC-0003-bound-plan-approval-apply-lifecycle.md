@@ -1,8 +1,10 @@
 # RFC-0003 — Bound plan, approval, apply, verify, and rollback lifecycle
 
-- Status: Proposed
+- Status: Accepted
 - Authors: Codex
 - Created: 2026-08-03
+- Accepted: 2026-08-03
+- Decider: project owner
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/4
 - Depends on: RFC-0001, RFC-0002, RFC-0004
 

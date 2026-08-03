@@ -3,7 +3,7 @@
 - Date: 2026-08-03
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/4
 - Branch: `agent/issue-4-lifecycle-rfc`
-- Status: proposed RFC updated after RFC-0004 acceptance; owner review pending
+- Status: RFC accepted by project owner; merge pending
 
 ## Outcome
 
