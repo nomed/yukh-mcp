@@ -302,3 +302,23 @@ This review authorizes the network-free experimental provider boundary and its
 tests only. It does not authorize MCP exposure, production roots, credentials,
 non-loopback deployment, filesystem contents, directory enumeration, mutation,
 or a claim that application-level checks eliminate local TOCTOU races.
+
+## Synthetic read-only demo review — 2026-08-03
+
+- Governing issue: #11
+- Scope: loopback MCP demo binding, synthetic temporary fixture, explicit demo
+  policy, allow/deny transcript, and protected in-memory evidence projection
+- New trust boundary: local demo MCP client to a fixture-only provider profile
+
+The ordinary gateway remains inert. The demo registers only `node.inspect`,
+binds only synthetic node references, returns metadata without fixture content,
+uses no credential or elevated privilege, and removes its temporary root during
+success or failure teardown. Input, provider output, request size, host, origin,
+and timeout bounds remain enforced by the existing runtime and capability
+layers.
+
+The printed evidence is a sanitized protected projection marked
+`in_memory_demo_only`. It is not a durable RFC-0004 event, integrity chain,
+checkpoint, production audit claim, authentication profile, or authorization
+adapter. Production MCP exposure remains forbidden pending separate accepted
+identity, policy, audit-writer, and deployment profiles.

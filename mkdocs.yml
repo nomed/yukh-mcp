@@ -62,6 +62,8 @@ nav:
   - Architecture:
       - Overview: architecture/overview.md
       - Inert runtime skeleton: architecture/runtime-skeleton.md
+  - Guides:
+      - Five-minute read-only demo: guides/read-only-demo.md
   - Security:
       - Security model: security/security-model.md
       - Threat model: security/threat-model.md
