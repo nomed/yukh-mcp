@@ -396,15 +396,15 @@ production trust, DNS, identity, key custody, or endpoint configuration. No real
 endpoint, credential, gateway wiring, provider execution, mutation, deployment,
 public listener or live apply is authorized.
 
-## Proposed private staging Coordination connection — 2026-08-03
+## Accepted private staging Coordination connection — 2026-08-03
 
 - Governing issue: #50
-- Proposed architecture: RFC-0006 and upstream Coordination RFC-0022
+- Accepted architecture: RFC-0006 and upstream Coordination RFC-0022
 - Scope: disabled-by-default direct TLS transport, explicit private trust,
   descriptor-delivered short-lived DPoP credential/key and synthetic-only real
   staging qualification
 
-| Threat | Proposed control | Residual risk / dependency |
+| Threat | Accepted control | Residual risk / dependency |
 | --- | --- | --- |
 | endpoint or trust substitution | exact HTTPS origin/server name, explicit private CA, dedicated verified Node HTTPS agent, no proxy/system-root fallback | staging CA or supervisor compromise can still redirect the consumer |
 | credential or signing-key disclosure | separate inherited descriptors, bounded one-time reads, redacted wrappers, source-buffer zeroing and 15-minute maximum lifetime | plaintext exists in process memory and host compromise defeats this staging control |
@@ -414,7 +414,7 @@ public listener or live apply is authorized.
 | secret-bearing diagnostics | closed error/output schemas omit endpoint, TLS, credential, proof, key, capability, body and upstream text | process/core-dump controls remain deployment-specific |
 | accidental activation | no defaults or environment activation; explicit profile entry point is the kill switch | supervisor control of process arguments remains trusted for staging activation |
 
-Acceptance would authorize only implementation and hermetic interoperability
-qualification after upstream RFC acceptance. Endpoint configuration,
-provisioning, credential minting, live requests, gateway wiring, provider
-execution, mutation, deployment and production use remain separately gated.
+RFC-0006 authorizes only implementation and hermetic interoperability
+qualification. Endpoint configuration, provisioning, credential minting, live
+requests, gateway wiring, provider execution, mutation, deployment and
+production use remain separately gated.

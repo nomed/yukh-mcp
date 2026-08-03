@@ -1,10 +1,19 @@
 # RFC-0006 — Private staging Coordination connection
 
-- Status: Draft
+- Status: Accepted
 - Authors: Codex
 - Created: 2026-08-03
+- Accepted: 2026-08-03
+- Decider: project owner
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/50
-- Depends on: RFC-0002, RFC-0003, RFC-0004, RFC-0005 and proposed `nomed/yukh-coordination` RFC-0022
+- Depends on: RFC-0002, RFC-0003, RFC-0004, RFC-0005 and accepted `nomed/yukh-coordination` RFC-0022
+
+The project owner explicitly accepted this RFC on 2026-08-03 together with
+upstream Coordination RFC-0022. Acceptance authorizes implementation and
+hermetic interoperability qualification only. Endpoint configuration,
+provisioning, credential minting, live requests, gateway wiring, provider
+execution, mutation, deployment and production use retain their explicit later
+gates.
 
 ## Summary
 
@@ -34,7 +43,7 @@ credential, proof signing, clock, secret custody, startup and operational
 failure boundaries that must be frozen before source can obtain remote
 authority.
 
-The paired Coordination proposal under issue #90 defines the server side. This
+The paired accepted Coordination RFC-0022 under issue #90 defines the server side. This
 RFC defines only the MCP consumer side and cannot become implementable until
 the upstream record is accepted.
 

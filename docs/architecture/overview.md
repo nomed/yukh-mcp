@@ -45,9 +45,10 @@ digests, explicit authentication and an injected fetch-compatible transport.
 It is merged and qualified over verified synthetic loopback TLS, and remains
 disconnected from the gateway.
 
-Issue #50 and draft RFC-0006 propose the first disabled-by-default real staging
-connection. It depends on the separate deployable server profile proposed by
+Issue #50 and accepted RFC-0006 govern the first disabled-by-default real
+staging connection. It depends on accepted Coordination RFC-0022 under
 `nomed/yukh-coordination#90`, uses explicit private trust and short-lived DPoP
 material, and permits only a synthetic qualification runner. Until both RFCs
-are accepted and separately implemented, no endpoint, credential, real request,
-gateway wiring, provider execution, mutation or live apply is authorized.
+are separately implemented and hermetically qualified, no endpoint, credential,
+real request, gateway wiring, provider execution, mutation or live apply is
+authorized.
