@@ -370,3 +370,28 @@ outcome. RFC-0005 is explicitly accepted for a separately reviewed MCP-native
 adapter and synthetic loopback qualification only. This review authorizes no
 real endpoint, credential, request, gateway wiring, provider execution,
 mutation, deployment, public listener, or live apply.
+
+## Coordination adapter implementation review — 2026-08-03
+
+- Governing issue: #47
+- Accepted architecture: RFC-0005
+- Scope: MCP-native digest translation, closed HTTPS framing, explicit
+  authenticator/transport ports, secret capability wrapper, synthetic
+  transport conformance, and verified loopback TLS qualification
+
+The implementation imports no Coordination code or artifact and is not wired
+into the gateway. Exact HTTPS targets, fixed routes, canonical bounded bodies,
+streamed response limits, strict media/cache headers, closed outcomes, one
+deadline and no retry enforce the accepted boundary. Raw identities and nonce
+values are replaced by domain-separated digests; lease capabilities reject JSON
+and redact string/inspection output.
+
+The loopback qualification crosses a real TLS socket on `127.0.0.1` with
+certificate verification enabled. Its owner-authorized test-only helper invokes
+OpenSSL with fixed arguments and no shell to generate a one-day certificate and
+private key in a private temporary directory, then removes all fixture material
+in `finally`. No key is committed, no dependency is added, and subprocess use is
+absent from runtime and build output. This evidence does not select or qualify
+production trust, DNS, identity, key custody, or endpoint configuration. No real
+endpoint, credential, gateway wiring, provider execution, mutation, deployment,
+public listener or live apply is authorized.

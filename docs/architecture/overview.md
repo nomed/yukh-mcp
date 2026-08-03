@@ -43,3 +43,10 @@ Real integration remains blocked until `nomed/yukh-coordination#71` is merged
 and its stable consumer contract is reviewed. That future increment must adapt
 the stable contract at this port; it must not copy Coordination components into
 Yukh MCP.
+
+RFC-0005 now governs an MCP-native adapter implementation behind this port. The
+adapter uses fixed Coordination primitives v1 routes, exact lifecycle-derived
+digests, explicit authentication and an injected fetch-compatible transport.
+It remains disconnected from the gateway. The current implementation candidate
+has synthetic transport conformance evidence; its required ephemeral loopback
+TLS qualification is still pending and no real endpoint profile exists.
