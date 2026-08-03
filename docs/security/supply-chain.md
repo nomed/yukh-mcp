@@ -9,15 +9,32 @@ release, signature, SBOM, or provenance statement.
 Verified on 2026-08-03:
 
 - secret scanning and push protection are enabled;
-- `main` has no branch protection or repository ruleset yet;
+- `main` is protected by a branch-protection rule;
 - Dependabot vulnerability alerts and security updates are enabled;
 - workflow actions are pinned to full commit SHAs;
 - workflows use explicit least-privilege token permissions;
 - no workflow uses `pull_request_target`;
 - no release or artifact publication workflow exists.
 
-Branch protection is intentionally applied only after the baseline workflow is
-merged and its check names exist on `main`.
+Normal merges into `main` require a pull request, one approving review, stale
+approval dismissal, approval after the latest push, conversation resolution,
+strict successful `validate`, `review`, and `analyze` checks, and linear
+history. Force pushes and branch deletion are blocked. Merged branches are
+deleted automatically.
+
+The repository currently has one administrator and direct collaborator,
+`nomed`. Administrator enforcement is intentionally disabled so that this solo
+owner can use GitHub's explicit administrative merge path when normal approval
+separation is unavailable. This is a break-glass governance exception, not the
+normal merge path: an administrative merge can bypass every applicable branch
+protection, including reviews and required checks. It therefore requires the
+owner's explicit authorization for the specific change and a durable record in
+the pull request or session handoff of the reason, validation state, and exact
+merged commit.
+
+Repository administrator bypass is independent of MCP authorization. It does
+not create a runtime approval, expand a capability, authorize a provider
+operation, or weaken the plan-bound and default-deny execution model.
 
 ## Pull-request gates
 
@@ -56,9 +73,9 @@ updates must retain full-SHA pins after review. A repository test rejects tag-
 only external actions, `pull_request_target`, missing explicit permissions, and
 jobs without timeouts.
 
-## Branch-protection checklist
+## Branch-protection operating model
 
-After this workflow has completed once on `main`, configure `main` with:
+The current `main` rule provides:
 
 - require a pull request before merging;
 - require at least one approving review and dismiss stale approvals;
@@ -67,8 +84,12 @@ After this workflow has completed once on `main`, configure `main` with:
 - require branches to be current before merge;
 - require linear history;
 - block force pushes and branch deletion;
-- apply protections to administrators;
 - enable automatic deletion of merged branches;
+
+Administrator enforcement remains disabled only for the documented solo-owner
+break-glass path above. When another independent maintainer can provide timely
+review, prefer the normal protected merge path and reassess whether the
+administrator exception is still needed.
 
 Signed commits are not required until contributor key/recovery and bot behavior
 have an accepted operational profile. Merge queue and multiple approvals can be
