@@ -442,3 +442,44 @@ from the repository policy and produces one non-executable create-field plan.
 
 Phase A performs no mutation and grants no Phase B, consumer apply, release,
 legacy removal, deployment or production authority.
+
+## Private Coordination adapter implementation review — 2026-08-03
+
+- Governing issue: #50
+- Accepted architecture: RFC-0005, RFC-0006 and upstream Coordination RFC-0022
+- Upstream immutable candidate: commit
+  `d122f31ce6a74dcec97dfcf8095a4447e23ee593`, tree
+  `a59ba3f7ad6018d96f7329710eb593766acda676`
+- Scope: disabled-by-default MCP-native trust, descriptor custody, ES256 DPoP
+  and direct HTTPS transport behind the existing Coordination consumer port
+
+The implementation adds no gateway import, configuration default, discovery
+surface, environment activation, provider binding or executable live target.
+Construction requires one exact closed profile, private trust file, two already
+open descriptors, a short registration interval, expected RFC 7638 thumbprint,
+positive epoch and one synthetic environment reference.
+
+Token and PKCS#8 P-256 source bytes are bounded, consumed once, closed and
+cleared. The derived private `KeyObject`, held token and profile expose only
+redacted inspection and reject JSON serialization. Every request creates one
+fresh 128-bit proof ID and an exact ES256 DPoP proof binding `POST`, the fixed
+HTTPS target and token `ath`. Epoch and environment mismatches deny before
+authentication or transport.
+
+The dedicated Node HTTPS agent trusts only the supplied CA, verifies the exact
+origin identity, disables keep-alive, proxy discovery, redirect, decompression
+and retry, and accepts only the five fixed primitives paths. The existing
+adapter retains canonical 4 KiB framing and one total deadline. Provider and
+TLS errors collapse to the closed Coordination taxonomy.
+
+Hermetic qualification generates ephemeral trust and keys in a private
+temporary directory, consumes already-open descriptors, verifies DPoP claims
+and signature over a real TLS socket, proves a single request, checks binding
+denial before transport, verifies secret redaction and confirms the ordinary
+gateway imports no profile. It sends no request to a real Coordination
+deployment and imports no upstream source, client, schema, storage or
+configuration.
+
+This increment grants no endpoint, trust material, credential, provisioning,
+bootstrap execution, live request, gateway wiring, provider execution,
+protected mutation, deployment or production authority.
