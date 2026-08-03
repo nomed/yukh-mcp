@@ -181,3 +181,27 @@ Implementation-specific threats and controls are:
 No operational capability is authorized by this review. A first provider,
 listener, authentication profile, policy adapter, plan executor, or audit store
 requires another threat-model impact review under its governing issue and RFC.
+
+## Proposed mutation lifecycle review — 2026-08-03
+
+- Governing issue: #4
+- Proposed architecture: RFC-0003
+- Scope: plan, approval, apply, verification, partial failure, and rollback
+- New trust boundaries: approval authority, durable attempt reservation,
+  provider apply, target observation, and verifier
+
+RFC-0003 proposes controls before any mutating implementation exists:
+
+| Threat | Proposed control | Residual risk / dependency |
+| --- | --- | --- |
+| plan or approval substitution | canonical digests bind subject, capability, input, target, environment, policy, observations, plan, and approval | approval identity and assertion integrity profile is not selected |
+| stale-plan execution | fresh authorization and immediate server-side precondition re-observation before apply | observation source integrity is provider/deployment specific |
+| duplicate or unsafe retry | durable exact-binding reservation, capability attempt ceiling, no retry from ambiguous completion | durable storage and distributed atomicity are not designed |
+| provider reports false success | declared postconditions and independent verification where required | verifier independence and target identity need provider review |
+| partial effect is hidden | append-only per-step outcomes, aggregate `partial_effect`, and operator-review state | operator response process is not defined |
+| rollback overwrites newer state | rollback is a new authorized lifecycle with current preconditions | safe compensation may be unavailable |
+| evidence omission or reordering | transition evidence candidates with full digest correlation | issue #9 must define envelope, ordering, integrity, retention, and sink failure |
+
+This review changes no operational boundary and authorizes no implementation.
+RFC-0003 cannot become implementation-authorizing until issue #9 defines a
+compatible audit contract and the project owner explicitly accepts the RFC.
