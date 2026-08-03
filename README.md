@@ -8,56 +8,38 @@
 
 > **Give agents capability, not custody.**
 
-Yukh MCP is an open-source, policy-governed capability gateway for safe, auditable, and verifiable AI operations.
+Yukh MCP is a policy-governed capability gateway for bounded AI operations.
 
-It is designed around a strict lifecycle:
+## Try the supported demo
 
-```text
-intent → capability → policy → plan → approval → execution → verification → audit
+Requires Node.js 22 or newer:
+
+```sh
+npm ci --ignore-scripts
+npm run demo
 ```
 
-Yukh MCP does not aim to be an unrestricted remote shell broker. It exposes typed capabilities, evaluates explicit policy, plans mutations before execution, verifies outcomes, and produces structured evidence.
+The demo runs locally with synthetic data and no credentials. It discovers
+`node.inspect`, shows one allowed read, one denied read, and the resulting
+in-memory evidence.
+
+[Follow the tutorial](https://nomed.github.io/yukh-mcp/guides/read-only-demo/)
+· [Read the documentation](https://nomed.github.io/yukh-mcp/)
 
 ## Status
 
-Yukh MCP is in its foundation phase. Public contracts and security boundaries are being designed in the open before operational capabilities are implemented.
+**Foundation; not production-ready.** The ordinary gateway is inert: it exposes
+no operational tools, providers, credentials, persistence, or mutation path.
+Only the synthetic local demo exposes `node.inspect`.
 
-The versioned capability contract is governed by accepted
-[RFC-0001](.context/rfcs/RFC-0001-versioned-capability-contract.md). Its
-[network-free reference package](contracts/capability/v1/README.md) validates
-synthetic contract records without exposing a provider or MCP runtime.
+Accepted contracts and their executable, network-free reference packages:
 
-The deny-by-default authorization contract is governed by accepted
-[RFC-0002](.context/rfcs/RFC-0002-deny-by-default-authorization.md). Its
-[network-free reference package](contracts/authorization/v1/README.md) binds
-policy evaluation to the exact request, combines deny-overrides deterministically,
-and rejects decision replay without implementing identity, policy, or provider
-integrations.
+- [capability contract](contracts/capability/v1/README.md);
+- [deny-by-default authorization](contracts/authorization/v1/README.md).
 
-The [inert runtime skeleton](docs/architecture/runtime-skeleton.md) initializes
-the official MCP Streamable HTTP transport and supports empty capability
-discovery. It exposes no operational tool, resource, prompt, provider, or
-credential path.
-
-## Principles
-
-- Capability, not custody.
-- Deny by default.
-- No mutation without a plan.
-- No success without verification.
-- Structured evidence over opaque output.
-- Security decisions are public and reviewable.
-- Vendor-neutral MCP interoperability.
-
-The [project charter](docs/concepts/project-charter.md) defines these principles
-operationally, identifies the intended audience and use cases, and supplies the
-review questions and terminology used to keep the boundary testable.
-
-## Project
-
-Work is coordinated through [GitHub Issues](https://github.com/nomed/yukh-mcp/issues) and the [Yukh project](https://github.com/users/nomed/projects/5).
-
-Documentation source lives under `docs/` and will be published with GitHub Pages.
+The complete lifecycle is `intent → capability → policy → plan → approval →
+execution → verification → audit`. See the [architecture](https://nomed.github.io/yukh-mcp/architecture/overview/)
+and [contract reference](https://nomed.github.io/yukh-mcp/reference/contracts/).
 
 ## Security
 

@@ -43,11 +43,7 @@ markdown_extensions:
   - md_in_html
   - tables
   - pymdownx.details
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
 
@@ -56,18 +52,21 @@ extra_css:
 
 nav:
   - Home: index.md
-  - Concepts:
-      - Why Yukh: concepts/why-yukh.md
+  - Tutorial:
+      - Run the read-only demo: guides/read-only-demo.md
+  - How-to:
+      - Run the inert gateway: how-to/run-inert-gateway.md
+  - Reference:
+      - Contracts and implementations: reference/contracts.md
+      - Runtime surface: architecture/runtime-skeleton.md
+  - Explanation:
+      - Why Yukh MCP: concepts/why-yukh.md
+      - Architecture: architecture/overview.md
       - Project charter: concepts/project-charter.md
-  - Architecture:
-      - Overview: architecture/overview.md
-      - Inert runtime skeleton: architecture/runtime-skeleton.md
-  - Guides:
-      - Five-minute read-only demo: guides/read-only-demo.md
   - Security:
       - Security model: security/security-model.md
       - Threat model: security/threat-model.md
       - Supply-chain baseline: security/supply-chain.md
-  - Community:
+  - Project:
       - Roadmap: community/roadmap.md
-      - Brand: community/brand.md
+      - Brand assets: community/brand.md
