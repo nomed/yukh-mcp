@@ -1,4 +1,10 @@
-# Yukh MCP
+<p align="center">
+  <a href="https://nomed.github.io/system/mcp/"><img src="docs/assets/repository-mark.svg" width="96" alt="Yukh MCP"></a>
+</p>
+
+<h1 align="center">Yukh MCP</h1>
+
+<p align="center"><a href="https://nomed.github.io/system/mcp/">Role in the Yukh system</a></p>
 
 > **Give agents capability, not custody.**
 
