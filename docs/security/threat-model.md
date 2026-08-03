@@ -344,3 +344,29 @@ This review authorizes only the inert consumer contract. It does not authorize
 an HTTP adapter, Coordination client import, endpoint, credential,
 authentication profile, real nonce consumption, real lease, gateway wiring,
 provider invocation, mutation, deployment, or release claim.
+
+## Accepted stable Coordination adapter design review — 2026-08-03
+
+- Governing issue: #47
+- Accepted architecture: RFC-0005
+- Scope: MCP-owned HTTPS translation to the immutable Coordination primitives
+  v1 contract and synthetic loopback qualification
+- New implementation trust boundaries: MCP to request authenticator; MCP across TLS to
+  untrusted Coordination framing and responses
+
+| Threat | Accepted control | Residual risk / dependency |
+| --- | --- | --- |
+| lifecycle binding is substituted or narrowed | one canonical MCP scope digest covers subject, capability, resources, environment, plan, approval, operation, expiry and epoch | canonical vectors require review before implementation |
+| attacker redirects requests or abuses ambient network configuration | exact HTTPS base URI and fixed routes; redirects, proxy discovery and caller-selected targets forbidden | DNS and TLS trust remain deployment-specific |
+| credential or lease capability leaks | explicit bounded authenticator, private redacted capability wrapper, closed errors and no raw-body diagnostics | concrete key custody and runtime memory handling need deployment review |
+| timeout causes unsafe replay | one bounded request, abort once, no retry; ambiguous outcomes deny and require lifecycle reconciliation | availability loss can stop protected operations |
+| malformed response becomes authority | independent closed response validation and route-specific outcomes; transport success never implies MCP authorization or provider success | upstream compatibility drift requires immutable re-review |
+| copied client couples trust domains | platform APIs and public wire contract only; no upstream source, bundle, schema or client import | independent implementation may contain semantic defects requiring conformance tests |
+
+Coordination RFC-0021, merged in PR #85 at
+`91c1e5097e47026f63c34126a379949833bb7e00`, resolves acquisition contention as
+bounded `409 conflict` Problem Details and excludes `contended` as a successful
+outcome. RFC-0005 is explicitly accepted for a separately reviewed MCP-native
+adapter and synthetic loopback qualification only. This review authorizes no
+real endpoint, credential, request, gateway wiring, provider execution,
+mutation, deployment, public listener, or live apply.
