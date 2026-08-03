@@ -1,7 +1,7 @@
 # SESSION-2026-08-03-16 — Task-first documentation
 
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/52
-- Pull request: pending
+- Pull request: https://github.com/nomed/yukh-mcp/pull/53
 - Status: implementation complete
 
 ## Objective
