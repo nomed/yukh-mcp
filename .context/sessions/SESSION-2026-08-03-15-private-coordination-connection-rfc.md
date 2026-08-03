@@ -2,6 +2,7 @@
 
 - Date: 2026-08-03
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/50
+- Pull request: https://github.com/nomed/yukh-mcp/pull/51
 - Branch: `agent/issue-50-real-coordination-profile`
 - Status: proposal ready for owner review; upstream RFC dependency unresolved
 
