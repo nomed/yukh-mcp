@@ -27,6 +27,13 @@ The versioned capability contract is governed by accepted
 [network-free reference package](contracts/capability/v1/README.md) validates
 synthetic contract records without exposing a provider or MCP runtime.
 
+The deny-by-default authorization contract is governed by accepted
+[RFC-0002](.context/rfcs/RFC-0002-deny-by-default-authorization.md). Its
+[network-free reference package](contracts/authorization/v1/README.md) binds
+policy evaluation to the exact request, combines deny-overrides deterministically,
+and rejects decision replay without implementing identity, policy, or provider
+integrations.
+
 ## Principles
 
 - Capability, not custody.

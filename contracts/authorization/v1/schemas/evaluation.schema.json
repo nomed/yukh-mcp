@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yukh.example/schemas/authorization/v1/evaluation.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["evaluation_version", "authorization_request_id", "request_digest", "policy", "evaluator_ref", "evaluated_at", "statements"],
+  "properties": {
+    "evaluation_version": { "const": 1 },
+    "authorization_request_id": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/opaqueId" },
+    "request_digest": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/digest" },
+    "policy": { "$ref": "https://yukh.example/schemas/authorization/v1/common.schema.json#/$defs/policy" },
+    "evaluator_ref": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/implementationRef" },
+    "evaluated_at": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/timestamp" },
+    "statements": {
+      "type": "array", "maxItems": 256,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["statement_ref", "effect", "reason_code", "constraints", "obligations"],
+        "properties": {
+          "statement_ref": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/opaqueId" },
+          "effect": { "enum": ["allow", "deny"] },
+          "reason_code": { "$ref": "https://yukh.example/schemas/authorization/v1/common.schema.json#/$defs/reasonCode" },
+          "resource_refs": {
+            "type": "array", "minItems": 1, "maxItems": 1000, "uniqueItems": true,
+            "items": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/resourceRef" }
+          },
+          "constraints": {
+            "type": "array", "maxItems": 64,
+            "items": { "$ref": "https://yukh.example/schemas/authorization/v1/common.schema.json#/$defs/constraint" }
+          },
+          "obligations": {
+            "type": "array", "maxItems": 32,
+            "items": { "$ref": "https://yukh.example/schemas/authorization/v1/common.schema.json#/$defs/obligation" }
+          }
+        }
+      }
+    }
+  }
+}
