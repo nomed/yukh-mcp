@@ -1,7 +1,7 @@
 # SESSION-2026-08-03-17 — Node 24 Actions refresh
 
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/54
-- Pull request: pending
+- Pull request: https://github.com/nomed/yukh-mcp/pull/55
 - Status: implementation complete
 
 ## Objective
