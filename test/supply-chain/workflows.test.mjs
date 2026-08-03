@@ -85,7 +85,7 @@ test("Yukh Projects migration remains manual, immutable, and shadow-only", () =>
   const source = readFileSync(new URL("yukh-projects-shadow.yml", directory), "utf8");
   assert.match(
     source,
-    /nomed\/yukh-projects@e086e89395808377845567325b3a0fa73ef6e926/u,
+    /nomed\/yukh-projects@21731941c96525802ee1e31c6df9e888ceab07e7/u,
   );
   assert.match(source, /workflow_dispatch:/u);
   assert.equal(source.includes("issues:"), true);
@@ -94,6 +94,16 @@ test("Yukh Projects migration remains manual, immutable, and shadow-only", () =>
   assert.equal(source.includes("apply-enabled"), false);
   assert.equal(source.includes("github-write-token"), false);
   assert.equal(source.includes("mode:"), true);
+  assert.match(source, /^          mode: legacy-shadow$/mu);
   assert.match(source, /mode: read-only shadow/u);
   assert.match(source, /retention-days: 1/u);
+});
+
+test("Yukh Projects shadow policy is versioned with its workflow", () => {
+  const source = readFileSync(new URL("../../.yukh/project.yaml", import.meta.url), "utf8");
+  assert.match(source, /^version: 1$/mu);
+  assert.match(source, /^  repository: yukh-mcp$/mu);
+  assert.match(source, /^  marker: yukh$/mu);
+  assert.match(source, /^  status:\n    project_field: Status\n    derived: true$/mu);
+  assert.match(source, /^  overwrite_human_values: false$/mu);
 });

@@ -8,7 +8,8 @@
 ## Outcome
 
 Added a manual, one-issue successor workflow pinned to immutable Yukh Projects
-v1.3.3. The workflow has read-only repository permissions, exposes no apply
+v1.3.4 with its explicit `legacy-shadow` adapter. The workflow has read-only
+repository permissions, exposes no apply
 input, uploads only the successor's redacted report for one day, and records
 bounded aggregate outputs. Existing legacy workflows remain untouched.
 
