@@ -8,6 +8,9 @@ Yukh MCP takes a different position:
 
 A capability is typed, versioned, scoped to resources and environments, evaluated by policy, and paired with evidence. Mutations follow plan, approval, apply, verification, and rollback semantics.
 
+The [project charter](project-charter.md) turns this position into explicit
+audience, scope, terminology, and design-review criteria.
+
 ## Non-goals
 
 Yukh MCP is not:

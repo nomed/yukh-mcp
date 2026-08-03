@@ -58,6 +58,7 @@ nav:
   - Home: index.md
   - Concepts:
       - Why Yukh: concepts/why-yukh.md
+      - Project charter: concepts/project-charter.md
   - Architecture:
       - Overview: architecture/overview.md
   - Security:
