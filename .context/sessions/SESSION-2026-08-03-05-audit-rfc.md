@@ -3,7 +3,7 @@
 - Date: 2026-08-03
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/9
 - Branch: `agent/issue-9-audit-rfc`
-- Status: proposed RFC drafted; review PR pending
+- Status: RFC accepted by project owner; merge pending
 
 ## Outcome
 

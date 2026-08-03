@@ -1,8 +1,10 @@
 # RFC-0004 — Structured, redacted, integrity-verifiable audit evidence
 
-- Status: Proposed
+- Status: Accepted
 - Authors: Codex
 - Created: 2026-08-03
+- Accepted: 2026-08-03
+- Decider: project owner
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/9
 - Depends on: RFC-0001, RFC-0002
 - Designed to satisfy: RFC-0003 (Proposed) audit dependency
