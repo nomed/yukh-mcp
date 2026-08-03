@@ -23,7 +23,7 @@ references. The inert MCP listener remains unchanged and discovers no tools.
 - capability definition accepted by the v1 contract validator;
 - TypeScript typecheck and build;
 - 50 contract and supply-chain tests;
-- 14 runtime tests including traversal, symlink, pre-authorization denial,
+- 16 runtime tests including traversal, symlink, pre-authorization denial,
   malformed input, and malformed provider output;
 - Prettier and `git diff --check`.
 

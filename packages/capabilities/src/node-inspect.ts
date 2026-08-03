@@ -93,19 +93,41 @@ export type NodeInspectAuthorizer = (
   request: NodeInspectRequest,
 ) => Promise<InvocationAuthorization>;
 
+class ProviderTimeoutError extends Error {}
+
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new ProviderTimeoutError()), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function capabilityError(
   code:
     | "authorization_denied"
     | "scope_resolution_failed"
     | "schema_validation_failed"
-    | "provider_protocol_error",
+    | "provider_protocol_error"
+    | "execution_timeout",
   phase: "authorize" | "resolve" | "validate" | "execute",
 ) {
   return {
     error_version: 1,
     code,
     phase,
-    retry: code === "authorization_denied" ? "after_policy_change" : "after_correction",
+    retry:
+      code === "authorization_denied"
+        ? "after_policy_change"
+        : code === "execution_timeout"
+          ? "policy_declared"
+          : "after_correction",
     message:
       code === "authorization_denied"
         ? "The request is not authorized"
@@ -113,7 +135,9 @@ function capabilityError(
           ? "The configured resource could not be resolved"
           : code === "schema_validation_failed"
             ? "The request is invalid"
-            : "The provider returned an invalid result",
+            : code === "provider_protocol_error"
+              ? "The provider returned an invalid result"
+              : "The provider invocation timed out",
     diagnostics: [],
   } as const;
 }
@@ -122,8 +146,16 @@ export function createNodeInspectCapability(options: {
   readonly provider: LocalReadNodeProvider;
   readonly authorize: NodeInspectAuthorizer;
   readonly now?: () => Date;
+  readonly providerTimeoutMs?: number;
 }) {
   const now = options.now ?? (() => new Date());
+  const providerTimeoutMs = options.providerTimeoutMs ?? nodeInspectDefinition.execution.timeout_ms;
+  if (
+    !Number.isInteger(providerTimeoutMs) ||
+    providerTimeoutMs < 1 ||
+    providerTimeoutMs > nodeInspectDefinition.execution.timeout_ms
+  )
+    throw new TypeError("invalid provider timeout");
   return Object.freeze({
     definition: nodeInspectDefinition,
     async invoke(request: NodeInspectRequest) {
@@ -133,7 +165,7 @@ export function createNodeInspectCapability(options: {
           request,
           started,
           now().toISOString(),
-          "evidence_validation1",
+          [],
           0,
           null,
           "failed",
@@ -145,20 +177,23 @@ export function createNodeInspectCapability(options: {
           request,
           started,
           now().toISOString(),
-          authorization.evidence_ref,
+          [authorization.evidence_ref],
           0,
           null,
           "denied",
           capabilityError("authorization_denied", "authorize"),
         );
       try {
-        const output = await options.provider.inspect(request.resource.ref, request.input);
+        const output = await withTimeout(
+          options.provider.inspect(request.resource.ref, request.input),
+          providerTimeoutMs,
+        );
         if (!validNodeInspectOutput(output))
           return result(
             request,
             started,
             now().toISOString(),
-            authorization.evidence_ref,
+            [authorization.evidence_ref],
             1,
             null,
             "failed",
@@ -168,19 +203,30 @@ export function createNodeInspectCapability(options: {
           request,
           started,
           now().toISOString(),
-          authorization.evidence_ref,
+          [authorization.evidence_ref],
           1,
           output,
           "succeeded",
           null,
         );
       } catch (error) {
+        if (error instanceof ProviderTimeoutError)
+          return result(
+            request,
+            started,
+            now().toISOString(),
+            [authorization.evidence_ref],
+            1,
+            null,
+            "failed",
+            capabilityError("execution_timeout", "execute"),
+          );
         if (!(error instanceof LocalReadProviderError)) throw error;
         return result(
           request,
           started,
           now().toISOString(),
-          authorization.evidence_ref,
+          [authorization.evidence_ref],
           1,
           null,
           "failed",
@@ -195,7 +241,7 @@ function result(
   request: NodeInspectRequest,
   started_at: string,
   finished_at: string,
-  evidence: string,
+  evidence_refs: readonly string[],
   attempts: 0 | 1,
   output: object | null,
   status: "succeeded" | "denied" | "failed",
@@ -215,7 +261,7 @@ function result(
     output,
     verification: {
       status: status === "succeeded" ? "verified" : "not_applicable",
-      evidence_refs: [evidence],
+      evidence_refs,
     },
     error,
   } as const;
