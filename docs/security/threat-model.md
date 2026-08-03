@@ -181,3 +181,29 @@ Implementation-specific threats and controls are:
 No operational capability is authorized by this review. A first provider,
 listener, authentication profile, policy adapter, plan executor, or audit store
 requires another threat-model impact review under its governing issue and RFC.
+
+## Proposed audit evidence contract review — 2026-08-03
+
+- Governing issue: #9
+- Proposed architecture: RFC-0004
+- Scope: typed evidence, correlation, classification, projection, ordering,
+  integrity verification, retention, export, and failure behavior
+- New trust boundaries: evidence producer, audit writer, checkpoint authority,
+  protected store, resolver, verifier, and exporter
+
+RFC-0004 proposes the following controls before an audit backend exists:
+
+| Threat | Proposed control | Residual risk / dependency |
+| --- | --- | --- |
+| secret or prompt retention | closed typed payloads, structural allowlist projections, forbidden-content registry, no raw fallback | producer semantic bugs and side channels still require review |
+| identity or target disclosure | opaque references, protected resource-set digests, separately controlled resolvers | low-entropy digests and resolver misuse require deployment privacy controls |
+| event substitution or reorder | canonical digest binding, per-stream sequence, previous hash, causal references | compromised writer can omit facts before emission |
+| deletion or chain replacement | periodic checkpoints and optional independent witnessing | unwitnessed tail truncation remains possible |
+| misleading immutability claim | contract says hash-chained/integrity-verifiable; deployment must prove stronger properties | storage and checkpoint profile not selected |
+| audit outage hides an effect | fail closed before provider start; durable recovery fact and withheld success after start | recovery journal and atomicity require deployment design |
+| over-retention or unsafe export | registered retention classes, explicit holds, deterministic projections, bounded integrity-bound manifests | legal durations and jurisdictions are deployment-specific |
+
+This review authorizes no store, key, identity resolver, export service,
+provider, mutation, or production integrity claim. Each deployment profile must
+document durability, confidentiality, checkpoint custody, access, retention,
+backup deletion, recovery, and monitoring evidence.
