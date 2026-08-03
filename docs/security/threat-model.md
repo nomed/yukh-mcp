@@ -395,3 +395,26 @@ absent from runtime and build output. This evidence does not select or qualify
 production trust, DNS, identity, key custody, or endpoint configuration. No real
 endpoint, credential, gateway wiring, provider execution, mutation, deployment,
 public listener or live apply is authorized.
+
+## Accepted private staging Coordination connection — 2026-08-03
+
+- Governing issue: #50
+- Accepted architecture: RFC-0006 and upstream Coordination RFC-0022
+- Scope: disabled-by-default direct TLS transport, explicit private trust,
+  descriptor-delivered short-lived DPoP credential/key and synthetic-only real
+  staging qualification
+
+| Threat | Accepted control | Residual risk / dependency |
+| --- | --- | --- |
+| endpoint or trust substitution | exact HTTPS origin/server name, explicit private CA, dedicated verified Node HTTPS agent, no proxy/system-root fallback | staging CA or supervisor compromise can still redirect the consumer |
+| credential or signing-key disclosure | separate inherited descriptors, bounded one-time reads, redacted wrappers, source-buffer zeroing and 15-minute maximum lifetime | plaintext exists in process memory and host compromise defeats this staging control |
+| proof replay or target confusion | fresh ES256 DPoP with exact `htu`/`htm`/`ath`, expected thumbprint and server-side durable replay reservation | server replay-store availability is an upstream dependency |
+| hidden network retry after ambiguity | one fixed request under the adapter deadline, keep-alive off, no redirect/retry/polling | ambiguous remote state requires explicit lifecycle reconciliation |
+| remote success elevates MCP authority | qualification runner is separate from gateway/provider paths and uses synthetic bindings only | later gateway wiring still requires identity, policy, audit and provider reviews |
+| secret-bearing diagnostics | closed error/output schemas omit endpoint, TLS, credential, proof, key, capability, body and upstream text | process/core-dump controls remain deployment-specific |
+| accidental activation | no defaults or environment activation; explicit profile entry point is the kill switch | supervisor control of process arguments remains trusted for staging activation |
+
+RFC-0006 authorizes only implementation and hermetic interoperability
+qualification. Endpoint configuration, provisioning, credential minting, live
+requests, gateway wiring, provider execution, mutation, deployment and
+production use remain separately gated.
