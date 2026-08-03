@@ -322,3 +322,25 @@ The printed evidence is a sanitized protected projection marked
 checkpoint, production audit claim, authentication profile, or authorization
 adapter. Production MCP exposure remains forbidden pending separate accepted
 identity, policy, audit-writer, and deployment profiles.
+
+## Inert coordination consumer contract review — 2026-08-03
+
+- Governing issue: #45
+- Scope: MCP-owned consumer types, closed response validation, bounded timeout,
+  and network-free fake conformance tests
+- New live trust boundary: none; the driver is not connected to the gateway or
+  to a transport
+
+| Threat | Control | Residual risk / dependency |
+| --- | --- | --- |
+| malformed or substituted coordination receipt advances lifecycle | strict closed schemas plus exact operation and binding-digest checks | the future canonical digest implementation must be reviewed against the stable upstream contract |
+| stale lease is treated as current | expiry is checked against an injected trusted clock and equality is stale | clock source and skew policy remain deployment-specific |
+| dependency detail leaks through errors | all driver exceptions and timeouts normalize to one bounded code | future observability must retain the closed error surface |
+| hidden retry duplicates nonce or lease operations | the consumer performs one bounded driver call and never retries | a future transport adapter must prove it does not retry, redirect, or poll internally |
+| nonce or sealed lease handle enters evidence | sensitive values are absent from receipts intended for evidence and explicitly forbidden from logs, audit, errors, model context, and repository context | future adapter memory handling and crash diagnostics require review |
+| Coordination implementation becomes coupled into MCP | only an MCP-owned port and fake driver exist; no source, bundle, client, schema, or transport is imported | compatibility cannot be claimed until PR #71 merges and an adapter is separately reviewed |
+
+This review authorizes only the inert consumer contract. It does not authorize
+an HTTP adapter, Coordination client import, endpoint, credential,
+authentication profile, real nonce consumption, real lease, gateway wiring,
+provider invocation, mutation, deployment, or release claim.
