@@ -1,8 +1,10 @@
 # RFC-0002 — Deny-by-default authorization contract
 
-- Status: Draft
+- Status: Accepted
 - Authors: Codex
 - Created: 2026-08-03
+- Accepted: 2026-08-03
+- Decider: project owner
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/3
 - Depends on: RFC-0001
 
@@ -624,5 +626,5 @@ The project owner approved the proposed resolutions on 2026-08-03:
 5. Version 1 subject kinds are `human` and `workload`; an agent is represented
    through workload identity and receives no special authority kind.
 
-No design question remains open in this draft. Final acceptance still requires
-review of the complete updated text and an explicit status decision.
+No design question remains open. This accepted record is immutable; future
+changes require a superseding RFC and compatibility review.
