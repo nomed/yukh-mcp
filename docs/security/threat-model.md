@@ -418,3 +418,27 @@ RFC-0006 authorizes only implementation and hermetic interoperability
 qualification. Endpoint configuration, provisioning, credential minting, live
 requests, gateway wiring, provider execution, mutation, deployment and
 production use remain separately gated.
+
+## Project 5 Area Phase A review — 2026-08-03
+
+- Governing issue: #60
+- Scope: distinct `Area` representation contract and bounded read-only schema
+  plan
+- New trust boundary: none; provider observation is read-only and outside the
+  MCP runtime
+
+The reviewed Project snapshot contains no `Area` field and proves that
+`Component` and human/Project-owned `Status` are distinct existing
+single-select fields. The contract derives the exact `Area` option vocabulary
+from the repository policy and produces one non-executable create-field plan.
+
+| Threat | Control | Residual risk / dependency |
+| --- | --- | --- |
+| silently collapse area into component | exact names and semantic separation; both existing fields are preserve-only | future policy edits require the same semantic review |
+| stale or incomplete Project schema | snapshot count, update time and canonical redacted digest; fresh complete preflight required before Phase B | Project can change after Phase A |
+| schema confused deputy | exact user-owned Project 5 binding in the operator workflow; no provider IDs in the retained plan | operator account and repository settings remain trusted |
+| GraphQL exhaustion | one bounded field page, observed cost 1, declared future request ceiling and reserve, no retry/polling/sleep | provider cost behavior may change and must fail closed |
+| partial or destructive repair | Phase A is structurally non-executable; future plan forbids rename/delete and stops on ambiguity | a separately authorized mutation could still partially commit |
+
+Phase A performs no mutation and grants no Phase B, consumer apply, release,
+legacy removal, deployment or production authority.
