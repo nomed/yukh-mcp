@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yukh.example/schemas/authorization/v1/common.schema.json",
+  "$defs": {
+    "reasonCode": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,63}$",
+      "maxLength": 64
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle_ref", "revision", "digest"],
+      "properties": {
+        "bundle_ref": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/opaqueId" },
+        "revision": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "digest": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/digest" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability", "definition_digest", "operation_class", "effects", "approval_mode"],
+      "properties": {
+        "capability": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/capabilityRef" },
+        "definition_digest": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/digest" },
+        "operation_class": { "enum": ["read", "mutate"] },
+        "effects": {
+          "type": "array", "minItems": 1, "maxItems": 5, "uniqueItems": true,
+          "items": { "enum": ["observe", "create", "update", "delete", "emit"] }
+        },
+        "approval_mode": { "enum": ["never", "policy", "explicit"] }
+      }
+    },
+    "constraint": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "output_data_class" },
+            "value": { "enum": ["public", "operational_metadata", "internal", "restricted"] }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "output_fields" },
+            "value": {
+              "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$", "maxLength": 64 }
+            }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "value"],
+          "properties": {
+            "type": { "enum": ["max_result_items", "max_output_bytes", "decision_ttl_ms", "concurrency_limit"] },
+            "value": { "type": "integer", "minimum": 1, "maximum": 4194304 }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "allowed_resource_refs" },
+            "value": {
+              "type": "array", "minItems": 1, "maxItems": 1000, "uniqueItems": true,
+              "items": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/resourceRef" }
+            }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "time_window" },
+            "value": {
+              "type": "object", "additionalProperties": false, "required": ["not_before", "not_after"],
+              "properties": {
+                "not_before": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/timestamp" },
+                "not_after": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/timestamp" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "input_value_set" },
+            "value": {
+              "type": "object", "additionalProperties": false, "required": ["path", "values"],
+              "properties": {
+                "path": { "type": "string", "pattern": "^/(?:[^~/]|~0|~1)+(?:/(?:[^~/]|~0|~1)+)*$", "maxLength": 256 },
+                "values": {
+                  "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+                  "items": {
+                    "anyOf": [
+                      { "type": "string", "maxLength": 256 },
+                      { "type": "number", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+                      { "type": "boolean" },
+                      { "type": "null" }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "obligation": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "approval_required" },
+            "value": { "enum": ["standard", "elevated", "destructive"] }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "evidence_profile" },
+            "value": { "enum": ["standard_read", "standard_mutation", "enhanced"] }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "verification_profile" },
+            "value": { "enum": ["schema_only", "declared_postconditions", "independent"] }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "redaction_profile" },
+            "value": { "enum": ["standard", "strict", "metadata_only"] }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "value"],
+          "properties": {
+            "type": { "const": "concurrency_profile" },
+            "value": { "enum": ["per_subject", "per_resource", "exclusive_scope"] }
+          }
+        }
+      ]
+    }
+  }
+}

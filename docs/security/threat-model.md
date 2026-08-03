@@ -144,7 +144,11 @@ RFCs are superseded rather than edited.
 
 ## Open Foundation work
 
-- #3 defines the complete authorization decision and failure contract.
+- RFC-0002 defines the authorization decision and failure contract. Its v1
+  network-free reference package validates exact bindings, deny overrides,
+  all-or-nothing resource sets, constraint intersection, obligation
+  accumulation, and one-shot decision consumption. External identity and policy
+  adapters, durable replay state, and production enforcement remain absent.
 - #5 defines the versioned capability contract and bounded provider semantics.
 - #9 defines audit envelopes, redaction, retention, ordering, and integrity.
 - #10 qualifies repository, CI, dependency, and release supply-chain controls.
