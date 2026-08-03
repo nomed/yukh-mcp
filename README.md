@@ -22,6 +22,11 @@ Yukh MCP does not aim to be an unrestricted remote shell broker. It exposes type
 
 Yukh MCP is in its foundation phase. Public contracts and security boundaries are being designed in the open before operational capabilities are implemented.
 
+The versioned capability contract is governed by accepted
+[RFC-0001](.context/rfcs/RFC-0001-versioned-capability-contract.md). Its
+[network-free reference package](contracts/capability/v1/README.md) validates
+synthetic contract records without exposing a provider or MCP runtime.
+
 ## Principles
 
 - Capability, not custody.

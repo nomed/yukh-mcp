@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yukh.example/schemas/capability/v1/result.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "result_version", "request_id", "capability", "status", "resource_ref",
+    "environment", "attempts", "implementation_ref", "started_at", "finished_at",
+    "output", "verification", "error"
+  ],
+  "properties": {
+    "result_version": { "const": 1 },
+    "request_id": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/opaqueId" },
+    "capability": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/capabilityRef" },
+    "status": { "enum": ["succeeded", "denied", "failed", "partial", "indeterminate"] },
+    "resource_ref": {
+      "oneOf": [
+        { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/resourceRef" },
+        {
+          "type": "array", "minItems": 1, "maxItems": 1000, "uniqueItems": true,
+          "items": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/resourceRef" }
+        }
+      ]
+    },
+    "environment": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/environment" },
+    "attempts": { "type": "integer", "minimum": 0, "maximum": 5 },
+    "implementation_ref": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/implementationRef" },
+    "started_at": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/timestamp" },
+    "finished_at": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/timestamp" },
+    "output": { "type": ["object", "null"], "maxProperties": 128 },
+    "verification": { "$ref": "https://yukh.example/schemas/capability/v1/common.schema.json#/$defs/verificationSummary" },
+    "error": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "https://yukh.example/schemas/capability/v1/error.schema.json" }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "succeeded" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "error": { "type": "null" },
+          "verification": {
+            "type": "object",
+            "properties": { "status": { "enum": ["verified", "not_applicable"] } }
+          }
+        }
+      },
+      "else": { "properties": { "error": { "$ref": "https://yukh.example/schemas/capability/v1/error.schema.json" } } }
+    }
+  ]
+}

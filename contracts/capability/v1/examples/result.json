@@ -1,0 +1,15 @@
+{
+  "result_version": 1,
+  "request_id": "req_example7f3a",
+  "capability": { "id": "node.inspect", "version": "1.0.0" },
+  "status": "succeeded",
+  "resource_ref": "node-example-01",
+  "environment": "development",
+  "attempts": 1,
+  "implementation_ref": "impl_sha256_example2f90",
+  "started_at": "2026-08-03T00:00:00Z",
+  "finished_at": "2026-08-03T00:00:01Z",
+  "output": { "health": "healthy", "freshness_seconds": 1 },
+  "verification": { "status": "verified", "evidence_refs": ["evidence_example2ad4"] },
+  "error": null
+}

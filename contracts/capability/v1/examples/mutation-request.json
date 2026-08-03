@@ -1,0 +1,9 @@
+{
+  "request_version": 1,
+  "request_id": "req_example8d4b",
+  "capability": { "id": "example.setting.update", "version": "1.0.0" },
+  "resource": { "kind": "example_setting", "ref": "setting-example-01" },
+  "environment": "development",
+  "input": { "name": "display_mode", "value": "compact" },
+  "idempotency_key": "idem-example-0001"
+}

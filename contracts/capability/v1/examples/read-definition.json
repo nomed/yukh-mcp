@@ -1,0 +1,61 @@
+{
+  "contract_version": 1,
+  "capability": {
+    "id": "node.inspect",
+    "version": "1.0.0",
+    "summary": "Inspect bounded metadata for one configured node",
+    "stability": "experimental"
+  },
+  "resource": { "kinds": ["node"], "cardinality": "one" },
+  "environment": { "required": true },
+  "operation": { "model": "typed", "class": "read", "effects": ["observe"] },
+  "input": {
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["include"],
+      "properties": {
+        "include": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["health", "platform", "uptime"],
+            "maxLength": 16
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["health", "freshness_seconds"],
+      "properties": {
+        "health": { "type": "string", "enum": ["healthy", "degraded", "unknown"], "maxLength": 16 },
+        "freshness_seconds": { "type": "integer", "minimum": 0, "maximum": 300 }
+      }
+    }
+  },
+  "risk": { "level": "low", "data_classes": ["operational_metadata"] },
+  "mutation": { "mode": "none", "destructive": false },
+  "approval": { "mode": "never" },
+  "execution": {
+    "timeout_ms": 5000,
+    "max_attempts": 1,
+    "concurrency": "per_resource",
+    "max_input_bytes": 2048,
+    "max_output_bytes": 16384
+  },
+  "idempotency": { "classification": "naturally_idempotent", "key": "forbidden" },
+  "retry": { "policy": "safe_before_start_only" },
+  "verification": {
+    "mode": "required",
+    "postconditions": ["resource_identity_matches", "output_schema_valid"]
+  },
+  "rollback": { "mode": "not_applicable" },
+  "errors": { "taxonomy_version": 1 }
+}

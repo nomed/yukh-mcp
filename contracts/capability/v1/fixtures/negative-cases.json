@@ -1,0 +1,99 @@
+[
+  {
+    "name": "unknown definition field",
+    "record": "definition",
+    "base": "read-definition.json",
+    "set": { "/unexpected": true },
+    "expected_code": "schema_additionalProperties"
+  },
+  {
+    "name": "unsupported contract version",
+    "record": "definition",
+    "base": "read-definition.json",
+    "set": { "/contract_version": 2 },
+    "expected_code": "schema_const"
+  },
+  {
+    "name": "unbounded input string",
+    "record": "definition",
+    "base": "read-definition.json",
+    "delete": ["/input/schema/properties/include/maxItems"],
+    "expected_code": "schema_profile_unbounded_array"
+  },
+  {
+    "name": "input schema without object root",
+    "record": "definition",
+    "base": "read-definition.json",
+    "set": { "/input/schema": {} },
+    "expected_code": "schema_profile_root_object"
+  },
+  {
+    "name": "credential-shaped input",
+    "record": "definition",
+    "base": "read-definition.json",
+    "set": {
+      "/input/schema/properties/token": { "type": "string", "maxLength": 64 }
+    },
+    "expected_code": "schema_profile_forbidden_input"
+  },
+  {
+    "name": "unsafe input pattern",
+    "record": "definition",
+    "base": "read-definition.json",
+    "set": {
+      "/input/schema/properties/include/items/pattern": "^(a+)+$"
+    },
+    "expected_code": "schema_profile_unsafe_pattern"
+  },
+  {
+    "name": "cyclic local schema reference",
+    "record": "definition",
+    "base": "read-definition.json",
+    "set": {
+      "/input/schema/$defs": {
+        "loop": { "$ref": "#/$defs/loop" }
+      }
+    },
+    "expected_code": "schema_profile_cyclic_ref"
+  },
+  {
+    "name": "unrestricted execution identity",
+    "record": "definition",
+    "base": "read-definition.json",
+    "set": { "/capability/id": "system.shell" },
+    "expected_code": "definition_unrestricted_execution_identity"
+  },
+  {
+    "name": "mutating capability without verification",
+    "record": "definition",
+    "base": "mutation-definition.json",
+    "set": { "/verification/mode": "not_applicable", "/verification/postconditions": [] },
+    "expected_code": "definition_mutation_verification"
+  },
+  {
+    "name": "non-idempotent automatic retry",
+    "record": "definition",
+    "base": "mutation-definition.json",
+    "set": {
+      "/idempotency/classification": "non_idempotent",
+      "/idempotency/key": "forbidden",
+      "/execution/max_attempts": 2,
+      "/retry/policy": "provider_verified_idempotent"
+    },
+    "expected_code": "definition_non_idempotent_retry"
+  },
+  {
+    "name": "unavailable rollback without elevated controls",
+    "record": "definition",
+    "base": "mutation-definition.json",
+    "set": { "/rollback/mode": "unavailable", "/risk/level": "medium" },
+    "expected_code": "definition_unavailable_rollback_controls"
+  },
+  {
+    "name": "request subject injection",
+    "record": "request",
+    "base": "read-request.json",
+    "set": { "/subject_ref": "sub_attacker001" },
+    "expected_code": "schema_additionalProperties"
+  }
+]
