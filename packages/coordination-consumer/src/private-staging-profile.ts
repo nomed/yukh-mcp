@@ -6,15 +6,7 @@ import {
   randomBytes,
   type KeyObject,
 } from "node:crypto";
-import {
-  closeSync,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readFileSync,
-  readSync,
-  realpathSync,
-} from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { Agent, request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { isAbsolute } from "node:path";
@@ -81,21 +73,26 @@ function exactOrigin(value: string) {
 }
 
 function safeFile(path: string, maximum: number) {
+  let descriptor: number | undefined;
   try {
     if (!isAbsolute(path) || realpathSync(path) !== path)
       throw new TypeError("invalid private coordination profile");
-    const stat = lstatSync(path);
-    if (
-      !stat.isFile() ||
-      stat.isSymbolicLink() ||
-      (stat.mode & 0o022) !== 0 ||
-      stat.size < 1 ||
-      stat.size > maximum
-    )
+    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const stat = fstatSync(descriptor);
+    if (!stat.isFile() || (stat.mode & 0o022) !== 0 || stat.size < 1 || stat.size > maximum)
       throw new TypeError("invalid private coordination profile");
-    return readFileSync(path);
+    const value = Buffer.alloc(stat.size);
+    let offset = 0;
+    while (offset < value.length) {
+      const count = readSync(descriptor, value, offset, value.length - offset, offset);
+      if (count === 0) throw new TypeError("invalid private coordination profile");
+      offset += count;
+    }
+    return value;
   } catch {
     throw new TypeError("invalid private coordination profile");
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
   }
 }
 
