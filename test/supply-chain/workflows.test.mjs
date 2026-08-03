@@ -75,7 +75,25 @@ test("workflow inventory is explicit", () => {
     "pages.yml",
     "scorecard.yml",
     "yukh-bootstrap.yml",
+    "yukh-projects-shadow.yml",
     "yukh-reconcile.yml",
   ]);
   assert.equal(basename(join(".github", "workflows")), "workflows");
+});
+
+test("Yukh Projects migration remains manual, immutable, and shadow-only", () => {
+  const source = readFileSync(new URL("yukh-projects-shadow.yml", directory), "utf8");
+  assert.match(
+    source,
+    /nomed\/yukh-projects@e086e89395808377845567325b3a0fa73ef6e926/u,
+  );
+  assert.match(source, /workflow_dispatch:/u);
+  assert.equal(source.includes("issues:"), true);
+  assert.equal(source.includes("types: [opened"), false);
+  assert.equal(source.includes("apply-action"), false);
+  assert.equal(source.includes("apply-enabled"), false);
+  assert.equal(source.includes("github-write-token"), false);
+  assert.equal(source.includes("mode:"), true);
+  assert.match(source, /mode: read-only shadow/u);
+  assert.match(source, /retention-days: 1/u);
 });
