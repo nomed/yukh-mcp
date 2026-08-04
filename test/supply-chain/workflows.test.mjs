@@ -106,8 +106,9 @@ test("Yukh Projects shadow policy is versioned with its workflow", () => {
   assert.match(source, /^  marker: yukh$/mu);
   assert.match(
     source,
-    /^  kind:\n    project_field: Work Type\n    target: issue_type$/mu,
+    /^  kind:\n    project_field: Work Type\n    required: true$/mu,
   );
+  assert.doesNotMatch(source, /^    target: issue_type$/mu);
   assert.match(source, /^  area:\n    project_field: Area$/mu);
   assert.doesNotMatch(source, /^  area:\n    project_field: Component$/mu);
   assert.match(source, /^  status:\n    project_field: Status\n    derived: true$/mu);
