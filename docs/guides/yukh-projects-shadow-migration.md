@@ -33,3 +33,7 @@ The existing legacy reconciliation and bootstrap workflows remain unchanged as
 the rollback surface. Their presence does not authorize apply. Removing them,
 running controlled apply, or changing Project state requires a later explicit
 approval under issue #27.
+
+The proposed protected apply boundary is tracked by issue #70 and RFC-0007.
+Until that RFC is explicitly accepted and its separately gated dependencies are
+qualified, no apply workflow or runtime authority may be added.

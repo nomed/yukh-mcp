@@ -118,3 +118,16 @@ test("Yukh Projects shadow policy is versioned with its workflow", () => {
   assert.match(source, /^  status:\n    project_field: Status\n    derived: true$/mu);
   assert.match(source, /^  overwrite_human_values: false$/mu);
 });
+
+test("protected apply remains absent while RFC-0007 is only proposed", () => {
+  const rfc = readFileSync(
+    new URL(
+      "../../.context/rfcs/RFC-0007-protected-yukh-projects-apply-boundary.md",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(rfc, /^- Status: Proposed$/mu);
+  assert.equal(workflows.includes("yukh-projects-apply.yml"), false);
+  assert.doesNotMatch(rfc, /Status: Accepted/u);
+});
