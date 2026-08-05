@@ -9,8 +9,10 @@
 
 The manual one-issue shadow workflow now pins immutable Yukh Projects v1.4.0
 at `d1f787ca82c085b215146949d039aa217b399c27`. The repository policy routes
-`kind` to native Issue Type. For this organization-owned repository, the
-owner-aware provider must not propose a redundant Project `Work Type` field.
+`kind` to native Issue Type while retaining `project_field: Work Type` as the
+required declarative fallback for user-owned repositories. For this
+organization-owned repository, the owner-aware provider must not propose a
+redundant Project `Work Type` field.
 
 The workflow remains manually dispatched, read-only, bounded to one issue, and
 structurally exposes no apply input or write credential. The legacy workflows

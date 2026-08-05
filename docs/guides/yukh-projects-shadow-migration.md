@@ -12,9 +12,10 @@ verified legacy dry-run. Explain every operation or diagnostic difference in
 the migration pull request before requesting controlled apply.
 
 The distinct `Area` contract remains separate from `Component`. The current
-policy targets native Issue Type for `kind`; because `yukh-mcp` is owned by an
-organization, v1.4.0 must not propose or create a redundant Project `Work Type`
-field. A fresh shadow must prove that routing while preserving human-owned
+policy targets native Issue Type for `kind`; `project_field: Work Type` remains
+only the required declarative fallback for a user-owned repository. Because
+`yukh-mcp` is organization-owned, v1.4.0 must not propose or create that Project
+field. A fresh shadow must prove this routing while preserving human-owned
 `Status` and the existing `Component` value.
 
 Do not trigger a fresh legacy backlog audit merely to populate comparison
