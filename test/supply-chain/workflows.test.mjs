@@ -24,7 +24,8 @@ for (const filename of workflows) {
 
   test(`${filename} pins every external action to a commit`, () => {
     const actionLines = source.split("\n").filter((line) => /^\s*uses:\s*/.test(line));
-    assert(actionLines.length > 0, `${filename} has no inspectable action references`);
+    if (filename !== "yukh-projects-apply.yml")
+      assert(actionLines.length > 0, `${filename} has no inspectable action references`);
     for (const line of actionLines) {
       const reference = line
         .replace(/^\s*uses:\s*/, "")
@@ -75,6 +76,7 @@ test("workflow inventory is explicit", () => {
     "pages.yml",
     "scorecard.yml",
     "yukh-bootstrap.yml",
+    "yukh-projects-apply.yml",
     "yukh-projects-shadow.yml",
     "yukh-reconcile.yml",
   ]);
@@ -83,10 +85,7 @@ test("workflow inventory is explicit", () => {
 
 test("Yukh Projects migration remains manual, immutable, and shadow-only", () => {
   const source = readFileSync(new URL("yukh-projects-shadow.yml", directory), "utf8");
-  assert.match(
-    source,
-    /nomed\/yukh-projects@e3285c6994edd8fad1666da6ca48386522c9e90f/u,
-  );
+  assert.match(source, /nomed\/yukh-projects@e3285c6994edd8fad1666da6ca48386522c9e90f/u);
   assert.match(source, /workflow_dispatch:/u);
   assert.equal(source.includes("issues:"), true);
   assert.equal(source.includes("types: [opened"), false);
@@ -119,7 +118,7 @@ test("Yukh Projects shadow policy is versioned with its workflow", () => {
   assert.match(source, /^  overwrite_human_values: false$/mu);
 });
 
-test("accepted RFC-0007 still grants no apply workflow authority", () => {
+test("accepted RFC-0007 permits only an inert protected apply contract", () => {
   const rfc = readFileSync(
     new URL(
       "../../.context/rfcs/RFC-0007-protected-yukh-projects-apply-boundary.md",
@@ -129,5 +128,44 @@ test("accepted RFC-0007 still grants no apply workflow authority", () => {
   );
   assert.match(rfc, /^- Status: Accepted$/mu);
   assert.match(rfc, /^- Accepted: 2026-08-05$/mu);
-  assert.equal(workflows.includes("yukh-projects-apply.yml"), false);
+  const source = readFileSync(new URL("yukh-projects-apply.yml", directory), "utf8");
+  assert.equal(workflows.includes("yukh-projects-apply.yml"), true);
+  assert.match(source, /^  workflow_dispatch:\n    inputs:/mu);
+  assert.match(
+    source,
+    /^        description: Exact lowercase sha256 plan digest \(sha256 plus 64 lowercase hex characters\)$/mu,
+  );
+  assert.match(
+    source,
+    /^        description: Exact lowercase 40-character approved policy commit$/mu,
+  );
+  assert.deepEqual(
+    [...source.matchAll(/^      ([a-z_]+):\n        description:/gmu)].map((match) => match[1]),
+    ["plan_digest", "policy_commit"],
+  );
+  assert.match(source, /^  YUKH_PROJECTS_PROFILE: yukh-mcp\/project-5-issue-27-legacy-apply-v1$/mu);
+  assert.match(
+    source,
+    /^  YUKH_PROJECTS_PRODUCER_REF: nomed\/yukh-projects@e3285c6994edd8fad1666da6ca48386522c9e90f$/mu,
+  );
+  assert.match(source, /^  YUKH_PROJECTS_PROJECT_NUMBER: "5"$/mu);
+  assert.match(source, /^  YUKH_PROJECTS_ISSUE_NUMBER: "27"$/mu);
+  assert.match(source, /^  YUKH_PROJECTS_MODE: legacy-apply-v1$/mu);
+  assert.match(source, /^permissions:\n  contents: read\n  id-token: write$/mu);
+  assert.match(
+    source,
+    /^concurrency:\n  group: yukh-projects-protected-apply-project-5-issue-27\n  cancel-in-progress: false$/mu,
+  );
+  assert.match(source, /^\s+if: \$\{\{ false && github\.run_attempt == '1' \}\}$/mu);
+  assert.match(source, /^\s+name: yukh-projects-controlled-apply$/mu);
+  assert.match(source, /^\s+timeout-minutes: 10$/mu);
+  assert.match(source, /^\s+steps: \[\]$/mu);
+  assert.doesNotMatch(source, /^\s*(?:run|uses|outputs):/mu);
+  assert.doesNotMatch(
+    source,
+    /^  (?:pull_request|push|repository_dispatch|schedule|workflow_call|workflow_run):/mu,
+  );
+  assert.doesNotMatch(source, /https?:\/\/|secrets\.|GITHUB_TOKEN|github-token/iu);
+  assert.doesNotMatch(source, /(?:credential|endpoint|materializer|url):/iu);
+  assert.doesNotMatch(source, /apply-action|apply-enabled|upload-artifact|cache:/iu);
 });
