@@ -483,3 +483,31 @@ configuration.
 This increment grants no endpoint, trust material, credential, provisioning,
 bootstrap execution, live request, gateway wiring, provider execution,
 protected mutation, deployment or production authority.
+
+## Accepted protected Yukh Projects apply boundary — 2026-08-05
+
+- Governing issue: #70
+- Accepted architecture: RFC-0007
+- Scope: manual plan, independent approval, OIDC-bound just-in-time material,
+  one exact controlled apply and redacted result handling
+- New trust boundaries: GitHub protected environment and OIDC identity,
+  approval authority, materializer, GitHub App credential profiles, Yukh
+  Projects apply Action and a real Coordination deployment
+
+RFC-0007 authorizes no live implementation. Its principal threats and controls
+are:
+
+| Threat | Proposed control | Residual risk / dependency |
+| --- | --- | --- |
+| dispatch, issue state or environment review becomes approval | independent Ed25519 approval bound to the exact plan, operation digest, scope, policy commit and environment | approval identity and custody profile is not selected |
+| static or replayed authority reaches a runner | exact OIDC run binding, one-shot package, fifteen-minute maximum and `run_attempt == 1` | GitHub identity and materializer compromise remain trusted dependencies |
+| one credential silently gains all authority | distinct short-lived read and write installation profiles plus exact permission attestation | concrete GitHub App installations are not provisioned or qualified |
+| approval, DPoP key, token or host capsule leaks | bounded closed package, immediate masking, exclusive runtime files, no artifact/cache/output and unconditional cleanup | hosted-runner compromise can observe process memory |
+| changed or ambiguous state is mutated or retried | fresh exact replan, nonce consumption, fenced lease, one attempt, no retry and final zero convergence | unknown completion still requires operator reconciliation |
+| an approved plan exceeds the run budget partway through | producer pre-admits the complete request graph before the first mutation; `yukh-projects#131` blocks implementation | provider cost changes require a fresh qualification |
+| consumer silently broadens scope | first profile fixes repository, Project, issue, mode, producer and environment in reviewed source | any generalized or batch profile requires another RFC |
+
+Acceptance authorizes only a separately reviewed inert workflow contract,
+materializer interface and synthetic negative tests. It would not authorize an
+Actions environment, OIDC trust, broker, credential, approval, Coordination
+endpoint, provider access, mutation, deployment or migration.

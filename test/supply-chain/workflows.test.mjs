@@ -118,3 +118,16 @@ test("Yukh Projects shadow policy is versioned with its workflow", () => {
   assert.match(source, /^  status:\n    project_field: Status\n    derived: true$/mu);
   assert.match(source, /^  overwrite_human_values: false$/mu);
 });
+
+test("accepted RFC-0007 still grants no apply workflow authority", () => {
+  const rfc = readFileSync(
+    new URL(
+      "../../.context/rfcs/RFC-0007-protected-yukh-projects-apply-boundary.md",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.match(rfc, /^- Status: Accepted$/mu);
+  assert.match(rfc, /^- Accepted: 2026-08-05$/mu);
+  assert.equal(workflows.includes("yukh-projects-apply.yml"), false);
+});

@@ -33,3 +33,8 @@ The existing legacy reconciliation and bootstrap workflows remain unchanged as
 the rollback surface. Their presence does not authorize apply. Removing them,
 running controlled apply, or changing Project state requires a later explicit
 approval under issue #27.
+
+The accepted protected apply design is tracked by issue #70 and RFC-0007.
+Implementation remains blocked by `nomed/yukh-projects#131` and its separately
+gated operational dependencies; no apply workflow or runtime authority may be
+added by design acceptance alone.
