@@ -1,0 +1,40 @@
+name: Yukh Projects protected controlled apply (inert)
+
+on:
+  workflow_dispatch:
+    inputs:
+      plan_digest:
+        description: Exact lowercase sha256 plan digest (sha256 plus 64 lowercase hex characters)
+        required: true
+        type: string
+      policy_commit:
+        description: Exact lowercase 40-character approved policy commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  YUKH_PROJECTS_PROFILE: yukh-mcp/project-5-issue-27-legacy-apply-v1
+  YUKH_PROJECTS_PRODUCER_REF: nomed/yukh-projects@e3285c6994edd8fad1666da6ca48386522c9e90f
+  YUKH_PROJECTS_OWNER: nomed
+  YUKH_PROJECTS_REPOSITORY: yukh-mcp
+  YUKH_PROJECTS_PROJECT_NUMBER: "5"
+  YUKH_PROJECTS_ISSUE_NUMBER: "27"
+  YUKH_PROJECTS_POLICY_PATH: .yukh/project.yaml
+  YUKH_PROJECTS_MODE: legacy-apply-v1
+
+concurrency:
+  group: yukh-projects-protected-apply-project-5-issue-27
+  cancel-in-progress: false
+
+jobs:
+  protected-apply-contract:
+    if: ${{ false && github.run_attempt == '1' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: yukh-projects-controlled-apply
+    timeout-minutes: 10
+    steps: []

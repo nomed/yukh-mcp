@@ -37,5 +37,7 @@ approval under issue #27.
 The accepted protected apply design is tracked by issue #70 and RFC-0007.
 `nomed/yukh-projects#131` is resolved in v1.6.1, but controlled apply still
 requires a fresh shadow, an independently approved exact plan, and separately
-gated operational dependencies. No apply workflow or runtime authority may be
-added by design acceptance alone.
+gated operational dependencies. The repository contains only a permanently
+skipped contract shape with no steps, endpoint, materializer request,
+credentials, outputs, or producer invocation. No executable apply workflow or
+runtime authority may be added by design acceptance alone.
