@@ -36,8 +36,8 @@ approval under issue #27.
 
 The protected apply boundary is tracked by issue #70, RFC-0007, and RFC-0008.
 RFC-0008 permanently supersedes RFC-0007 only for credential delivery:
-controlled apply must use a GitHub Actions secret named `GH_TOKEN`, configured
-manually outside repository content. `GH_TOKEN` must never be committed,
+controlled apply must use a GitHub Actions secret named `YUKH_PROJECTS_WRITE_TOKEN`, configured
+manually outside repository content. `YUKH_PROJECTS_WRITE_TOKEN` must never be committed,
 printed, added to outputs, artifacts, caches, step summaries, or logs. The
 former materializer and GitHub OIDC delivery model is not permitted.
 
@@ -53,8 +53,8 @@ OIDC permission.
 
 An independently issued approval for a freshly recreated exact plan and a
 reviewed host-capsule/Coordination profile remain absent. Neither a dispatch,
-an environment review, issue state, nor the presence of `GH_TOKEN` can replace
-either control. `GH_TOKEN` is deliberately documented only: no workflow job
+an environment review, issue state, nor the presence of `YUKH_PROJECTS_WRITE_TOKEN` can replace
+either control. `YUKH_PROJECTS_WRITE_TOKEN` is deliberately documented only: no workflow job
 references it while the contract is skipped. The currently pinned producer
 Action is a bounded dry-run interface, not a qualified apply interface. A
 separate explicit authorization and review must qualify an immutable apply

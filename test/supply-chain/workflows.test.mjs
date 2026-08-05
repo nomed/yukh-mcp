@@ -118,7 +118,7 @@ test("Yukh Projects shadow policy is versioned with its workflow", () => {
   assert.match(source, /^  overwrite_human_values: false$/mu);
 });
 
-test("accepted RFC-0008 keeps GH_TOKEN delivery contract inert", () => {
+test("accepted RFC-0008 keeps write-token delivery contract inert", () => {
   const rfc = readFileSync(
     new URL(
       "../../.context/rfcs/RFC-0008-gh-token-controlled-apply-credential-delivery.md",
