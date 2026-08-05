@@ -34,10 +34,16 @@ the rollback surface. Their presence does not authorize apply. Removing them,
 running controlled apply, or changing Project state requires a later explicit
 approval under issue #27.
 
-The accepted protected apply design is tracked by issue #70 and RFC-0007.
+The protected apply boundary is tracked by issue #70, RFC-0007, and RFC-0008.
+RFC-0008 permanently supersedes RFC-0007 only for credential delivery:
+controlled apply must use a GitHub Actions secret named `GH_TOKEN`, configured
+manually outside repository content. `GH_TOKEN` must never be committed,
+printed, added to outputs, artifacts, caches, step summaries, or logs. The
+former materializer and GitHub OIDC delivery model is not permitted.
+
 `nomed/yukh-projects#131` is resolved in v1.6.1, but controlled apply still
 requires a fresh shadow, an independently approved exact plan, and separately
 gated operational dependencies. The repository contains only a permanently
-skipped contract shape with no steps, endpoint, materializer request,
-credentials, outputs, or producer invocation. No executable apply workflow or
-runtime authority may be added by design acceptance alone.
+skipped contract shape with no steps, secret access, outputs, or producer
+invocation. It has no OIDC permission. No executable apply workflow or runtime
+authority may be added by either RFC without separate explicit authorization.

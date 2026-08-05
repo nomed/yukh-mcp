@@ -118,16 +118,18 @@ test("Yukh Projects shadow policy is versioned with its workflow", () => {
   assert.match(source, /^  overwrite_human_values: false$/mu);
 });
 
-test("accepted RFC-0007 permits only an inert protected apply contract", () => {
+test("accepted RFC-0008 keeps GH_TOKEN delivery contract inert", () => {
   const rfc = readFileSync(
     new URL(
-      "../../.context/rfcs/RFC-0007-protected-yukh-projects-apply-boundary.md",
+      "../../.context/rfcs/RFC-0008-gh-token-controlled-apply-credential-delivery.md",
       import.meta.url,
     ),
     "utf8",
   );
   assert.match(rfc, /^- Status: Accepted$/mu);
   assert.match(rfc, /^- Accepted: 2026-08-05$/mu);
+  assert.match(rfc, /^- Supersedes: RFC-0007 only for credential delivery$/mu);
+  assert.match(rfc, /GitHub Actions secret named `GH_TOKEN`/u);
   const source = readFileSync(new URL("yukh-projects-apply.yml", directory), "utf8");
   assert.equal(workflows.includes("yukh-projects-apply.yml"), true);
   assert.match(source, /^  workflow_dispatch:\n    inputs:/mu);
@@ -151,7 +153,8 @@ test("accepted RFC-0007 permits only an inert protected apply contract", () => {
   assert.match(source, /^  YUKH_PROJECTS_PROJECT_NUMBER: "5"$/mu);
   assert.match(source, /^  YUKH_PROJECTS_ISSUE_NUMBER: "27"$/mu);
   assert.match(source, /^  YUKH_PROJECTS_MODE: legacy-apply-v1$/mu);
-  assert.match(source, /^permissions:\n  contents: read\n  id-token: write$/mu);
+  assert.match(source, /^permissions:\n  contents: read$/mu);
+  assert.doesNotMatch(source, /id-token:/u);
   assert.match(
     source,
     /^concurrency:\n  group: yukh-projects-protected-apply-project-5-issue-27\n  cancel-in-progress: false$/mu,
