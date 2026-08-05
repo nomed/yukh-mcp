@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 env:
   YUKH_PROJECTS_PROFILE: yukh-mcp/project-5-issue-27-legacy-apply-v1

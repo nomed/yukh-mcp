@@ -1,8 +1,8 @@
 # Threat model
 
 - Status: Initial
-- Last reviewed: 2026-08-03
-- Scope: Foundation architecture and read-only vertical slice
+- Last reviewed: 2026-08-05
+- Scope: Foundation architecture, read-only vertical slice, and inert Project 5 controlled-apply credential boundary
 - Security owner: Yukh MCP maintainers
 - Review authority: an independent maintainer for security-boundary changes
 
@@ -484,30 +484,31 @@ This increment grants no endpoint, trust material, credential, provisioning,
 bootstrap execution, live request, gateway wiring, provider execution,
 protected mutation, deployment or production authority.
 
-## Accepted protected Yukh Projects apply boundary — 2026-08-05
+## Accepted Project 5 controlled-apply credential delivery — 2026-08-05
 
-- Governing issue: #70
-- Accepted architecture: RFC-0007
-- Scope: manual plan, independent approval, OIDC-bound just-in-time material,
-  one exact controlled apply and redacted result handling
-- New trust boundaries: GitHub protected environment and OIDC identity,
-  approval authority, materializer, GitHub App credential profiles, Yukh
-  Projects apply Action and a real Coordination deployment
+- Governing issue: #27
+- Accepted architecture: RFC-0008; it supersedes RFC-0007 only for credential
+  delivery
+- Scope: manual planning, independent approval, one fixed controlled apply, and
+  redacted result handling
+- Credential boundary: a manually configured GitHub Actions secret named
+  `GH_TOKEN`; neither OIDC nor a materializer is a permitted delivery path
 
-RFC-0007 authorizes no live implementation. Its principal threats and controls
-are:
+RFC-0008 retains RFC-0007's exact fresh-plan, independent-approval, fixed-scope,
+single-attempt, verification, and redacted-evidence controls. It authorizes no
+live implementation. Its principal threats and controls are:
 
-| Threat | Proposed control | Residual risk / dependency |
+| Threat | Required control | Residual risk / dependency |
 | --- | --- | --- |
-| dispatch, issue state or environment review becomes approval | independent Ed25519 approval bound to the exact plan, operation digest, scope, policy commit and environment | approval identity and custody profile is not selected |
-| static or replayed authority reaches a runner | exact OIDC run binding, one-shot package, fifteen-minute maximum and `run_attempt == 1` | GitHub identity and materializer compromise remain trusted dependencies |
-| one credential silently gains all authority | distinct short-lived read and write installation profiles plus exact permission attestation | concrete GitHub App installations are not provisioned or qualified |
-| approval, DPoP key, token or host capsule leaks | bounded closed package, immediate masking, exclusive runtime files, no artifact/cache/output and unconditional cleanup | hosted-runner compromise can observe process memory |
-| changed or ambiguous state is mutated or retried | fresh exact replan, nonce consumption, fenced lease, one attempt, no retry and final zero convergence | unknown completion still requires operator reconciliation |
+| dispatch, issue state, secret presence, or environment review becomes approval | independent approval bound to the exact plan, operation digest, scope, policy commit, and environment | approval identity and custody profile still require separate qualification |
+| `GH_TOKEN` is committed, printed, or retained | configure it manually as a GitHub Actions secret; pass it only to the reviewed pinned action; no output, artifact, cache, summary, log, or repository value may contain it | a runner or GitHub secret-store compromise can expose a secret available to that run |
+| the deprecated OIDC/materializer path is reintroduced | no `id-token: write` permission, materializer request, package, endpoint, or OIDC trust is allowed in this profile | reviewed workflow changes could still attempt an unauthorized redesign |
+| one credential silently gains all authority | keep the workflow `GITHUB_TOKEN` at `contents: read` and never pass it to the producer; use `GH_TOKEN` only for the producer's fixed Project 5 issue #27 authority; use independent producer read/write credentials if its reviewed interface makes that technically possible | a one-token producer interface cannot provide independent provider read/write credentials |
+| changed or ambiguous state is mutated or retried | fresh exact replan, independent approval, one attempt, no retry, and final zero-operation verification | unknown completion still requires operator reconciliation |
 | an approved plan exceeds the run budget partway through | producer pre-admits the complete request graph before the first mutation; `yukh-projects#131` blocks implementation | provider cost changes require a fresh qualification |
-| consumer silently broadens scope | first profile fixes repository, Project, issue, mode, producer and environment in reviewed source | any generalized or batch profile requires another RFC |
+| consumer silently broadens scope | reviewed source fixes repository, Project, issue, mode, producer, and environment | any generalized or batch profile requires another RFC |
 
-Acceptance authorizes only a separately reviewed inert workflow contract,
-materializer interface and synthetic negative tests. It would not authorize an
-Actions environment, OIDC trust, broker, credential, approval, Coordination
-endpoint, provider access, mutation, deployment or migration.
+The workflow remains permanently skipped and does not access `GH_TOKEN`.
+Manually configuring the secret, enabling the workflow, passing the secret to a
+producer, invoking a provider, or applying a plan each require separate explicit
+authorization.
