@@ -484,17 +484,17 @@ This increment grants no endpoint, trust material, credential, provisioning,
 bootstrap execution, live request, gateway wiring, provider execution,
 protected mutation, deployment or production authority.
 
-## Proposed protected Yukh Projects apply boundary — 2026-08-05
+## Accepted protected Yukh Projects apply boundary — 2026-08-05
 
 - Governing issue: #70
-- Proposed architecture: RFC-0007
+- Accepted architecture: RFC-0007
 - Scope: manual plan, independent approval, OIDC-bound just-in-time material,
   one exact controlled apply and redacted result handling
 - New trust boundaries: GitHub protected environment and OIDC identity,
   approval authority, materializer, GitHub App credential profiles, Yukh
   Projects apply Action and a real Coordination deployment
 
-RFC-0007 proposes no live implementation. Its principal threats and controls
+RFC-0007 authorizes no live implementation. Its principal threats and controls
 are:
 
 | Threat | Proposed control | Residual risk / dependency |
@@ -507,7 +507,7 @@ are:
 | an approved plan exceeds the run budget partway through | producer pre-admits the complete request graph before the first mutation; `yukh-projects#131` blocks implementation | provider cost changes require a fresh qualification |
 | consumer silently broadens scope | first profile fixes repository, Project, issue, mode, producer and environment in reviewed source | any generalized or batch profile requires another RFC |
 
-Acceptance would authorize only a separately reviewed inert workflow contract,
+Acceptance authorizes only a separately reviewed inert workflow contract,
 materializer interface and synthetic negative tests. It would not authorize an
 Actions environment, OIDC trust, broker, credential, approval, Coordination
 endpoint, provider access, mutation, deployment or migration.

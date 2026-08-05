@@ -1,18 +1,24 @@
 # RFC-0007 — Protected Yukh Projects controlled-apply boundary
 
-- Status: Proposed
+- Status: Accepted
 - Authors: Codex
 - Created: 2026-08-05
+- Accepted: 2026-08-05
+- Decider: project owner
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/70
 - Depends on: RFC-0002, RFC-0003, RFC-0004, RFC-0005, RFC-0006
 - Blocked by: https://github.com/nomed/yukh-projects/issues/131
 - Producer baseline: `nomed/yukh-projects v1.6.0` at `aa1c3e0acde5618b7895ecd971b308a08b55219b`
 
-Acceptance would authorize only a separately reviewed inert workflow contract,
+Acceptance authorizes only a separately reviewed inert workflow contract,
 materializer interface and synthetic tests. It would not authorize an Actions
 environment, identity federation, broker, credential, approval issuance,
 Coordination endpoint, provider request, live apply, deployment, backfill,
 legacy removal or migration completion.
+
+The project owner explicitly accepted this RFC and the blocking
+`nomed/yukh-projects#131` contract on 2026-08-05. Acceptance does not authorize
+implementation in this PR or any operational authority excluded above.
 
 ## Summary
 

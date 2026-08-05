@@ -34,6 +34,7 @@ the rollback surface. Their presence does not authorize apply. Removing them,
 running controlled apply, or changing Project state requires a later explicit
 approval under issue #27.
 
-The proposed protected apply boundary is tracked by issue #70 and RFC-0007.
-Until that RFC is explicitly accepted and its separately gated dependencies are
-qualified, no apply workflow or runtime authority may be added.
+The accepted protected apply design is tracked by issue #70 and RFC-0007.
+Implementation remains blocked by `nomed/yukh-projects#131` and its separately
+gated operational dependencies; no apply workflow or runtime authority may be
+added by design acceptance alone.
