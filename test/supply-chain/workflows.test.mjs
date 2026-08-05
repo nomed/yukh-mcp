@@ -159,10 +159,14 @@ test("accepted RFC-0008 keeps GH_TOKEN delivery contract inert", () => {
     source,
     /^concurrency:\n  group: yukh-projects-protected-apply-project-5-issue-27\n  cancel-in-progress: false$/mu,
   );
-  assert.match(source, /^\s+if: \$\{\{ false && github\.run_attempt == '1' \}\}$/mu);
+  assert.match(
+    source,
+    /^  future-controlled-apply:\n    if: \$\{\{ false && github\.run_attempt == '1' \}\}$/mu,
+  );
   assert.match(source, /^\s+name: yukh-projects-controlled-apply$/mu);
   assert.match(source, /^\s+timeout-minutes: 10$/mu);
   assert.match(source, /^\s+steps: \[\]$/mu);
+  assert.match(source, /^name: Yukh Projects future controlled apply \(permanently skipped\)$/mu);
   assert.doesNotMatch(source, /^\s*(?:run|uses|outputs):/mu);
   assert.doesNotMatch(
     source,
@@ -171,4 +175,13 @@ test("accepted RFC-0008 keeps GH_TOKEN delivery contract inert", () => {
   assert.doesNotMatch(source, /https?:\/\/|secrets\.|GITHUB_TOKEN|github-token/iu);
   assert.doesNotMatch(source, /(?:credential|endpoint|materializer|url):/iu);
   assert.doesNotMatch(source, /apply-action|apply-enabled|upload-artifact|cache:/iu);
+
+  const guide = readFileSync(
+    new URL("../../docs/guides/yukh-projects-shadow-migration.md", import.meta.url),
+    "utf8",
+  );
+  assert.match(guide, /`future-controlled-apply` contract job/u);
+  assert.match(guide, /hard-coded false condition is\s+permanent/u);
+  assert.match(guide, /approval.*host-capsule\/Coordination profile remain absent/su);
+  assert.match(guide, /no workflow job\s+references it while the contract is skipped/u);
 });

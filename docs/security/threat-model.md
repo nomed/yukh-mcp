@@ -504,11 +504,14 @@ live implementation. Its principal threats and controls are:
 | `GH_TOKEN` is committed, printed, or retained | configure it manually as a GitHub Actions secret; pass it only to the reviewed pinned action; no output, artifact, cache, summary, log, or repository value may contain it | a runner or GitHub secret-store compromise can expose a secret available to that run |
 | the deprecated OIDC/materializer path is reintroduced | no `id-token: write` permission, materializer request, package, endpoint, or OIDC trust is allowed in this profile | reviewed workflow changes could still attempt an unauthorized redesign |
 | one credential silently gains all authority | keep the workflow `GITHUB_TOKEN` at `contents: read` and never pass it to the producer; use `GH_TOKEN` only for the producer's fixed Project 5 issue #27 authority; use independent producer read/write credentials if its reviewed interface makes that technically possible | a one-token producer interface cannot provide independent provider read/write credentials |
+| an absent approval or host-capsule/Coordination control is mistaken for authorization | the only apply job has a hard-coded false condition, no steps, secret access, or producer invocation; a future review must separately qualify the approval and host controls | GitHub source alone cannot establish either external control |
 | changed or ambiguous state is mutated or retried | fresh exact replan, independent approval, one attempt, no retry, and final zero-operation verification | unknown completion still requires operator reconciliation |
 | an approved plan exceeds the run budget partway through | producer pre-admits the complete request graph before the first mutation; `yukh-projects#131` blocks implementation | provider cost changes require a fresh qualification |
 | consumer silently broadens scope | reviewed source fixes repository, Project, issue, mode, producer, and environment | any generalized or batch profile requires another RFC |
 
-The workflow remains permanently skipped and does not access `GH_TOKEN`.
-Manually configuring the secret, enabling the workflow, passing the secret to a
-producer, invoking a provider, or applying a plan each require separate explicit
+The `future-controlled-apply` workflow job remains permanently skipped and does
+not access `GH_TOKEN`. No approval authority or reviewed
+host-capsule/Coordination profile is configured by this source. Manually
+configuring the secret, enabling the job, passing the secret to a producer,
+invoking a provider, or applying a plan each require separate explicit
 authorization.

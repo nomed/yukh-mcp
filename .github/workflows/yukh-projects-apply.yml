@@ -1,4 +1,4 @@
-name: Yukh Projects protected controlled apply (inert)
+name: Yukh Projects future controlled apply (permanently skipped)
 
 on:
   workflow_dispatch:
@@ -30,7 +30,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  protected-apply-contract:
+  future-controlled-apply:
     if: ${{ false && github.run_attempt == '1' }}
     runs-on: ubuntu-latest
     environment:
