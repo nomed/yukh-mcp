@@ -85,7 +85,7 @@ test("Yukh Projects migration remains manual, immutable, and shadow-only", () =>
   const source = readFileSync(new URL("yukh-projects-shadow.yml", directory), "utf8");
   assert.match(
     source,
-    /nomed\/yukh-projects@21731941c96525802ee1e31c6df9e888ceab07e7/u,
+    /nomed\/yukh-projects@d1f787ca82c085b215146949d039aa217b399c27/u,
   );
   assert.match(source, /workflow_dispatch:/u);
   assert.equal(source.includes("issues:"), true);
@@ -106,9 +106,13 @@ test("Yukh Projects shadow policy is versioned with its workflow", () => {
   assert.match(source, /^  marker: yukh$/mu);
   assert.match(
     source,
-    /^  kind:\n    project_field: Work Type\n    required: true$/mu,
+    /^  kind:\n    project_field: Work Type\n    target: issue_type\n    required: true$/mu,
   );
-  assert.doesNotMatch(source, /^    target: issue_type$/mu);
+  assert.equal(
+    source.match(/^    target: issue_type$/gmu)?.length,
+    1,
+    "organization-owned repository must select the native Issue Type target",
+  );
   assert.match(source, /^  area:\n    project_field: Area$/mu);
   assert.doesNotMatch(source, /^  area:\n    project_field: Component$/mu);
   assert.match(source, /^  status:\n    project_field: Status\n    derived: true$/mu);

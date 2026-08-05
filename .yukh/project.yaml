@@ -12,6 +12,7 @@ contract:
 fields:
   kind:
     project_field: Work Type
+    target: issue_type
     required: true
     values:
       gate: Gate

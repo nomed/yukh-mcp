@@ -1,21 +1,22 @@
 # Yukh Projects shadow migration
 
 The `Yukh Projects shadow reconciliation` workflow audits one Project 5 issue
-without mutation. It pins the immutable `yukh-projects` v1.3.4 commit
-`21731941c96525802ee1e31c6df9e888ceab07e7` and selects the bounded
-`legacy-shadow` adapter. It accepts no apply mode, approval
-artifact, or write credential.
+without mutation. It pins the immutable `yukh-projects` v1.4.0 commit
+`d1f787ca82c085b215146949d039aa217b399c27` and selects the bounded
+`legacy-shadow` adapter. It accepts no apply mode, approval artifact, or write
+credential.
 
 Run it manually with the exact issue number selected for comparison. Review the
 bounded step summary and the one-day redacted report artifact against the last
 verified legacy dry-run. Explain every operation or diagnostic difference in
 the migration pull request before requesting controlled apply.
 
-The current migration has one explicit schema blocker: `area` requires the
-distinct `Area` contract and must never be mapped to `Component`. The accepted
-read-only contract and non-executable Phase A plan are recorded in the
-[Project 5 Area contract](../reference/project-5-area-contract.md). Creating the
-field remains a separately authorized Phase B operation.
+The distinct `Area` contract remains separate from `Component`. The current
+policy targets native Issue Type for `kind`; `project_field: Work Type` remains
+only the required declarative fallback for a user-owned repository. Because
+`yukh-mcp` is organization-owned, v1.4.0 must not propose or create that Project
+field. A fresh shadow must prove this routing while preserving human-owned
+`Status` and the existing `Component` value.
 
 Do not trigger a fresh legacy backlog audit merely to populate comparison
 evidence. Reuse the last verified legacy result unless a reviewer identifies a
