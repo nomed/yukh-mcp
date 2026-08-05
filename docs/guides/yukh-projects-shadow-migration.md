@@ -43,7 +43,20 @@ former materializer and GitHub OIDC delivery model is not permitted.
 
 `nomed/yukh-projects#131` is resolved in v1.6.1, but controlled apply still
 requires a fresh shadow, an independently approved exact plan, and separately
-gated operational dependencies. The repository contains only a permanently
-skipped contract shape with no steps, secret access, outputs, or producer
-invocation. It has no OIDC permission. No executable apply workflow or runtime
-authority may be added by either RFC without separate explicit authorization.
+gated operational dependencies. The repository contains only the
+`future-controlled-apply` contract job. Its hard-coded false condition is
+permanent: it has no steps, secret access, outputs, or producer invocation.
+The job fixes the repository, Project 5, issue #27, policy path, mode,
+environment, producer pin, concurrency group, ten-minute limit, and
+first-attempt-only constraint for a future reviewed implementation. It has no
+OIDC permission.
+
+An independently issued approval for a freshly recreated exact plan and a
+reviewed host-capsule/Coordination profile remain absent. Neither a dispatch,
+an environment review, issue state, nor the presence of `GH_TOKEN` can replace
+either control. `GH_TOKEN` is deliberately documented only: no workflow job
+references it while the contract is skipped. The currently pinned producer
+Action is a bounded dry-run interface, not a qualified apply interface. A
+separate explicit authorization and review must qualify an immutable apply
+interface and the approval and host controls before any condition, secret
+reference, or provider invocation can be added.
