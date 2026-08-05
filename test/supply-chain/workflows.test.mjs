@@ -85,7 +85,7 @@ test("Yukh Projects migration remains manual, immutable, and shadow-only", () =>
   const source = readFileSync(new URL("yukh-projects-shadow.yml", directory), "utf8");
   assert.match(
     source,
-    /nomed\/yukh-projects@d1f787ca82c085b215146949d039aa217b399c27/u,
+    /nomed\/yukh-projects@d58837397bc5856923e0e742458be34d8e5a27d6/u,
   );
   assert.match(source, /workflow_dispatch:/u);
   assert.equal(source.includes("issues:"), true);
