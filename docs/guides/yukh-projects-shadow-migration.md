@@ -1,8 +1,8 @@
 # Yukh Projects shadow migration
 
 The `Yukh Projects shadow reconciliation` workflow audits one Project 5 issue
-without mutation. It pins the immutable `yukh-projects` v1.5.1 commit
-`d58837397bc5856923e0e742458be34d8e5a27d6` and selects the bounded
+without mutation. It pins the immutable `yukh-projects` v1.6.0 commit
+`aa1c3e0acde5618b7895ecd971b308a08b55219b` and selects the bounded
 `legacy-shadow` adapter. It accepts no apply mode, approval artifact, or write
 credential.
 
@@ -14,7 +14,7 @@ the migration pull request before requesting controlled apply.
 The distinct `Area` contract remains separate from `Component`. The current
 policy targets native Issue Type for `kind`; `project_field: Work Type` remains
 only the required declarative fallback for a user-owned repository. GitHub
-reports `nomed/yukh-mcp` as user-owned, so v1.5.1 must report the same Project
+reports `nomed/yukh-mcp` as user-owned, so v1.6.0 must report the same Project
 `Work Type` fallback as controlled planning. A fresh shadow must prove this
 parity while preserving human-owned `Status` and the existing `Component`
 value.
