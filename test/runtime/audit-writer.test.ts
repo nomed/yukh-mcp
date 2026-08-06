@@ -1045,8 +1045,12 @@ test("journals one bounded fact after start, withholds success, and never retrie
   }
 });
 
-test("accepts RFC3339 fractional precision for trusted recovery observations", async () => {
-  for (const occurredAt of ["2026-08-06T07:00:00.12Z", "2026-08-06T07:00:00.123456Z"]) {
+test("bounds RFC3339 fractional precision for audit and recovery timestamps", async () => {
+  for (const occurredAt of [
+    "2026-08-06T07:00:00.12Z",
+    "2026-08-06T07:00:00.123456Z",
+    "2026-08-06T07:00:00.123456789Z",
+  ]) {
     const observation = validateAuditCandidate({
       ...completedCandidate(),
       occurred_at: occurredAt,
@@ -1085,4 +1089,14 @@ test("accepts RFC3339 fractional precision for trusted recovery observations", a
       }),
     (error: unknown) => error instanceof AuditError && error.code === "audit_candidate_invalid",
   );
+
+  for (const occurredAt of [
+    "2026-08-06T07:00:00.1234567890Z",
+    `2026-08-06T07:00:00.${"1".repeat(100_000)}Z`,
+  ]) {
+    assert.throws(
+      () => validateAuditCandidate({ ...completedCandidate(), occurred_at: occurredAt }),
+      (error: unknown) => error instanceof AuditError && error.code === "audit_candidate_invalid",
+    );
+  }
 });

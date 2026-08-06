@@ -3,6 +3,7 @@ import {
   AuditError,
   type AuditCandidate,
   type AuditEventType,
+  isValidAuditTimestamp,
   requiredParentTypes,
   validateAuditCandidate,
 } from "./contract.js";
@@ -277,7 +278,6 @@ export async function recordAfterProviderStart(
 }
 
 const REF = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
-const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 function validateRecoveryFactShape(fact: RecoveryFact): RecoveryFact {
@@ -310,8 +310,7 @@ function validateRecoveryFactShape(fact: RecoveryFact): RecoveryFact {
     !boundedRef(fact.execution_ref) ||
     !boundedRef(fact.original_observation_parent_event_ref) ||
     (fact.event_type !== "execution.started.v1" && fact.event_type !== "execution.completed.v1") ||
-    !ISO_UTC.test(fact.original_observed_at) ||
-    !Number.isFinite(Date.parse(fact.original_observed_at)) ||
+    !isValidAuditTimestamp(fact.original_observed_at) ||
     !DIGEST.test(fact.plan_digest) ||
     !Number.isInteger(fact.attempt) ||
     fact.attempt < 1 ||

@@ -378,6 +378,20 @@ const REF = z
   .max(128)
   .regex(/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/);
 const DIGEST = z.string().regex(/^sha256:[0-9a-f]{64}$/);
+const AUDIT_TIMESTAMP_MAX_FRACTIONAL_DIGITS = 9;
+const AUDIT_TIMESTAMP_MAX_LENGTH = 21 + AUDIT_TIMESTAMP_MAX_FRACTIONAL_DIGITS;
+const AUDIT_TIMESTAMP_PATTERN = new RegExp(
+  String.raw`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,${AUDIT_TIMESTAMP_MAX_FRACTIONAL_DIGITS}})?Z$`,
+);
+const auditTimestampSchema = z.iso
+  .datetime({ offset: true })
+  .max(AUDIT_TIMESTAMP_MAX_LENGTH)
+  .regex(AUDIT_TIMESTAMP_PATTERN);
+
+export function isValidAuditTimestamp(value: unknown): value is string {
+  return auditTimestampSchema.safeParse(value).success;
+}
+
 const REASON = z.enum([
   "accepted",
   "policy_allow",
@@ -412,7 +426,7 @@ const candidateSchema = z
     audit_candidate_version: z.literal(1),
     event_id: REF,
     event_type: z.enum(AUDIT_EVENT_TYPES),
-    occurred_at: z.iso.datetime({ offset: true }).regex(/Z$/),
+    occurred_at: z.string().refine(isValidAuditTimestamp),
     producer: z.object({ component_ref: REF, instance_ref: REF }).strict(),
     correlation: correlationSchema,
     causation: z.object({ parent_event_refs: z.array(REF).max(8) }).strict(),
@@ -536,7 +550,7 @@ const protectedEventSchema = candidateSchema
   .extend({
     audit_event_version: z.literal(1),
     classification: z.enum(["operational", "protected", "restricted"]),
-    committed_at: z.iso.datetime({ offset: true }).regex(/Z$/),
+    committed_at: z.string().refine(isValidAuditTimestamp),
     payload: z.object({ schema_ref: REF, value: z.unknown() }).strict(),
     integrity: z
       .object({
