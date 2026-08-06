@@ -355,7 +355,7 @@ pending. Later importer denial, unavailability, invalid receipts, or duplicate
 conflict also leaves the fact pending. A crash is resolved only by the table
 above and never causes importer or provider retry. Replay and transaction
 completion are idempotent. The first implementation bounds one replay pass to
-1,000 facts, 8 MiB of input, and 30 seconds from an injected monotonic clock.
+580 facts, 8 MiB of input, and 30 seconds from an injected monotonic clock.
 
 ### Local checkpoint authority
 
@@ -400,8 +400,8 @@ The fixed first-profile limits are:
 | completed export artifacts | 32 MiB |
 | temporary bytes | 16 MiB |
 | streams | 64 |
-| pending recovery facts | 1,000 |
-| total recovery identities in all lifecycle states | 1,000 |
+| pending recovery facts | 580 |
+| total recovery identities in all lifecycle states | 580 |
 | total event identities in all lifecycle states | 8,192 |
 
 Limits include filesystem record bytes, not only payload bytes. Primary append
@@ -411,6 +411,10 @@ admission accounts for the pending record and reserves space under the same
 needed to acknowledge and compact that recovery ID. Acknowledgement cannot
 consume that reservation. Retention admission likewise reserves all identity
 versions, manifests, and terminal-control evidence before recording `admitted`.
+The 580-recovery-identity ceiling is derived conservatively from the 8 MiB cap:
+for every identity it reserves one 4 KiB pending record, one 4 KiB
+acknowledgement record, and three 2 KiB identity versions for append,
+acknowledgement, and compaction (14 KiB total).
 At 90% of any byte or count limit health becomes `degraded` and new export work
 is denied. At the limit, or when free space cannot cover the maximum next record
 plus its temporary copy, health becomes `failed`; pre-effect commits and new
