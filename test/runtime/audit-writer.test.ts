@@ -901,7 +901,7 @@ test("journals one bounded fact after start, withholds success, and never retrie
     candidate: {
       ...completedCandidate(),
       payload: { ...completedCandidate().payload, raw_prompt: "forbidden" },
-    } as unknown as AuditCandidate,
+    },
     writer: {
       commit: async () => {
         invalidCandidateWriterCalls += 1;
@@ -924,12 +924,43 @@ test("journals one bounded fact after start, withholds success, and never retrie
   assert.equal(invalidCandidateWriterCalls, 0);
   assert.equal(invalidCandidateJournalCalls, 1);
 
+  const unrelatedObservation = validateAuditCandidate({
+    ...completedCandidate(),
+    event_id: "event.unrelated-completed",
+  });
+  const unrelatedRecoveryFact = createRecoveryFact("recovery.unrelated", unrelatedObservation);
+  let unrelatedJournalCalls = 0;
+  const unrelatedSubstitution = await recordAfterProviderStart({
+    candidate: {
+      ...completedCandidate(),
+      producer: { ...completedCandidate().producer, unexpected: "invalid-outside-binding" },
+    },
+    writer: {
+      commit: async () => {
+        throw new Error("invalid candidate must not reach the writer");
+      },
+    },
+    recoveryFact: unrelatedRecoveryFact,
+    journal: {
+      append: async () => {
+        unrelatedJournalCalls += 1;
+        return { durability: "durable" };
+      },
+    },
+  });
+  assert.deepEqual(unrelatedSubstitution, {
+    status: "withheld",
+    code: "operation_outcome_unknown",
+    recovery: "journal_unavailable",
+  });
+  assert.equal(unrelatedJournalCalls, 0);
+
   let forgedJournalCalls = 0;
   const forged = await recordAfterProviderStart({
     candidate: {
       ...completedCandidate(),
       payload: { ...completedCandidate().payload, raw_prompt: "forbidden" },
-    } as unknown as AuditCandidate,
+    },
     writer: {
       commit: async () => {
         throw new Error("invalid candidate must not reach the writer");
@@ -1042,6 +1073,82 @@ test("journals one bounded fact after start, withholds success, and never retrie
       recovery: "journal_unavailable",
     });
     assert.equal(journalCallsForSubstitution, 0);
+  }
+
+  const invalidBindings: readonly unknown[] = [
+    {
+      ...completedCandidate(),
+      event_id: `event.${"x".repeat(123)}`,
+    },
+    {
+      ...completedCandidate(),
+      occurred_at: `2026-08-06T07:00:00.${"1".repeat(100_000)}Z`,
+    },
+    {
+      ...completedCandidate(),
+      correlation: {
+        ...completedCandidate().correlation,
+        execution_ref: `execution.${"x".repeat(119)}`,
+      },
+    },
+    {
+      ...completedCandidate(),
+      payload: {
+        ...completedCandidate().payload,
+        plan_digest: `sha256:${"1".repeat(65)}`,
+      },
+    },
+    {
+      ...completedCandidate(),
+      payload: {
+        ...completedCandidate().payload,
+        attempt: 17,
+      },
+    },
+    {
+      ...completedCandidate(),
+      payload: {
+        ...completedCandidate().payload,
+        result: "provider_body",
+      },
+    },
+    {
+      ...completedCandidate(),
+      outcome: {
+        status: "completed",
+        reason_codes: ["no_effect_proven"],
+      },
+    },
+    {
+      ...completedCandidate(),
+      causation: {
+        parent_event_refs: [`event.${"x".repeat(123)}`],
+      },
+    },
+  ];
+  for (const invalidBinding of invalidBindings) {
+    let malformedJournalCalls = 0;
+    const malformed = await recordAfterProviderStart({
+      candidate: invalidBinding,
+      writer: {
+        commit: async () => {
+          throw new Error("invalid candidate must not reach the writer");
+        },
+      },
+      recoveryFact,
+      journal: {
+        append: async () => {
+          malformedJournalCalls += 1;
+          return { durability: "durable" };
+        },
+      },
+    });
+    assert.deepEqual(malformed, {
+      status: "withheld",
+      code: "operation_outcome_unknown",
+      recovery: "journal_unavailable",
+    });
+    assert.equal(malformedJournalCalls, 0);
   }
 });
 

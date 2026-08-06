@@ -40,7 +40,10 @@ observation event binding/time. It separately records `completion_unknown` as
 the withheld result and never retries provider work. Recovery facts must be
 created with `createRecoveryFact` from a separately validated
 `execution.started.v1` or `execution.completed.v1` observation; unbound facts
-and non-execution candidates never reach the journal.
+and non-execution candidates never reach the journal. If full candidate
+validation fails, recovery accepts only a strictly bounded execution binding
+(observation identity/time, correlation, parent, plan digest, attempt, and
+outcome) and requires it to exactly match the factory-branded fact.
 
 ## Integrity limits
 

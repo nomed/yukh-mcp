@@ -218,7 +218,7 @@ export async function commitBeforeProviderStart<T>(
 
 export async function recordAfterProviderStart(
   options: Readonly<{
-    candidate: AuditCandidate;
+    candidate: unknown;
     writer: RequiredAuditWriter;
     recoveryFact: RecoveryFact;
     journal: RecoveryJournal;
@@ -231,10 +231,14 @@ export async function recordAfterProviderStart(
       recovery: "journaled" | "journal_unavailable";
     }>
 > {
-  let candidate: AuditCandidate | undefined;
-  let recoveryAllowed = false;
+  let recoveryBinding: RecoverableBinding | undefined;
   try {
-    candidate = validateAuditCandidate(options.candidate);
+    recoveryBinding = parseRecoverableBinding(options.candidate);
+  } catch {
+    // Only a complete bounded binding may authorize the closed recovery path.
+  }
+  try {
+    const candidate = validateAuditCandidate(options.candidate);
     if (AUDIT_REGISTRY[candidate.event_type].durability !== "required_post_start") {
       throw new AuditError("audit_unavailable");
     }
@@ -246,18 +250,10 @@ export async function recordAfterProviderStart(
     // The closed recovery fact, not the rejected candidate or error, crosses this boundary.
   }
   try {
-    if (candidate === undefined) {
-      recoveryAllowed = true;
-    } else if (
-      candidate.event_type === "execution.started.v1" ||
-      candidate.event_type === "execution.completed.v1"
-    ) {
-      assertRecoveryBinding(options.recoveryFact, candidate);
-      recoveryAllowed = true;
-    }
-    if (!recoveryAllowed || !recoveryFacts.has(options.recoveryFact)) {
+    if (recoveryBinding === undefined || !recoveryFacts.has(options.recoveryFact)) {
       throw new AuditError("audit_candidate_invalid");
     }
+    assertRecoveryBinding(options.recoveryFact, recoveryBinding);
     const fact = validateRecoveryFactShape(options.recoveryFact);
     const receipt = await options.journal.append(fact);
     if (receipt.durability === "durable") {
@@ -279,6 +275,125 @@ export async function recordAfterProviderStart(
 
 const REF = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
+const RECOVERY_OUTCOMES = [
+  "effect_observed",
+  "no_effect_proven",
+  "partial_effect",
+  "completion_unknown",
+] as const;
+type RecoveryOutcome = (typeof RECOVERY_OUTCOMES)[number];
+
+interface RecoverableBinding {
+  readonly event_id: string;
+  readonly event_type: "execution.started.v1" | "execution.completed.v1";
+  readonly occurred_at: string;
+  readonly parent_event_ref: string;
+  readonly trace_ref: string;
+  readonly request_ref: string;
+  readonly execution_ref: string;
+  readonly plan_digest: string;
+  readonly attempt: number;
+  readonly observed_outcome: RecoveryOutcome;
+}
+
+function parseRecoverableBinding(value: unknown): RecoverableBinding {
+  if (!isRecord(value)) throw new AuditError("audit_candidate_invalid");
+  const eventType = readOwn(value, "event_type");
+  if (eventType !== "execution.started.v1" && eventType !== "execution.completed.v1") {
+    throw new AuditError("audit_candidate_invalid");
+  }
+  const correlation = readOwn(value, "correlation");
+  const causation = readOwn(value, "causation");
+  const payload = readOwn(value, "payload");
+  const outcome = readOwn(value, "outcome");
+  if (!isRecord(correlation) || !isRecord(causation) || !isRecord(payload) || !isRecord(outcome)) {
+    throw new AuditError("audit_candidate_invalid");
+  }
+  const parentEventRefs = readOwn(causation, "parent_event_refs");
+  const reasonCodes = readOwn(outcome, "reason_codes");
+  if (
+    !Array.isArray(parentEventRefs) ||
+    parentEventRefs.length !== 1 ||
+    !Object.hasOwn(parentEventRefs, 0) ||
+    !Array.isArray(reasonCodes) ||
+    reasonCodes.length !== 1 ||
+    !Object.hasOwn(reasonCodes, 0)
+  ) {
+    throw new AuditError("audit_candidate_invalid");
+  }
+
+  const result =
+    eventType === "execution.completed.v1"
+      ? parseRecoveryOutcome(readOwn(payload, "result"))
+      : "completion_unknown";
+  if (
+    (eventType === "execution.started.v1" &&
+      (readOwn(outcome, "status") !== "started" || reasonCodes[0] !== "provider_started")) ||
+    (eventType === "execution.completed.v1" &&
+      (readOwn(outcome, "status") !== "completed" || reasonCodes[0] !== result))
+  ) {
+    throw new AuditError("audit_candidate_invalid");
+  }
+
+  return {
+    event_id: parseBoundedRef(readOwn(value, "event_id")),
+    event_type: eventType,
+    occurred_at: parseAuditTimestamp(readOwn(value, "occurred_at")),
+    parent_event_ref: parseBoundedRef(parentEventRefs[0]),
+    trace_ref: parseBoundedRef(readOwn(correlation, "trace_ref")),
+    request_ref: parseBoundedRef(readOwn(correlation, "request_ref")),
+    execution_ref: parseBoundedRef(readOwn(correlation, "execution_ref")),
+    plan_digest: parseDigest(readOwn(payload, "plan_digest")),
+    attempt: parseAttempt(readOwn(payload, "attempt")),
+    observed_outcome: result,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function readOwn(record: Record<string, unknown>, key: string): unknown {
+  if (!Object.hasOwn(record, key)) throw new AuditError("audit_candidate_invalid");
+  return record[key];
+}
+
+function parseBoundedRef(value: unknown): string {
+  if (typeof value !== "string" || value.length > 128 || !REF.test(value)) {
+    throw new AuditError("audit_candidate_invalid");
+  }
+  return value;
+}
+
+function parseDigest(value: unknown): string {
+  if (typeof value !== "string" || value.length !== 71 || !DIGEST.test(value)) {
+    throw new AuditError("audit_candidate_invalid");
+  }
+  return value;
+}
+
+function parseAttempt(value: unknown): number {
+  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 16) {
+    throw new AuditError("audit_candidate_invalid");
+  }
+  return value as number;
+}
+
+function parseAuditTimestamp(value: unknown): string {
+  if (typeof value !== "string" || value.length > 30 || !isValidAuditTimestamp(value)) {
+    throw new AuditError("audit_candidate_invalid");
+  }
+  return value;
+}
+
+function parseRecoveryOutcome(value: unknown): RecoveryOutcome {
+  if (!RECOVERY_OUTCOMES.some((outcome) => outcome === value)) {
+    throw new AuditError("audit_candidate_invalid");
+  }
+  return value as RecoveryOutcome;
+}
 
 function validateRecoveryFactShape(fact: RecoveryFact): RecoveryFact {
   const keys = Object.keys(fact).sort();
@@ -317,6 +432,7 @@ function validateRecoveryFactShape(fact: RecoveryFact): RecoveryFact {
     fact.attempt > 16 ||
     fact.cause !== "primary_writer_failed_after_provider_start" ||
     fact.withheld_outcome !== "completion_unknown" ||
+    !RECOVERY_OUTCOMES.includes(fact.observed_outcome) ||
     (fact.event_type === "execution.started.v1" && fact.observed_outcome !== "completion_unknown")
   ) {
     throw new AuditError("audit_candidate_invalid");
@@ -339,23 +455,18 @@ function validateRecoveryFactShape(fact: RecoveryFact): RecoveryFact {
   };
 }
 
-function assertRecoveryBinding(fact: RecoveryFact, execution: AuditCandidate): void {
+function assertRecoveryBinding(fact: RecoveryFact, binding: RecoverableBinding): void {
   if (
-    (execution.event_type !== "execution.started.v1" &&
-      execution.event_type !== "execution.completed.v1") ||
-    fact.event_id !== execution.event_id ||
-    fact.event_type !== execution.event_type ||
-    fact.original_observed_at !== execution.occurred_at ||
-    fact.original_observation_parent_event_ref !== execution.causation.parent_event_refs[0] ||
-    fact.trace_ref !== execution.correlation.trace_ref ||
-    fact.request_ref !== execution.correlation.request_ref ||
-    fact.execution_ref !== execution.correlation.execution_ref ||
-    fact.plan_digest !== execution.payload.plan_digest ||
-    fact.attempt !== execution.payload.attempt ||
-    fact.observed_outcome !==
-      (execution.event_type === "execution.completed.v1"
-        ? execution.payload.result
-        : "completion_unknown")
+    fact.event_id !== binding.event_id ||
+    fact.event_type !== binding.event_type ||
+    fact.original_observed_at !== binding.occurred_at ||
+    fact.original_observation_parent_event_ref !== binding.parent_event_ref ||
+    fact.trace_ref !== binding.trace_ref ||
+    fact.request_ref !== binding.request_ref ||
+    fact.execution_ref !== binding.execution_ref ||
+    fact.plan_digest !== binding.plan_digest ||
+    fact.attempt !== binding.attempt ||
+    fact.observed_outcome !== binding.observed_outcome
   ) {
     throw new AuditError("audit_candidate_invalid");
   }
