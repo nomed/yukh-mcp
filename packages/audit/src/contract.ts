@@ -53,6 +53,8 @@ export interface AuditPayloadByEventType {
     attribute_snapshot_ref: string;
     attribute_snapshot_digest: string;
     evaluator_ref: string;
+    authorization_phase: "planning" | "apply";
+    plan_digest: string | null;
   }>;
   readonly "authorization.decision_recorded.v1": Readonly<{
     request_digest: string;
@@ -61,10 +63,14 @@ export interface AuditPayloadByEventType {
     basis: "explicit" | "default" | "error" | "indeterminate";
     policy_revision_ref: string;
     policy_digest: string;
+    authorization_phase: "planning" | "apply";
+    plan_digest: string | null;
   }>;
   readonly "authorization.enforcement_recorded.v1": Readonly<{
     decision_digest: string;
     enforcement_result: "enforced" | "denied";
+    authorization_phase: "planning" | "apply";
+    plan_digest: string | null;
   }>;
   readonly "plan.created.v1": Readonly<{
     plan_digest: string;
@@ -244,7 +250,7 @@ export const AUDIT_REGISTRY = {
     statuses: ["accepted"],
     reasonCodes: ["accepted"],
     requiredCorrelation: authorization,
-    optionalCorrelation: [],
+    optionalCorrelation: ["plan_ref", "approval_ref"],
     requiredParentTypes: ["request.accepted.v1"],
   },
   "authorization.decision_recorded.v1": {
@@ -257,7 +263,7 @@ export const AUDIT_REGISTRY = {
     statuses: ["allowed", "denied"],
     reasonCodes: ["policy_allow", "policy_deny"],
     requiredCorrelation: decision,
-    optionalCorrelation: [],
+    optionalCorrelation: ["plan_ref", "approval_ref"],
     requiredParentTypes: ["authorization.evaluation_recorded.v1"],
   },
   "authorization.enforcement_recorded.v1": {
@@ -270,7 +276,7 @@ export const AUDIT_REGISTRY = {
     statuses: ["allowed", "denied"],
     reasonCodes: ["enforced", "policy_deny"],
     requiredCorrelation: decision,
-    optionalCorrelation: [],
+    optionalCorrelation: ["plan_ref", "approval_ref"],
     requiredParentTypes: ["authorization.decision_recorded.v1"],
   },
   "plan.created.v1": {
@@ -469,6 +475,8 @@ const payloadSchemas = {
       attribute_snapshot_ref: REF,
       attribute_snapshot_digest: DIGEST,
       evaluator_ref: REF,
+      authorization_phase: z.enum(["planning", "apply"]),
+      plan_digest: DIGEST.nullable(),
     })
     .strict(),
   "authorization.decision_recorded.v1": z
@@ -479,10 +487,17 @@ const payloadSchemas = {
       basis: z.enum(["explicit", "default", "error", "indeterminate"]),
       policy_revision_ref: REF,
       policy_digest: DIGEST,
+      authorization_phase: z.enum(["planning", "apply"]),
+      plan_digest: DIGEST.nullable(),
     })
     .strict(),
   "authorization.enforcement_recorded.v1": z
-    .object({ decision_digest: DIGEST, enforcement_result: z.enum(["enforced", "denied"]) })
+    .object({
+      decision_digest: DIGEST,
+      enforcement_result: z.enum(["enforced", "denied"]),
+      authorization_phase: z.enum(["planning", "apply"]),
+      plan_digest: DIGEST.nullable(),
+    })
     .strict(),
   "plan.created.v1": z
     .object({
@@ -538,6 +553,14 @@ const protectedEventSchema = candidateSchema
 
 export function requiredParentTypes(candidate: AuditCandidate): readonly AuditEventType[] {
   const registered = AUDIT_REGISTRY[candidate.event_type].requiredParentTypes;
+  if (
+    candidate.event_type === "authorization.evaluation_recorded.v1" &&
+    candidate.payload.authorization_phase === "apply"
+  ) {
+    return candidate.correlation.approval_ref === null
+      ? [...registered, "plan.created.v1"]
+      : [...registered, "plan.created.v1", "approval.approved.v1"];
+  }
   return candidate.event_type === "apply.admitted.v1" && candidate.correlation.approval_ref !== null
     ? [...registered, "approval.approved.v1"]
     : registered;
@@ -571,6 +594,18 @@ export function validateAuditCandidate(value: unknown): AuditCandidate {
     }
   }
   const parsed = { ...base.data, payload: payload.data } as AuditCandidate;
+  if (
+    (parsed.event_type === "authorization.evaluation_recorded.v1" ||
+      parsed.event_type === "authorization.decision_recorded.v1" ||
+      parsed.event_type === "authorization.enforcement_recorded.v1") &&
+    (parsed.payload.authorization_phase === "planning"
+      ? parsed.payload.plan_digest !== null ||
+        parsed.correlation.plan_ref !== null ||
+        parsed.correlation.approval_ref !== null
+      : parsed.payload.plan_digest === null || parsed.correlation.plan_ref === null)
+  ) {
+    throw new AuditError("audit_candidate_invalid");
+  }
   const parents = requiredParentTypes(parsed);
   if (
     parsed.causation.parent_event_refs.length !== parents.length ||
@@ -587,8 +622,10 @@ export function validateAuditCandidate(value: unknown): AuditCandidate {
   if (
     (parsed.event_type === "authorization.decision_recorded.v1" &&
       (parsed.outcome.status !== (parsed.payload.effect === "allow" ? "allowed" : "denied") ||
+        parsed.outcome.reason_codes.length !== 1 ||
         parsed.outcome.reason_codes[0] !==
-          (parsed.payload.effect === "allow" ? "policy_allow" : "policy_deny"))) ||
+          (parsed.payload.effect === "allow" ? "policy_allow" : "policy_deny") ||
+        (parsed.payload.effect === "allow" && parsed.payload.basis !== "explicit"))) ||
     (parsed.event_type === "authorization.enforcement_recorded.v1" &&
       (parsed.outcome.status !==
         (parsed.payload.enforcement_result === "enforced" ? "allowed" : "denied") ||

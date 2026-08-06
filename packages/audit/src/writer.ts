@@ -63,15 +63,21 @@ export function computeAuditEventHash(
 }
 
 function sameOperation(parent: ProtectedAuditEvent, candidate: AuditCandidate): boolean {
-  const correlationKeys = [
-    "trace_ref",
-    "request_ref",
-    "authorization_request_ref",
-    "authorization_decision_ref",
-    "plan_ref",
-    "approval_ref",
-    "execution_ref",
-  ] as const;
+  const correlationKeys =
+    (candidate.event_type === "apply.admitted.v1" ||
+      (candidate.event_type === "authorization.evaluation_recorded.v1" &&
+        candidate.payload.authorization_phase === "apply")) &&
+    (parent.event_type === "plan.created.v1" || parent.event_type === "approval.approved.v1")
+      ? (["trace_ref", "request_ref", "plan_ref", "approval_ref"] as const)
+      : ([
+          "trace_ref",
+          "request_ref",
+          "authorization_request_ref",
+          "authorization_decision_ref",
+          "plan_ref",
+          "approval_ref",
+          "execution_ref",
+        ] as const);
   return (
     correlationKeys.every(
       (key) =>
@@ -115,19 +121,33 @@ function payloadBindingsMatch(
     case "audit.stream_opened.v1":
     case "request.accepted.v1":
       return true;
-    case "authorization.evaluation_recorded.v1":
-      return child.request_digest === value(parent(parents, "request.accepted.v1")).request_digest;
-    case "authorization.decision_recorded.v1":
+    case "authorization.evaluation_recorded.v1": {
+      if (child.request_digest !== value(parent(parents, "request.accepted.v1")).request_digest) {
+        return false;
+      }
+      if (child.authorization_phase === "planning") return child.plan_digest === null;
       return (
-        child.request_digest ===
-        value(parent(parents, "authorization.evaluation_recorded.v1")).request_digest
+        child.plan_digest === value(parent(parents, "plan.created.v1")).plan_digest &&
+        (candidate.correlation.approval_ref === null ||
+          child.plan_digest === value(parent(parents, "approval.approved.v1")).plan_digest)
       );
+    }
+    case "authorization.decision_recorded.v1": {
+      const evaluation = value(parent(parents, "authorization.evaluation_recorded.v1"));
+      return (
+        child.request_digest === evaluation.request_digest &&
+        child.authorization_phase === evaluation.authorization_phase &&
+        child.plan_digest === evaluation.plan_digest
+      );
+    }
     case "authorization.enforcement_recorded.v1": {
       const decision = value(parent(parents, "authorization.decision_recorded.v1"));
       return (
         child.decision_digest === decision.decision_digest &&
+        child.authorization_phase === decision.authorization_phase &&
+        child.plan_digest === decision.plan_digest &&
         (child.enforcement_result === "enforced"
-          ? decision.effect === "allow"
+          ? decision.effect === "allow" && decision.basis === "explicit"
           : decision.effect === "deny")
       );
     }
@@ -135,6 +155,8 @@ function payloadBindingsMatch(
       const enforcement = value(parent(parents, "authorization.enforcement_recorded.v1"));
       return (
         enforcement.enforcement_result === "enforced" &&
+        enforcement.authorization_phase === "planning" &&
+        enforcement.plan_digest === null &&
         child.authorization_decision_digest === enforcement.decision_digest
       );
     }
@@ -149,6 +171,8 @@ function payloadBindingsMatch(
       const enforcement = value(parent(parents, "authorization.enforcement_recorded.v1"));
       return (
         enforcement.enforcement_result === "enforced" &&
+        enforcement.authorization_phase === "apply" &&
+        enforcement.plan_digest === child.plan_digest &&
         child.plan_digest === value(parent(parents, "plan.created.v1")).plan_digest &&
         child.fresh_authorization_decision_digest === enforcement.decision_digest &&
         (candidate.correlation.approval_ref === null ||
@@ -442,7 +466,8 @@ export function verifyAuditStream(events: readonly ProtectedAuditEvent[]): Reado
       event.integrity.algorithm !== "sha256_chain_v1" ||
       event.classification !== AUDIT_REGISTRY[candidate.event_type].classification ||
       event.payload.schema_ref !== AUDIT_REGISTRY[candidate.event_type].schemaRef ||
-      (index === 0 && event.event_type !== "audit.stream_opened.v1")
+      (index === 0 && event.event_type !== "audit.stream_opened.v1") ||
+      (index !== 0 && event.event_type === "audit.stream_opened.v1")
     ) {
       return {
         valid: false,

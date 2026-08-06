@@ -17,6 +17,7 @@ import {
   AuditWriter,
   InMemoryAuditStore,
   canonicalAuditJson,
+  computeAuditEventHash,
   verifyAuditStream,
   type AuditCommitReceipt,
 } from "../../packages/audit/src/writer.js";
@@ -25,6 +26,7 @@ const D1 = `sha256:${"1".repeat(64)}`;
 const D2 = `sha256:${"2".repeat(64)}`;
 const D3 = `sha256:${"3".repeat(64)}`;
 const D4 = `sha256:${"4".repeat(64)}`;
+const D5 = `sha256:${"5".repeat(64)}`;
 const NULL_CORRELATION = {
   trace_ref: null,
   request_ref: null,
@@ -114,6 +116,8 @@ function evaluationCandidate(): AuditCandidate {
       attribute_snapshot_ref: "attributes.test",
       attribute_snapshot_digest: D2,
       evaluator_ref: "evaluator.test",
+      authorization_phase: "planning",
+      plan_digest: null,
     },
   });
 }
@@ -138,6 +142,8 @@ function authCandidate(): AuditCandidate {
       basis: "explicit",
       policy_revision_ref: "policy.test",
       policy_digest: D2,
+      authorization_phase: "planning",
+      plan_digest: null,
     },
   });
 }
@@ -149,7 +155,64 @@ function enforcementCandidate(): AuditCandidate {
     correlation: authCandidate().correlation,
     causation: { parent_event_refs: ["event.authorization"] },
     outcome: { status: "allowed", reason_codes: ["enforced"] },
-    payload: { decision_digest: D4, enforcement_result: "enforced" },
+    payload: {
+      decision_digest: D4,
+      enforcement_result: "enforced",
+      authorization_phase: "planning",
+      plan_digest: null,
+    },
+  });
+}
+
+function freshEvaluationCandidate(): AuditCandidate {
+  return validateAuditCandidate({
+    ...evaluationCandidate(),
+    event_id: "event.fresh-evaluation",
+    correlation: {
+      ...evaluationCandidate().correlation,
+      authorization_request_ref: "auth-request.fresh",
+      plan_ref: "plan.test",
+      approval_ref: "approval.test",
+    },
+    causation: { parent_event_refs: ["event.request", "event.plan", "event.approval"] },
+    payload: {
+      ...evaluationCandidate().payload,
+      authorization_phase: "apply",
+      plan_digest: D1,
+    },
+  });
+}
+
+function freshAuthCandidate(): AuditCandidate {
+  return validateAuditCandidate({
+    ...authCandidate(),
+    event_id: "event.fresh-authorization",
+    correlation: {
+      ...freshEvaluationCandidate().correlation,
+      authorization_decision_ref: "auth-decision.fresh",
+    },
+    causation: { parent_event_refs: ["event.fresh-evaluation"] },
+    payload: {
+      ...authCandidate().payload,
+      decision_digest: D5,
+      authorization_phase: "apply",
+      plan_digest: D1,
+    },
+  });
+}
+
+function freshEnforcementCandidate(): AuditCandidate {
+  return validateAuditCandidate({
+    ...enforcementCandidate(),
+    event_id: "event.fresh-enforcement",
+    correlation: freshAuthCandidate().correlation,
+    causation: { parent_event_refs: ["event.fresh-authorization"] },
+    payload: {
+      decision_digest: D5,
+      enforcement_result: "enforced",
+      authorization_phase: "apply",
+      plan_digest: D1,
+    },
   });
 }
 
@@ -202,16 +265,18 @@ function applyCandidate(): AuditCandidate {
     event_type: "apply.admitted.v1",
     correlation: {
       ...approvalCandidate().correlation,
+      authorization_request_ref: "auth-request.fresh",
+      authorization_decision_ref: "auth-decision.fresh",
       approval_ref: "approval.test",
       execution_ref: "execution.test",
     },
     causation: {
-      parent_event_refs: ["event.enforcement", "event.plan", "event.approval"],
+      parent_event_refs: ["event.fresh-enforcement", "event.plan", "event.approval"],
     },
     outcome: { status: "admitted", reason_codes: ["apply_admitted"] },
     payload: {
       plan_digest: D1,
-      fresh_authorization_decision_digest: D4,
+      fresh_authorization_decision_digest: D5,
     },
   });
 }
@@ -258,6 +323,9 @@ function preEffectCandidates(): readonly AuditCandidate[] {
     planCandidate(),
     approvalRequestedCandidate(),
     approvalCandidate(),
+    freshEvaluationCandidate(),
+    freshAuthCandidate(),
+    freshEnforcementCandidate(),
     applyCandidate(),
     reservedCandidate(),
   ];
@@ -280,6 +348,9 @@ async function committedChain() {
     planCandidate(),
     approvalRequestedCandidate(),
     approvalCandidate(),
+    freshEvaluationCandidate(),
+    freshAuthCandidate(),
+    freshEnforcementCandidate(),
     applyCandidate(),
     reservedCandidate(),
     startedCandidate(),
@@ -373,12 +444,15 @@ test("rejects malformed versions, references, correlation, and unbounded attempt
   const cases = [
     { ...candidate(), audit_candidate_version: 2 },
     { ...candidate(), event_type: "request.accepted.v2" },
-    { ...candidate(), occurred_at: "2026-08-06T09:00:00.000+02:00" },
     {
       ...candidate(),
       correlation: { ...candidate().correlation, request_ref: "contains whitespace" },
     },
     { ...candidate(), occurred_at: "2026-08-06T09:00:00.000+02:00" },
+    {
+      ...authCandidate(),
+      payload: { ...authCandidate().payload, basis: "error" },
+    },
     {
       ...candidate(),
       outcome: { status: "accepted", reason_codes: ["accepted", "accepted"] },
@@ -393,11 +467,45 @@ test("rejects malformed versions, references, correlation, and unbounded attempt
   }
 });
 
+test("rejects every non-explicit allow before provider invocation", async () => {
+  for (const basis of ["default", "error", "indeterminate"] as const) {
+    const nonExplicitAllow = {
+      ...authCandidate(),
+      payload: { ...authCandidate().payload, basis },
+    } as AuditCandidate;
+    assert.throws(
+      () => validateAuditCandidate(nonExplicitAllow),
+      (error: unknown) => error instanceof AuditError && error.code === "audit_candidate_invalid",
+    );
+
+    let starts = 0;
+    let commits = 0;
+    const result = await commitBeforeProviderStart({
+      candidates: preEffectCandidates().map((item) =>
+        item.event_id === "event.authorization" ? nonExplicitAllow : item,
+      ),
+      writer: {
+        commit: async () => {
+          commits += 1;
+          throw new Error("invalid authorization must not reach the writer");
+        },
+      },
+      startProvider: async () => {
+        starts += 1;
+        return "started";
+      },
+    });
+    assert.deepEqual(result, { status: "denied", code: "audit_unavailable" });
+    assert.equal(commits, 0);
+    assert.equal(starts, 0);
+  }
+});
+
 test("assigns deterministic per-stream order and verifies the retained chain", async () => {
   const { events } = await committedChain();
   assert.deepEqual(
     events.map((event) => event.integrity.sequence),
-    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
   );
   assert.equal(events[0]?.integrity.previous_event_hash, AUDIT_GENESIS_HASH);
   assert.equal(events[0]?.classification, "operational");
@@ -500,6 +608,7 @@ test("prevents a denied authorization from causing enforcement or planning", asy
     streamRef: "stream.denied",
     writerRef: "writer.test",
   });
+
   await writer.commit(streamCandidate());
   await writer.commit(candidate());
   await writer.commit(evaluationCandidate());
@@ -514,6 +623,68 @@ test("prevents a denied authorization from causing enforcement or planning", asy
     writer.commit(enforcementCandidate()),
     (error: unknown) => error instanceof AuditError && error.code === "audit_causation_invalid",
   );
+});
+
+test("binds planning to its decision and rejects stale planning authorization at apply", async () => {
+  const store = new InMemoryAuditStore();
+  const writer = new AuditWriter({
+    store,
+    streamRef: "stream.stale-apply",
+    writerRef: "writer.test",
+  });
+  for (const item of [
+    streamCandidate(),
+    candidate(),
+    evaluationCandidate(),
+    authCandidate(),
+    enforcementCandidate(),
+    planCandidate(),
+  ]) {
+    await writer.commit(item);
+  }
+  await assert.rejects(
+    writer.commit(freshEvaluationCandidate()),
+    (error: unknown) => error instanceof AuditError && error.code === "audit_causation_invalid",
+  );
+  await writer.commit(approvalRequestedCandidate());
+  await writer.commit(approvalCandidate());
+
+  const staleAdmission = validateAuditCandidate({
+    ...applyCandidate(),
+    event_id: "event.stale-apply",
+    correlation: {
+      ...applyCandidate().correlation,
+      authorization_request_ref: "auth-request.test",
+      authorization_decision_ref: "auth-decision.test",
+    },
+    causation: { parent_event_refs: ["event.enforcement", "event.plan", "event.approval"] },
+    payload: {
+      ...applyCandidate().payload,
+      fresh_authorization_decision_digest: D4,
+    },
+  });
+  await assert.rejects(
+    writer.commit(staleAdmission),
+    (error: unknown) => error instanceof AuditError && error.code === "audit_causation_invalid",
+  );
+
+  let starts = 0;
+  const staleLifecycle = await commitBeforeProviderStart({
+    candidates: preEffectCandidates().map((item) =>
+      item.event_id === "event.apply" ? staleAdmission : item,
+    ),
+    writer: {
+      commit: async () => {
+        throw new Error("stale authorization must fail before commit");
+      },
+    },
+    startProvider: async () => {
+      starts += 1;
+      return "started";
+    },
+  });
+  assert.deepEqual(staleLifecycle, { status: "denied", code: "audit_unavailable" });
+  assert.equal(starts, 0);
 });
 
 test("detects mutation, deletion, reorder, reset, and cross-stream substitution", async () => {
@@ -565,6 +736,33 @@ test("detects mutation, deletion, reorder, reset, and cross-stream substitution"
     index === 2 ? { ...event, credential: "forbidden" } : event,
   );
   assert.equal(verifyAuditStream(extraEnvelopeField as unknown as typeof events).valid, false);
+
+  for (const resetIndex of [1, 7, events.length - 1]) {
+    let previousHash = AUDIT_GENESIS_HASH;
+    const insertedOpening = events.map((event, index) => {
+      const source = index === resetIndex ? events[0]! : event;
+      const { event_hash: _eventHash, ...sourceIntegrity } = source.integrity;
+      const integrity = {
+        ...sourceIntegrity,
+        sequence: index,
+        previous_event_hash: previousHash,
+      };
+      const rehashed = {
+        ...source,
+        integrity: {
+          ...integrity,
+          event_hash: computeAuditEventHash({ ...source, integrity }),
+        },
+      };
+      previousHash = rehashed.integrity.event_hash;
+      return rehashed;
+    });
+    assert.deepEqual(verifyAuditStream(insertedOpening), {
+      valid: false,
+      code: "audit_integrity_failure",
+      sequence: resetIndex,
+    });
+  }
 });
 
 test("fails closed before provider start unless every receipt is durable", async () => {
@@ -624,12 +822,16 @@ test("journals one bounded fact after start, withholds success, and never retrie
     recovery_id: "recovery.test",
     event_id: "event.completed",
     event_type: "execution.completed.v1",
-    observed_at: "2026-08-06T07:00:02.000Z",
+    original_observed_at: "2026-08-06T07:00:00.000Z",
+    original_observation_parent_event_ref: "event.started",
     cause: "primary_writer_failed_after_provider_start",
     trace_ref: "trace.test",
     request_ref: "request.test",
     execution_ref: "execution.test",
-    outcome: "completion_unknown",
+    plan_digest: D1,
+    attempt: 1,
+    observed_outcome: "effect_observed",
+    withheld_outcome: "completion_unknown",
   };
   const result = await recordAfterProviderStart({
     candidate: completedCandidate(),
@@ -694,4 +896,35 @@ test("journals one bounded fact after start, withholds success, and never retrie
     recovery: "journal_unavailable",
   });
   assert.equal(substitutedJournalCalls, 0);
+
+  for (const substitution of [
+    { observed_outcome: "no_effect_proven" as const },
+    { plan_digest: D2 },
+    { attempt: 2 },
+    { original_observed_at: "2026-08-06T07:00:01.000Z" },
+    { original_observation_parent_event_ref: "event.substituted-start" },
+  ]) {
+    let journalCallsForSubstitution = 0;
+    const bindingMismatch = await recordAfterProviderStart({
+      candidate: completedCandidate(),
+      writer: {
+        commit: async () => {
+          throw new Error("closed failure");
+        },
+      },
+      recoveryFact: { ...recoveryFact, ...substitution },
+      journal: {
+        append: async () => {
+          journalCallsForSubstitution += 1;
+          return { durability: "durable" };
+        },
+      },
+    });
+    assert.deepEqual(bindingMismatch, {
+      status: "withheld",
+      code: "operation_outcome_unknown",
+      recovery: "journal_unavailable",
+    });
+    assert.equal(journalCallsForSubstitution, 0);
+  }
 });

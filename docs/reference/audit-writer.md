@@ -19,10 +19,14 @@ pre-effect evidence requirement in RFC-0003 apply admission step 9. It provides:
 
 `InMemoryAuditStore` is only a deterministic conformance store. Its receipts are
 marked `volatile_test_only`, so `commitBeforeProviderStart` rejects them and does
-not call the supplied provider-start callback. A future store must implement the
-`AuditStore` port, atomically compare event identity and stream head, and return
-`durable` only after committing the exact event bytes, candidate digest,
-sequence, and previous hash under a separately accepted deployment profile.
+not call the supplied provider-start callback. The guard requires complete
+causal evidence through attempt reservation. Planning authorization is labeled
+and bound to the plan; after plan creation and any approval, a distinct
+apply-phase evaluation, explicit allow decision, and enforcement triplet is
+bound to apply admission. A future store must implement the `AuditStore` port,
+atomically compare event identity and stream head, and return `durable` only
+after committing the exact event bytes, candidate digest, sequence, and previous
+hash under a separately accepted deployment profile.
 
 Canonical JSON sorts object keys by code unit, preserves array order, permits
 only validated JSON values, and is covered by an object-order vector and a
@@ -31,7 +35,9 @@ use the typed constructor.
 
 The recovery-journal contract is similarly storage-neutral. A primary-writer
 failure after provider start withholds success, attempts one bounded journal
-append, and never retries provider work.
+append containing the original typed outcome, plan digest, attempt, and
+observation event binding/time. It separately records `completion_unknown` as
+the withheld result and never retries provider work.
 
 ## Integrity limits
 
