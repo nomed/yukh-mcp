@@ -355,7 +355,7 @@ pending. Later importer denial, unavailability, invalid receipts, or duplicate
 conflict also leaves the fact pending. A crash is resolved only by the table
 above and never causes importer or provider retry. Replay and transaction
 completion are idempotent. The first implementation bounds one replay pass to
-580 facts, 8 MiB of input, and 30 seconds from an injected monotonic clock.
+512 facts, 8 MiB of input, and 30 seconds from an injected monotonic clock.
 
 ### Local checkpoint authority
 
@@ -400,8 +400,9 @@ The fixed first-profile limits are:
 | completed export artifacts | 32 MiB |
 | temporary bytes | 16 MiB |
 | streams | 64 |
-| pending recovery facts | 580 |
-| total recovery identities in all lifecycle states | 580 |
+| pending recovery facts | 512 |
+| acknowledged recovery records | 512 |
+| total recovery identities in all lifecycle states | 512 |
 | total event identities in all lifecycle states | 8,192 |
 
 Limits include filesystem record bytes, not only payload bytes. Primary append
@@ -411,10 +412,16 @@ admission accounts for the pending record and reserves space under the same
 needed to acknowledge and compact that recovery ID. Acknowledgement cannot
 consume that reservation. Retention admission likewise reserves all identity
 versions, manifests, and terminal-control evidence before recording `admitted`.
-The 580-recovery-identity ceiling is derived conservatively from the 8 MiB cap:
-for every identity it reserves one 4 KiB pending record, one 4 KiB
-acknowledgement record, and three 2 KiB identity versions for append,
-acknowledgement, and compaction (14 KiB total).
+The 512-recovery-identity ceiling is the hard maximum under the 8 MiB recovery
+cap. Every recovery ID reserves one 4 KiB pending record, one 4 KiB
+acknowledgement record, and four 2 KiB identity versions: append,
+`acknowledgement_prepared`, `deletion_admitted`, and `expired_by_policy`. The
+worst case is therefore 16 KiB per recovery ID, and 512 × 16 KiB is exactly
+8 MiB. The per-record bounds include their canonical metadata. Transaction
+temporaries and retention manifests are charged to the separate temporary-byte
+and checkpoint/deletion-metadata caps above; this profile defines no additional
+recovery file charged to the 8 MiB bucket. Any successor that adds one MUST
+reserve it and lower the count ceiling so its worst case remains within 8 MiB.
 At 90% of any byte or count limit health becomes `degraded` and new export work
 is denied. At the limit, or when free space cannot cover the maximum next record
 plus its temporary copy, health becomes `failed`; pre-effect commits and new
@@ -680,7 +687,10 @@ Implementation must include deterministic tests for:
   restart, and no acknowledged visibility before durable identity protection;
 - local checkpoint fixed vectors, invalid checkpoint, tail truncation limits,
   and explicit absence of independent-witness claims;
-- capacity thresholds, free-space failure, bounded replay, and backpressure;
+- capacity thresholds, free-space failure, bounded replay, and backpressure,
+  including the 511/512/513 pending, replay, acknowledgement, and total-identity
+  boundaries and the full 16 KiB lifecycle reservation for every admitted
+  recovery ID;
 - retention denial without explicit bound authorization, durable denial
   evidence, durable allow/deny/admitted/no-action/applied/failed semantics,
   audit-capacity and missing/stale/held/unknown hold denial, authorization expiry
