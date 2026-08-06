@@ -871,6 +871,38 @@ test("journals one bounded fact after start, withholds success, and never retrie
   assert.equal(writerCalls, 1);
   assert.equal(journalCalls, 1);
 
+  const startedRecoveryFact: RecoveryFact = {
+    ...recoveryFact,
+    recovery_id: "recovery.started",
+    event_id: "event.started",
+    event_type: "execution.started.v1",
+    original_observation_parent_event_ref: "event.reserved",
+    observed_outcome: "completion_unknown",
+  };
+  let startedJournalCalls = 0;
+  const startedFailure = await recordAfterProviderStart({
+    candidate: startedCandidate(),
+    writer: {
+      commit: async () => {
+        throw new Error("closed failure");
+      },
+    },
+    recoveryFact: startedRecoveryFact,
+    journal: {
+      append: async (fact) => {
+        startedJournalCalls += 1;
+        assert.deepEqual(fact, startedRecoveryFact);
+        return { durability: "durable" };
+      },
+    },
+  });
+  assert.deepEqual(startedFailure, {
+    status: "withheld",
+    code: "operation_outcome_unknown",
+    recovery: "journaled",
+  });
+  assert.equal(startedJournalCalls, 1);
+
   let invalidCandidateWriterCalls = 0;
   let invalidCandidateJournalCalls = 0;
   const invalidCandidate = await recordAfterProviderStart({
@@ -895,10 +927,10 @@ test("journals one bounded fact after start, withholds success, and never retrie
   assert.deepEqual(invalidCandidate, {
     status: "withheld",
     code: "operation_outcome_unknown",
-    recovery: "journal_unavailable",
+    recovery: "journaled",
   });
   assert.equal(invalidCandidateWriterCalls, 0);
-  assert.equal(invalidCandidateJournalCalls, 0);
+  assert.equal(invalidCandidateJournalCalls, 1);
 
   const unavailable = await recordAfterProviderStart({
     candidate: completedCandidate(),

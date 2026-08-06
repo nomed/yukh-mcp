@@ -196,7 +196,6 @@ export async function recordAfterProviderStart(
     // The closed recovery fact, not the rejected candidate or error, crosses this boundary.
   }
   try {
-    if (candidate === undefined) throw new AuditError("audit_candidate_invalid");
     const fact = validateRecoveryFact(options.recoveryFact, candidate);
     const receipt = await options.journal.append(fact);
     if (receipt.durability === "durable") {
@@ -220,7 +219,10 @@ const REF = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
-function validateRecoveryFact(fact: RecoveryFact, candidate: AuditCandidate): RecoveryFact {
+function validateRecoveryFact(
+  fact: RecoveryFact,
+  candidate: AuditCandidate | undefined,
+): RecoveryFact {
   const keys = Object.keys(fact).sort();
   const expected = [
     "cause",
@@ -238,7 +240,15 @@ function validateRecoveryFact(fact: RecoveryFact, candidate: AuditCandidate): Re
     "trace_ref",
     "withheld_outcome",
   ].sort();
-  const completion = candidate.event_type === "execution.completed.v1" ? candidate : undefined;
+  const execution =
+    candidate?.event_type === "execution.started.v1" ||
+    candidate?.event_type === "execution.completed.v1"
+      ? candidate
+      : undefined;
+  const observedOutcome =
+    execution?.event_type === "execution.completed.v1"
+      ? execution.payload.result
+      : "completion_unknown";
   const boundedRef = (value: string) => value.length <= 128 && REF.test(value);
   if (
     keys.length !== expected.length ||
@@ -250,7 +260,7 @@ function validateRecoveryFact(fact: RecoveryFact, candidate: AuditCandidate): Re
     !boundedRef(fact.request_ref) ||
     !boundedRef(fact.execution_ref) ||
     !boundedRef(fact.original_observation_parent_event_ref) ||
-    fact.event_type !== "execution.completed.v1" ||
+    (fact.event_type !== "execution.started.v1" && fact.event_type !== "execution.completed.v1") ||
     !ISO_UTC.test(fact.original_observed_at) ||
     !Number.isFinite(Date.parse(fact.original_observed_at)) ||
     !DIGEST.test(fact.plan_digest) ||
@@ -259,17 +269,19 @@ function validateRecoveryFact(fact: RecoveryFact, candidate: AuditCandidate): Re
     fact.attempt > 16 ||
     fact.cause !== "primary_writer_failed_after_provider_start" ||
     fact.withheld_outcome !== "completion_unknown" ||
-    completion === undefined ||
-    fact.event_id !== completion.event_id ||
-    fact.event_type !== completion.event_type ||
-    fact.original_observed_at !== completion.occurred_at ||
-    fact.original_observation_parent_event_ref !== completion.causation.parent_event_refs[0] ||
-    fact.trace_ref !== completion.correlation.trace_ref ||
-    fact.request_ref !== completion.correlation.request_ref ||
-    fact.execution_ref !== completion.correlation.execution_ref ||
-    fact.plan_digest !== completion.payload.plan_digest ||
-    fact.attempt !== completion.payload.attempt ||
-    fact.observed_outcome !== completion.payload.result
+    (fact.event_type === "execution.started.v1" &&
+      fact.observed_outcome !== "completion_unknown") ||
+    (execution !== undefined &&
+      (fact.event_id !== execution.event_id ||
+        fact.event_type !== execution.event_type ||
+        fact.original_observed_at !== execution.occurred_at ||
+        fact.original_observation_parent_event_ref !== execution.causation.parent_event_refs[0] ||
+        fact.trace_ref !== execution.correlation.trace_ref ||
+        fact.request_ref !== execution.correlation.request_ref ||
+        fact.execution_ref !== execution.correlation.execution_ref ||
+        fact.plan_digest !== execution.payload.plan_digest ||
+        fact.attempt !== execution.payload.attempt ||
+        fact.observed_outcome !== observedOutcome))
   ) {
     throw new AuditError("audit_candidate_invalid");
   }
