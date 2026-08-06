@@ -17,13 +17,13 @@ permissions:
 
 env:
   YUKH_PROJECTS_PROFILE: yukh-mcp/project-5-issue-27-legacy-apply-v1
-  YUKH_PROJECTS_PRODUCER_REF: nomed/yukh-projects@e3285c6994edd8fad1666da6ca48386522c9e90f
+  YUKH_PROJECTS_PRODUCER_REF: nomed/yukh-projects@71784218366805922e5a12903eef9073f715f59f
   YUKH_PROJECTS_OWNER: nomed
   YUKH_PROJECTS_REPOSITORY: yukh-mcp
   YUKH_PROJECTS_PROJECT_NUMBER: "5"
   YUKH_PROJECTS_ISSUE_NUMBER: "27"
   YUKH_PROJECTS_POLICY_PATH: .yukh/project.yaml
-  YUKH_PROJECTS_MODE: legacy-apply-v1
+  YUKH_PROJECTS_MODE: legacy-single-token-apply-v1
 
 concurrency:
   group: yukh-projects-protected-apply-project-5-issue-27
@@ -36,4 +36,6 @@ jobs:
     environment:
       name: yukh-projects-controlled-apply
     timeout-minutes: 10
+    env:
+      YUKH_PROJECTS_WRITE_TOKEN: ${{ secrets.YUKH_PROJECTS_WRITE_TOKEN }}
     steps: []
