@@ -122,9 +122,7 @@ function payloadBindingsMatch(
     case "request.accepted.v1":
       return true;
     case "authorization.evaluation_recorded.v1": {
-      if (child.request_digest !== value(parent(parents, "request.accepted.v1")).request_digest) {
-        return false;
-      }
+      parent(parents, "request.accepted.v1");
       if (child.authorization_phase === "planning") return child.plan_digest === null;
       return (
         child.plan_digest === value(parent(parents, "plan.created.v1")).plan_digest &&
@@ -135,7 +133,7 @@ function payloadBindingsMatch(
     case "authorization.decision_recorded.v1": {
       const evaluation = value(parent(parents, "authorization.evaluation_recorded.v1"));
       return (
-        child.request_digest === evaluation.request_digest &&
+        child.authorization_request_digest === evaluation.authorization_request_digest &&
         child.authorization_phase === evaluation.authorization_phase &&
         child.plan_digest === evaluation.plan_digest
       );

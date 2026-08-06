@@ -27,6 +27,7 @@ const D2 = `sha256:${"2".repeat(64)}`;
 const D3 = `sha256:${"3".repeat(64)}`;
 const D4 = `sha256:${"4".repeat(64)}`;
 const D5 = `sha256:${"5".repeat(64)}`;
+const D6 = `sha256:${"6".repeat(64)}`;
 const NULL_CORRELATION = {
   trace_ref: null,
   request_ref: null,
@@ -112,7 +113,7 @@ function evaluationCandidate(): AuditCandidate {
     causation: { parent_event_refs: ["event.request"] },
     outcome: { status: "accepted", reason_codes: ["accepted"] },
     payload: {
-      request_digest: D3,
+      authorization_request_digest: D3,
       attribute_snapshot_ref: "attributes.test",
       attribute_snapshot_digest: D2,
       evaluator_ref: "evaluator.test",
@@ -136,7 +137,7 @@ function authCandidate(): AuditCandidate {
     causation: { parent_event_refs: ["event.evaluation"] },
     outcome: { status: "allowed", reason_codes: ["policy_allow"] },
     payload: {
-      request_digest: D3,
+      authorization_request_digest: D3,
       decision_digest: D4,
       effect: "allow",
       basis: "explicit",
@@ -177,6 +178,7 @@ function freshEvaluationCandidate(): AuditCandidate {
     causation: { parent_event_refs: ["event.request", "event.plan", "event.approval"] },
     payload: {
       ...evaluationCandidate().payload,
+      authorization_request_digest: D6,
       authorization_phase: "apply",
       plan_digest: D1,
     },
@@ -194,6 +196,7 @@ function freshAuthCandidate(): AuditCandidate {
     causation: { parent_event_refs: ["event.fresh-evaluation"] },
     payload: {
       ...authCandidate().payload,
+      authorization_request_digest: D6,
       decision_digest: D5,
       authorization_phase: "apply",
       plan_digest: D1,
@@ -454,6 +457,13 @@ test("rejects malformed versions, references, correlation, and unbounded attempt
       payload: { ...authCandidate().payload, basis: "error" },
     },
     {
+      ...enforcementCandidate(),
+      outcome: {
+        status: "allowed",
+        reason_codes: ["enforced", "policy_deny"],
+      },
+    },
+    {
       ...candidate(),
       outcome: { status: "accepted", reason_codes: ["accepted", "accepted"] },
     },
@@ -594,7 +604,10 @@ test("rejects causal type and operation substitution", async () => {
       validateAuditCandidate({
         ...authCandidate(),
         event_id: "event.authorization-digest-substitution",
-        payload: { ...authCandidate().payload, request_digest: D4 },
+        payload: {
+          ...authCandidate().payload,
+          authorization_request_digest: D4,
+        },
       }),
     ),
     (error: unknown) => error instanceof AuditError && error.code === "audit_causation_invalid",
@@ -858,6 +871,35 @@ test("journals one bounded fact after start, withholds success, and never retrie
   assert.equal(writerCalls, 1);
   assert.equal(journalCalls, 1);
 
+  let invalidCandidateWriterCalls = 0;
+  let invalidCandidateJournalCalls = 0;
+  const invalidCandidate = await recordAfterProviderStart({
+    candidate: {
+      ...completedCandidate(),
+      payload: { ...completedCandidate().payload, raw_prompt: "forbidden" },
+    } as unknown as AuditCandidate,
+    writer: {
+      commit: async () => {
+        invalidCandidateWriterCalls += 1;
+        throw new Error("invalid candidate must not reach the writer");
+      },
+    },
+    recoveryFact,
+    journal: {
+      append: async () => {
+        invalidCandidateJournalCalls += 1;
+        return { durability: "durable" };
+      },
+    },
+  });
+  assert.deepEqual(invalidCandidate, {
+    status: "withheld",
+    code: "operation_outcome_unknown",
+    recovery: "journal_unavailable",
+  });
+  assert.equal(invalidCandidateWriterCalls, 0);
+  assert.equal(invalidCandidateJournalCalls, 0);
+
   const unavailable = await recordAfterProviderStart({
     candidate: completedCandidate(),
     writer: { commit: async () => ({ ...receipt, durability: "volatile_test_only" }) },
@@ -903,6 +945,7 @@ test("journals one bounded fact after start, withholds success, and never retrie
     { attempt: 2 },
     { original_observed_at: "2026-08-06T07:00:01.000Z" },
     { original_observation_parent_event_ref: "event.substituted-start" },
+    { recovery_id: `r${"x".repeat(128)}` },
   ]) {
     let journalCallsForSubstitution = 0;
     const bindingMismatch = await recordAfterProviderStart({

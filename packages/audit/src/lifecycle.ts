@@ -1,5 +1,4 @@
 import {
-  AUDIT_EVENT_TYPES,
   AUDIT_REGISTRY,
   AuditError,
   type AuditCandidate,
@@ -114,6 +113,8 @@ export async function commitBeforeProviderStart<T>(
       planningEvaluation.event_id === applyEvaluation.event_id ||
       planningEvaluation.correlation.authorization_request_ref ===
         applyEvaluation.correlation.authorization_request_ref ||
+      planningEvaluation.payload.authorization_request_digest ===
+        applyEvaluation.payload.authorization_request_digest ||
       planningDecision?.event_type !== "authorization.decision_recorded.v1" ||
       applyDecision?.event_type !== "authorization.decision_recorded.v1" ||
       planningDecision.event_id === applyDecision.event_id ||
@@ -126,8 +127,10 @@ export async function commitBeforeProviderStart<T>(
       planningDecision.payload.basis !== "explicit" ||
       applyDecision.payload.effect !== "allow" ||
       applyDecision.payload.basis !== "explicit" ||
-      planningDecision.payload.request_digest !== planningEvaluation.payload.request_digest ||
-      applyDecision.payload.request_digest !== applyEvaluation.payload.request_digest ||
+      planningDecision.payload.authorization_request_digest !==
+        planningEvaluation.payload.authorization_request_digest ||
+      applyDecision.payload.authorization_request_digest !==
+        applyEvaluation.payload.authorization_request_digest ||
       planningEnforcement?.event_type !== "authorization.enforcement_recorded.v1" ||
       planningEnforcement.payload.authorization_phase !== "planning" ||
       planningEnforcement.payload.enforcement_result !== "enforced" ||
@@ -236,17 +239,18 @@ function validateRecoveryFact(fact: RecoveryFact, candidate: AuditCandidate): Re
     "withheld_outcome",
   ].sort();
   const completion = candidate.event_type === "execution.completed.v1" ? candidate : undefined;
+  const boundedRef = (value: string) => value.length <= 128 && REF.test(value);
   if (
     keys.length !== expected.length ||
     keys.some((key, index) => key !== expected[index]) ||
     fact.recovery_fact_version !== 1 ||
-    !REF.test(fact.recovery_id) ||
-    !REF.test(fact.event_id) ||
-    !REF.test(fact.trace_ref) ||
-    !REF.test(fact.request_ref) ||
-    !REF.test(fact.execution_ref) ||
-    !REF.test(fact.original_observation_parent_event_ref) ||
-    !AUDIT_EVENT_TYPES.includes(fact.event_type) ||
+    !boundedRef(fact.recovery_id) ||
+    !boundedRef(fact.event_id) ||
+    !boundedRef(fact.trace_ref) ||
+    !boundedRef(fact.request_ref) ||
+    !boundedRef(fact.execution_ref) ||
+    !boundedRef(fact.original_observation_parent_event_ref) ||
+    fact.event_type !== "execution.completed.v1" ||
     !ISO_UTC.test(fact.original_observed_at) ||
     !Number.isFinite(Date.parse(fact.original_observed_at)) ||
     !DIGEST.test(fact.plan_digest) ||

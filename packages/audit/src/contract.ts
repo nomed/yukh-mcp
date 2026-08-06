@@ -49,7 +49,7 @@ export interface AuditPayloadByEventType {
   readonly "audit.stream_opened.v1": Readonly<{ genesis_hash: string }>;
   readonly "request.accepted.v1": Readonly<{ request_digest: string }>;
   readonly "authorization.evaluation_recorded.v1": Readonly<{
-    request_digest: string;
+    authorization_request_digest: string;
     attribute_snapshot_ref: string;
     attribute_snapshot_digest: string;
     evaluator_ref: string;
@@ -57,7 +57,7 @@ export interface AuditPayloadByEventType {
     plan_digest: string | null;
   }>;
   readonly "authorization.decision_recorded.v1": Readonly<{
-    request_digest: string;
+    authorization_request_digest: string;
     decision_digest: string;
     effect: "allow" | "deny";
     basis: "explicit" | "default" | "error" | "indeterminate";
@@ -471,7 +471,7 @@ const payloadSchemas = {
   "request.accepted.v1": z.object({ request_digest: DIGEST }).strict(),
   "authorization.evaluation_recorded.v1": z
     .object({
-      request_digest: DIGEST,
+      authorization_request_digest: DIGEST,
       attribute_snapshot_ref: REF,
       attribute_snapshot_digest: DIGEST,
       evaluator_ref: REF,
@@ -481,7 +481,7 @@ const payloadSchemas = {
     .strict(),
   "authorization.decision_recorded.v1": z
     .object({
-      request_digest: DIGEST,
+      authorization_request_digest: DIGEST,
       decision_digest: DIGEST,
       effect: z.enum(["allow", "deny"]),
       basis: z.enum(["explicit", "default", "error", "indeterminate"]),
@@ -629,6 +629,7 @@ export function validateAuditCandidate(value: unknown): AuditCandidate {
     (parsed.event_type === "authorization.enforcement_recorded.v1" &&
       (parsed.outcome.status !==
         (parsed.payload.enforcement_result === "enforced" ? "allowed" : "denied") ||
+        parsed.outcome.reason_codes.length !== 1 ||
         parsed.outcome.reason_codes[0] !==
           (parsed.payload.enforcement_result === "enforced" ? "enforced" : "policy_deny"))) ||
     (parsed.event_type === "execution.completed.v1" &&
