@@ -37,7 +37,10 @@ The recovery-journal contract is similarly storage-neutral. A primary-writer
 failure after provider start withholds success, attempts one bounded journal
 append containing the original typed outcome, plan digest, attempt, and
 observation event binding/time. It separately records `completion_unknown` as
-the withheld result and never retries provider work.
+the withheld result and never retries provider work. Recovery facts must be
+created with `createRecoveryFact` from a separately validated
+`execution.started.v1` or `execution.completed.v1` observation; unbound facts
+and non-execution candidates never reach the journal.
 
 ## Integrity limits
 

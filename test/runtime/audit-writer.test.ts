@@ -9,6 +9,7 @@ import {
 } from "../../packages/audit/src/contract.js";
 import {
   commitBeforeProviderStart,
+  createRecoveryFact,
   recordAfterProviderStart,
   type RecoveryFact,
 } from "../../packages/audit/src/lifecycle.js";
@@ -830,22 +831,7 @@ test("journals one bounded fact after start, withholds success, and never retrie
   );
   let writerCalls = 0;
   let journalCalls = 0;
-  const recoveryFact: RecoveryFact = {
-    recovery_fact_version: 1,
-    recovery_id: "recovery.test",
-    event_id: "event.completed",
-    event_type: "execution.completed.v1",
-    original_observed_at: "2026-08-06T07:00:00.000Z",
-    original_observation_parent_event_ref: "event.started",
-    cause: "primary_writer_failed_after_provider_start",
-    trace_ref: "trace.test",
-    request_ref: "request.test",
-    execution_ref: "execution.test",
-    plan_digest: D1,
-    attempt: 1,
-    observed_outcome: "effect_observed",
-    withheld_outcome: "completion_unknown",
-  };
+  const recoveryFact = createRecoveryFact("recovery.test", completedCandidate());
   const result = await recordAfterProviderStart({
     candidate: completedCandidate(),
     writer: {
@@ -871,14 +857,7 @@ test("journals one bounded fact after start, withholds success, and never retrie
   assert.equal(writerCalls, 1);
   assert.equal(journalCalls, 1);
 
-  const startedRecoveryFact: RecoveryFact = {
-    ...recoveryFact,
-    recovery_id: "recovery.started",
-    event_id: "event.started",
-    event_type: "execution.started.v1",
-    original_observation_parent_event_ref: "event.reserved",
-    observed_outcome: "completion_unknown",
-  };
+  const startedRecoveryFact = createRecoveryFact("recovery.started", startedCandidate());
   let startedJournalCalls = 0;
   const startedFailure = await recordAfterProviderStart({
     candidate: startedCandidate(),
@@ -902,6 +881,19 @@ test("journals one bounded fact after start, withholds success, and never retrie
     recovery: "journaled",
   });
   assert.equal(startedJournalCalls, 1);
+
+  assert.throws(
+    () => createRecoveryFact("recovery.untrusted", candidate()),
+    (error: unknown) => error instanceof AuditError && error.code === "audit_candidate_invalid",
+  );
+  assert.throws(
+    () =>
+      createRecoveryFact("recovery.invalid-observation", {
+        ...completedCandidate(),
+        payload: { ...completedCandidate().payload, raw_prompt: "forbidden" },
+      }),
+    (error: unknown) => error instanceof AuditError && error.code === "audit_candidate_invalid",
+  );
 
   let invalidCandidateWriterCalls = 0;
   let invalidCandidateJournalCalls = 0;
@@ -931,6 +923,55 @@ test("journals one bounded fact after start, withholds success, and never retrie
   });
   assert.equal(invalidCandidateWriterCalls, 0);
   assert.equal(invalidCandidateJournalCalls, 1);
+
+  let forgedJournalCalls = 0;
+  const forged = await recordAfterProviderStart({
+    candidate: {
+      ...completedCandidate(),
+      payload: { ...completedCandidate().payload, raw_prompt: "forbidden" },
+    } as unknown as AuditCandidate,
+    writer: {
+      commit: async () => {
+        throw new Error("invalid candidate must not reach the writer");
+      },
+    },
+    recoveryFact: { ...recoveryFact } as RecoveryFact,
+    journal: {
+      append: async () => {
+        forgedJournalCalls += 1;
+        return { durability: "durable" };
+      },
+    },
+  });
+  assert.deepEqual(forged, {
+    status: "withheld",
+    code: "operation_outcome_unknown",
+    recovery: "journal_unavailable",
+  });
+  assert.equal(forgedJournalCalls, 0);
+
+  let nonExecutionJournalCalls = 0;
+  const nonExecution = await recordAfterProviderStart({
+    candidate: candidate(),
+    writer: {
+      commit: async () => {
+        throw new Error("pre-effect candidate must not reach the writer");
+      },
+    },
+    recoveryFact,
+    journal: {
+      append: async () => {
+        nonExecutionJournalCalls += 1;
+        return { durability: "durable" };
+      },
+    },
+  });
+  assert.deepEqual(nonExecution, {
+    status: "withheld",
+    code: "operation_outcome_unknown",
+    recovery: "journal_unavailable",
+  });
+  assert.equal(nonExecutionJournalCalls, 0);
 
   const unavailable = await recordAfterProviderStart({
     candidate: completedCandidate(),
@@ -1002,4 +1043,46 @@ test("journals one bounded fact after start, withholds success, and never retrie
     });
     assert.equal(journalCallsForSubstitution, 0);
   }
+});
+
+test("accepts RFC3339 fractional precision for trusted recovery observations", async () => {
+  for (const occurredAt of ["2026-08-06T07:00:00.12Z", "2026-08-06T07:00:00.123456Z"]) {
+    const observation = validateAuditCandidate({
+      ...completedCandidate(),
+      occurred_at: occurredAt,
+    });
+    const recoveryFact = createRecoveryFact(`recovery.precision-${occurredAt.length}`, observation);
+    let journalCalls = 0;
+    const result = await recordAfterProviderStart({
+      candidate: observation,
+      writer: {
+        commit: async () => {
+          throw new Error("closed failure");
+        },
+      },
+      recoveryFact,
+      journal: {
+        append: async (fact) => {
+          journalCalls += 1;
+          assert.equal(fact.original_observed_at, occurredAt);
+          return { durability: "durable" };
+        },
+      },
+    });
+    assert.deepEqual(result, {
+      status: "withheld",
+      code: "operation_outcome_unknown",
+      recovery: "journaled",
+    });
+    assert.equal(journalCalls, 1);
+  }
+
+  assert.throws(
+    () =>
+      createRecoveryFact("recovery.invalid-precision", {
+        ...completedCandidate(),
+        occurred_at: "2026-08-06T07:00:00.Z",
+      }),
+    (error: unknown) => error instanceof AuditError && error.code === "audit_candidate_invalid",
+  );
 });

@@ -34,6 +34,54 @@ export interface RecoveryJournal {
   append(fact: RecoveryFact): Promise<Readonly<{ durability: "durable" | "volatile_test_only" }>>;
 }
 
+const recoveryFacts = new WeakSet<object>();
+
+export function createRecoveryFact(recoveryId: string, observation: unknown): RecoveryFact {
+  const execution = validateAuditCandidate(observation);
+  if (
+    execution.event_type !== "execution.started.v1" &&
+    execution.event_type !== "execution.completed.v1"
+  ) {
+    throw new AuditError("audit_candidate_invalid");
+  }
+  const parentEventRef = execution.causation.parent_event_refs[0];
+  const {
+    trace_ref: traceRef,
+    request_ref: requestRef,
+    execution_ref: executionRef,
+  } = execution.correlation;
+  if (
+    parentEventRef === undefined ||
+    traceRef === null ||
+    requestRef === null ||
+    executionRef === null
+  ) {
+    throw new AuditError("audit_candidate_invalid");
+  }
+  const fact: RecoveryFact = Object.freeze({
+    recovery_fact_version: 1,
+    recovery_id: recoveryId,
+    event_id: execution.event_id,
+    event_type: execution.event_type,
+    original_observed_at: execution.occurred_at,
+    original_observation_parent_event_ref: parentEventRef,
+    cause: "primary_writer_failed_after_provider_start",
+    trace_ref: traceRef,
+    request_ref: requestRef,
+    execution_ref: executionRef,
+    plan_digest: execution.payload.plan_digest,
+    attempt: execution.payload.attempt,
+    observed_outcome:
+      execution.event_type === "execution.completed.v1"
+        ? execution.payload.result
+        : "completion_unknown",
+    withheld_outcome: "completion_unknown",
+  });
+  validateRecoveryFactShape(fact);
+  recoveryFacts.add(fact);
+  return fact;
+}
+
 export async function commitBeforeProviderStart<T>(
   options: Readonly<{
     candidates: readonly AuditCandidate[];
@@ -183,6 +231,7 @@ export async function recordAfterProviderStart(
     }>
 > {
   let candidate: AuditCandidate | undefined;
+  let recoveryAllowed = false;
   try {
     candidate = validateAuditCandidate(options.candidate);
     if (AUDIT_REGISTRY[candidate.event_type].durability !== "required_post_start") {
@@ -196,7 +245,19 @@ export async function recordAfterProviderStart(
     // The closed recovery fact, not the rejected candidate or error, crosses this boundary.
   }
   try {
-    const fact = validateRecoveryFact(options.recoveryFact, candidate);
+    if (candidate === undefined) {
+      recoveryAllowed = true;
+    } else if (
+      candidate.event_type === "execution.started.v1" ||
+      candidate.event_type === "execution.completed.v1"
+    ) {
+      assertRecoveryBinding(options.recoveryFact, candidate);
+      recoveryAllowed = true;
+    }
+    if (!recoveryAllowed || !recoveryFacts.has(options.recoveryFact)) {
+      throw new AuditError("audit_candidate_invalid");
+    }
+    const fact = validateRecoveryFactShape(options.recoveryFact);
     const receipt = await options.journal.append(fact);
     if (receipt.durability === "durable") {
       return {
@@ -216,13 +277,10 @@ export async function recordAfterProviderStart(
 }
 
 const REF = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
-const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
-function validateRecoveryFact(
-  fact: RecoveryFact,
-  candidate: AuditCandidate | undefined,
-): RecoveryFact {
+function validateRecoveryFactShape(fact: RecoveryFact): RecoveryFact {
   const keys = Object.keys(fact).sort();
   const expected = [
     "cause",
@@ -240,15 +298,6 @@ function validateRecoveryFact(
     "trace_ref",
     "withheld_outcome",
   ].sort();
-  const execution =
-    candidate?.event_type === "execution.started.v1" ||
-    candidate?.event_type === "execution.completed.v1"
-      ? candidate
-      : undefined;
-  const observedOutcome =
-    execution?.event_type === "execution.completed.v1"
-      ? execution.payload.result
-      : "completion_unknown";
   const boundedRef = (value: string) => value.length <= 128 && REF.test(value);
   if (
     keys.length !== expected.length ||
@@ -269,19 +318,7 @@ function validateRecoveryFact(
     fact.attempt > 16 ||
     fact.cause !== "primary_writer_failed_after_provider_start" ||
     fact.withheld_outcome !== "completion_unknown" ||
-    (fact.event_type === "execution.started.v1" &&
-      fact.observed_outcome !== "completion_unknown") ||
-    (execution !== undefined &&
-      (fact.event_id !== execution.event_id ||
-        fact.event_type !== execution.event_type ||
-        fact.original_observed_at !== execution.occurred_at ||
-        fact.original_observation_parent_event_ref !== execution.causation.parent_event_refs[0] ||
-        fact.trace_ref !== execution.correlation.trace_ref ||
-        fact.request_ref !== execution.correlation.request_ref ||
-        fact.execution_ref !== execution.correlation.execution_ref ||
-        fact.plan_digest !== execution.payload.plan_digest ||
-        fact.attempt !== execution.payload.attempt ||
-        fact.observed_outcome !== observedOutcome))
+    (fact.event_type === "execution.started.v1" && fact.observed_outcome !== "completion_unknown")
   ) {
     throw new AuditError("audit_candidate_invalid");
   }
@@ -301,4 +338,26 @@ function validateRecoveryFact(
     observed_outcome: fact.observed_outcome,
     withheld_outcome: fact.withheld_outcome,
   };
+}
+
+function assertRecoveryBinding(fact: RecoveryFact, execution: AuditCandidate): void {
+  if (
+    (execution.event_type !== "execution.started.v1" &&
+      execution.event_type !== "execution.completed.v1") ||
+    fact.event_id !== execution.event_id ||
+    fact.event_type !== execution.event_type ||
+    fact.original_observed_at !== execution.occurred_at ||
+    fact.original_observation_parent_event_ref !== execution.causation.parent_event_refs[0] ||
+    fact.trace_ref !== execution.correlation.trace_ref ||
+    fact.request_ref !== execution.correlation.request_ref ||
+    fact.execution_ref !== execution.correlation.execution_ref ||
+    fact.plan_digest !== execution.payload.plan_digest ||
+    fact.attempt !== execution.payload.attempt ||
+    fact.observed_outcome !==
+      (execution.event_type === "execution.completed.v1"
+        ? execution.payload.result
+        : "completion_unknown")
+  ) {
+    throw new AuditError("audit_candidate_invalid");
+  }
 }
