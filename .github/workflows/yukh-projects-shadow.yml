@@ -28,7 +28,7 @@ jobs:
 
       - name: Produce successor dry-run
         id: shadow
-        uses: nomed/yukh-projects@e3285c6994edd8fad1666da6ca48386522c9e90f # v1.6.1
+        uses: nomed/yukh-projects@71784218366805922e5a12903eef9073f715f59f # v1.7.0
         with:
           mode: legacy-shadow
           github-token: ${{ secrets.YUKH_PROJECT_TOKEN }}

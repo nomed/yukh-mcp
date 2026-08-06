@@ -1,8 +1,8 @@
 # Yukh Projects shadow migration
 
 The `Yukh Projects shadow reconciliation` workflow audits one Project 5 issue
-without mutation. It pins the immutable `yukh-projects` v1.6.1 commit
-`e3285c6994edd8fad1666da6ca48386522c9e90f` and selects the bounded
+without mutation. It pins the immutable `yukh-projects` v1.7.0 commit
+`71784218366805922e5a12903eef9073f715f59f` and selects the bounded
 `legacy-shadow` adapter. It accepts no apply mode, approval artifact, or write
 credential.
 
@@ -14,7 +14,7 @@ the migration pull request before requesting controlled apply.
 The distinct `Area` contract remains separate from `Component`. The current
 policy targets native Issue Type for `kind`; `project_field: Work Type` remains
 only the required declarative fallback for a user-owned repository. GitHub
-reports `nomed/yukh-mcp` as user-owned, so v1.6.1 must report the same Project
+reports `nomed/yukh-mcp` as user-owned, so v1.7.0 must report the same Project
 `Work Type` fallback as controlled planning. A fresh shadow must prove this
 parity while preserving human-owned `Status` and the existing `Component`
 value.
@@ -41,22 +41,24 @@ manually outside repository content. `YUKH_PROJECTS_WRITE_TOKEN` must never be c
 printed, added to outputs, artifacts, caches, step summaries, or logs. The
 former materializer and GitHub OIDC delivery model is not permitted.
 
-`nomed/yukh-projects#131` is resolved in v1.6.1, but controlled apply still
+`nomed/yukh-projects#131` is resolved in v1.7.0, but controlled apply still
 requires a fresh shadow, an independently approved exact plan, and separately
 gated operational dependencies. The repository contains only the
 `future-controlled-apply` contract job. Its hard-coded false condition is
-permanent: it has no steps, secret access, outputs, or producer invocation.
-The job fixes the repository, Project 5, issue #27, policy path, mode,
-environment, producer pin, concurrency group, ten-minute limit, and
-first-attempt-only constraint for a future reviewed implementation. It has no
-OIDC permission.
+permanent: it has no steps, outputs, or producer invocation. The job fixes the
+repository, Project 5, issue #27, policy path, mode
+`legacy-single-token-apply-v1`, environment, producer pin, concurrency group,
+ten-minute limit, and first-attempt-only constraint for a future reviewed
+implementation. It has no OIDC permission.
 
 An independently issued approval for a freshly recreated exact plan and a
 reviewed host-capsule/Coordination profile remain absent. Neither a dispatch,
 an environment review, issue state, nor the presence of `YUKH_PROJECTS_WRITE_TOKEN` can replace
-either control. `YUKH_PROJECTS_WRITE_TOKEN` is deliberately documented only: no workflow job
-references it while the contract is skipped. The currently pinned producer
-Action is a bounded dry-run interface, not a qualified apply interface. A
-separate explicit authorization and review must qualify an immutable apply
-interface and the approval and host controls before any condition, secret
-reference, or provider invocation can be added.
+either control. The only `secrets.YUKH_PROJECTS_WRITE_TOKEN` expression is
+job-local to `future-controlled-apply`; its permanent false condition prevents
+the job, runner, and secret resolution. It is a reference only, not a configured
+or exposed secret. The pinned shadow Action is a bounded dry-run interface;
+although v1.7.0 defines the reviewed single-token mode for its separate apply
+entrypoint, this source does not invoke it. A separate explicit authorization
+and review must qualify an immutable apply interface and the approval and host
+controls before any condition change or provider invocation can be added.

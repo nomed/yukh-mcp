@@ -85,7 +85,7 @@ test("workflow inventory is explicit", () => {
 
 test("Yukh Projects migration remains manual, immutable, and shadow-only", () => {
   const source = readFileSync(new URL("yukh-projects-shadow.yml", directory), "utf8");
-  assert.match(source, /nomed\/yukh-projects@e3285c6994edd8fad1666da6ca48386522c9e90f/u);
+  assert.match(source, /nomed\/yukh-projects@71784218366805922e5a12903eef9073f715f59f/u);
   assert.match(source, /workflow_dispatch:/u);
   assert.equal(source.includes("issues:"), true);
   assert.equal(source.includes("types: [opened"), false);
@@ -118,7 +118,7 @@ test("Yukh Projects shadow policy is versioned with its workflow", () => {
   assert.match(source, /^  overwrite_human_values: false$/mu);
 });
 
-test("accepted RFC-0008 keeps write-token delivery contract inert", () => {
+test("Yukh Projects controlled-apply contract remains inert", () => {
   const rfc = readFileSync(
     new URL(
       "../../.context/rfcs/RFC-0008-gh-token-controlled-apply-credential-delivery.md",
@@ -148,11 +148,11 @@ test("accepted RFC-0008 keeps write-token delivery contract inert", () => {
   assert.match(source, /^  YUKH_PROJECTS_PROFILE: yukh-mcp\/project-5-issue-27-legacy-apply-v1$/mu);
   assert.match(
     source,
-    /^  YUKH_PROJECTS_PRODUCER_REF: nomed\/yukh-projects@e3285c6994edd8fad1666da6ca48386522c9e90f$/mu,
+    /^  YUKH_PROJECTS_PRODUCER_REF: nomed\/yukh-projects@71784218366805922e5a12903eef9073f715f59f$/mu,
   );
   assert.match(source, /^  YUKH_PROJECTS_PROJECT_NUMBER: "5"$/mu);
   assert.match(source, /^  YUKH_PROJECTS_ISSUE_NUMBER: "27"$/mu);
-  assert.match(source, /^  YUKH_PROJECTS_MODE: legacy-apply-v1$/mu);
+  assert.match(source, /^  YUKH_PROJECTS_MODE: legacy-single-token-apply-v1$/mu);
   assert.match(source, /^permissions:\n  contents: read$/mu);
   assert.doesNotMatch(source, /id-token:/u);
   assert.match(
@@ -165,6 +165,10 @@ test("accepted RFC-0008 keeps write-token delivery contract inert", () => {
   );
   assert.match(source, /^\s+name: yukh-projects-controlled-apply$/mu);
   assert.match(source, /^\s+timeout-minutes: 10$/mu);
+  assert.match(
+    source,
+    /^    env:\n      YUKH_PROJECTS_WRITE_TOKEN: \$\{\{ secrets\.YUKH_PROJECTS_WRITE_TOKEN \}\}$/mu,
+  );
   assert.match(source, /^\s+steps: \[\]$/mu);
   assert.match(source, /^name: Yukh Projects future controlled apply \(permanently skipped\)$/mu);
   assert.doesNotMatch(source, /^\s*(?:run|uses|outputs):/mu);
@@ -172,7 +176,11 @@ test("accepted RFC-0008 keeps write-token delivery contract inert", () => {
     source,
     /^  (?:pull_request|push|repository_dispatch|schedule|workflow_call|workflow_run):/mu,
   );
-  assert.doesNotMatch(source, /https?:\/\/|secrets\.|GITHUB_TOKEN|github-token/iu);
+  assert.deepEqual(
+    [...source.matchAll(/secrets\.[A-Z_]+/gu)].map((match) => match[0]),
+    ["secrets.YUKH_PROJECTS_WRITE_TOKEN"],
+  );
+  assert.doesNotMatch(source, /https?:\/\/|GITHUB_TOKEN|github-token/iu);
   assert.doesNotMatch(source, /(?:credential|endpoint|materializer|url):/iu);
   assert.doesNotMatch(source, /apply-action|apply-enabled|upload-artifact|cache:/iu);
 
@@ -183,5 +191,6 @@ test("accepted RFC-0008 keeps write-token delivery contract inert", () => {
   assert.match(guide, /`future-controlled-apply` contract job/u);
   assert.match(guide, /hard-coded false condition is\s+permanent/u);
   assert.match(guide, /approval.*host-capsule\/Coordination profile remain absent/su);
-  assert.match(guide, /no workflow job\s+references it while the contract is skipped/u);
+  assert.match(guide, /only `secrets\.YUKH_PROJECTS_WRITE_TOKEN` expression is\s+job-local/u);
+  assert.match(guide, /mode\s+`legacy-single-token-apply-v1`/u);
 });
