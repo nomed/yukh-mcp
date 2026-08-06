@@ -10,6 +10,8 @@ Acceptance of this RFC would authorize only a network-free reference
 implementation and deterministic qualification behind the existing audit ports.
 It would not authorize gateway integration, a provider, credential, endpoint,
 live mutation, Project apply, deployment, or a production durability claim.
+Recovery import, acknowledgement, retention, and export remain blocked by the
+separately accepted storage-neutral extensions identified below.
 
 ## Summary
 
@@ -23,9 +25,10 @@ retained commit remains the authority for its event bytes and chain position.
 
 The profile also defines a separately durable recovery journal, deterministic
 restart replay, local checkpoint manifests, bounded retention and export
-behavior, and fail-closed health transitions. It remains vendor-neutral at the
-`AuditStore` and `RecoveryJournal` ports and introduces no network or provider
-operation.
+requirements, and fail-closed health transitions. Retention and export
+requirements are prospective and do not authorize those implementations. The
+profile remains vendor-neutral at the `AuditStore` and `RecoveryJournal` ports
+and introduces no network or provider operation.
 
 Local checkpoints are produced by the same process and are not independently
 witnessed or cryptographically signed. They improve deterministic recovery and
@@ -222,7 +225,9 @@ Startup occurs before the adapter reports ready:
 5. validate or deterministically complete primary identity records and rebuild
    in-memory stream heads plus the never-reusable event-ID map;
 6. validate checkpoints, deletion manifests, and expired-body identity bindings;
-7. validate all pending, acknowledged, and recovery identity records; and
+7. validate and resolve every recovery acknowledgement transaction according to
+   the deterministic state table below, then validate all remaining pending,
+   acknowledged, quarantine, and recovery identity records; and
 8. calculate capacity, identity tombstone, and recovery backlog health.
 
 The following conditions make health `failed` and pre-effect operation
@@ -281,20 +286,76 @@ source fact digest, original observation time, import time, and declared gap.
 One acknowledgement binds at most four import receipts; an empty, oversized,
 duplicate, or inconsistently bound receipt set denies acknowledgement and
 leaves the fact pending.
-The adapter then atomically publishes an immutable acknowledgement record and
-syncs its directory. It also atomically publishes a monotonic superset recovery
-identity version that retains the recovery ID, fact digest,
-pending-record digest, acknowledgement-record digest, and digests plus event
-references for every import receipt. The earlier identity version remains
-valid, and startup requires one monotonic exact extension. Pending source
-records remain until retention eligibility; acknowledgement is not an overwrite
-or deletion.
+
+Acknowledgement is one ordered, recoverable transaction. Its acknowledgement
+record contains the recovery ID, fact and pending-record digests, original
+observation and import times, the ordered import-receipt tuples, their set
+digest, transaction ID, previous recovery-identity digest, and record digest.
+Each receipt tuple contains its receipt digest, event ID, event reference,
+candidate digest, and declared-gap binding. The next immutable recovery identity
+version repeats every earlier identity field and adds state
+`acknowledgement_prepared`, the transaction ID, acknowledgement-record digest,
+the same receipt set digest and tuples, and every field needed to reproduce the
+acknowledgement record byte-for-byte. This permanent extension is the
+profile-lifetime conflict-protection tombstone; it is never retention-eligible.
+The transaction ID is the domain-separated canonical digest of the recovery ID,
+fact digest, pending-record digest, previous identity digest, and ordered receipt
+tuples. Neither record may refer to a mutable filename or temporary file.
+
+While holding the profile lock, acknowledgement MUST use this exact order:
+
+1. revalidate the pending record, complete identity chain, importer receipts,
+   bounds, capacity reservation, and absence of either transaction destination;
+2. construct the canonical acknowledgement record and next identity extension
+   in memory and cross-check their transaction, record, receipt, and previous
+   identity digests;
+3. create both same-directory temporary files exclusively, write their complete
+   canonical bytes, sync each file, and close each file;
+4. publish the identity extension without replacement;
+5. sync the recovery ID's `identities` directory;
+6. publish the acknowledgement record without replacement;
+7. sync the `acknowledged` directory; and
+8. only then expose state `acknowledged` or return acknowledgement success.
+
+Step 7 is the single logical acknowledgement commit point. It is intentionally
+after the identity-directory sync: no live process may expose an acknowledged
+state unless the permanent identity conflict protection and complete receipt
+binding are already durable. Publication alone, a synced temporary file, or an
+identity with `acknowledgement_prepared` is not acknowledgement. The pending
+source remains until separately authorized retention; acknowledgement is not an
+overwrite or deletion.
+
+Before readiness, startup resolves every possible crash state as follows:
+
+| Durable/visible state after restart                                                                                             | Required deterministic action                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| neither final record nor recognized transaction temporary exists                                                                | remain pending without filesystem change                                                                                                                                        |
+| neither final record exists and one or both recognized temporary files exist                                                    | after validating ownership, names, bounds, and transaction binding, unlink them, sync each containing directory, and remain pending                                             |
+| valid identity extension exists, acknowledgement record absent                                                                  | sync the identity directory, reproduce the acknowledgement bytes from the extension, publish without replacement, sync `acknowledged`, then commit                              |
+| valid identity extension and matching acknowledgement record exist, but either publication may have preceded its directory sync | sync the identity directory first, then `acknowledged`; validate both again, then commit                                                                                        |
+| both records validate after both directory syncs                                                                                | expose exactly one acknowledged transaction idempotently                                                                                                                        |
+| acknowledgement record exists without its exact valid identity extension                                                        | atomically move it without replacement to its transaction-derived quarantine name, sync both directories, keep the fact pending, and fail health                                |
+| either final record is malformed, conflicting, non-monotonic, or disagrees on any binding                                       | quarantine every safely attributable conflicting final record without replacement, preserve the pending source and prior identities, sync affected directories, and fail health |
+
+The first two rows cover crashes before identity publication, including during
+temporary writes and after either temporary-file sync. The third row covers a
+crash after identity publication or its directory sync but before
+acknowledgement publication. The fourth covers a crash after acknowledgement
+publication but before its directory sync. The fifth covers a crash after the
+commit point. If a published identity entry is absent after restart, it was not
+durable and the transaction follows the rollback row; if present, startup first
+makes its directory entry durable and follows completion. A quarantine move
+preserves the exact bounded bytes, uses a deterministic transaction-derived
+name, and is never repair or acknowledgement. Failure to complete and sync the
+quarantine move leaves the source inaccessible, fails startup, and exposes no
+acknowledged state. Temporary files are never used as authority.
 
 Before the registry extension exists, replay is read-only and leaves every fact
-pending. Later importer denial, unavailability, invalid receipts, duplicate
-conflict, or crash also leaves the fact pending. Replay is idempotent. No
-failure causes provider retry. The first implementation bounds one replay pass
-to 1,000 facts, 8 MiB of input, and 30 seconds from an injected monotonic clock.
+pending. Later importer denial, unavailability, invalid receipts, or duplicate
+conflict also leaves the fact pending. A crash is resolved only by the table
+above and never causes importer or provider retry. Replay and transaction
+completion are idempotent. The first implementation bounds one replay pass to
+1,000 facts, 8 MiB of input, and 30 seconds from an injected monotonic clock.
 
 ### Local checkpoint authority
 
@@ -474,11 +535,46 @@ denies.
 No export is available to MCP clients, the gateway, providers, or ambient
 filesystem readers through this profile.
 
-The internal exporter requires an injected explicit authorization result
-independent of capability execution. Missing, malformed, denied, or
-non-explicit authorization denies before reading records. The profile does not
-define an identity provider and therefore qualifies export only with synthetic
+RFC-0004 requires every export attempt, including a denial or failure, to be
+audited through a control stream. Its current registry supplies only
+`audit.export_created`; that success event cannot represent an attempted export,
+an allow or deny authorization decision, enforcement, or a terminal denied or
+failed outcome. Therefore this RFC does not authorize an exporter
+implementation, including an internal exporter exercised only with synthetic
 authorization fixtures.
+
+Exporter implementation remains blocked until a separately reviewed and
+accepted storage-neutral RFC-0004 registry extension defines closed, versioned
+export-control candidates for:
+
+1. `audit.export_attempted` before authorization or source-record access;
+2. `audit.export_authorization_recorded` with explicit `allow` or `deny`;
+3. `audit.export_enforcement_recorded` with `admitted` or `denied`; and
+4. `audit.export_outcome_recorded` with exactly one terminal outcome from
+   `created`, `denied`, `failed`, or `no_action`.
+
+The extension MUST define producer allowlists, schemas, classifications,
+correlation and causation rules, projection and retention policy, reason and
+phase-code registries, and durable preconditions. Every candidate MUST bind the
+export ID, requester reference, profile and projection versions, exact query and
+range digest, authorization decision reference and digest where applicable,
+and its causal predecessor. The terminal candidate MUST additionally bind the
+attempt, authorization and enforcement evidence, manifest and output digests
+when created, bounded counts, and a sanitized terminal phase. For outcome
+`created`, it MUST causally bind the existing `audit.export_created` event;
+other outcomes MUST NOT emit that event. It MUST support durable evidence for
+denied authorization and pre-manifest failure without inventing an artifact.
+Unknown or unavailable control evidence fails closed.
+
+After that extension is accepted, any future exporter requires an injected
+explicit authorization result independent of capability execution. It MUST
+durably commit attempt evidence before authorization, durable allow-or-deny and
+enforcement evidence before source-record access, reserve capacity for a
+terminal event, and durably commit exactly one terminal outcome before return.
+Missing, malformed, stale, denied, non-explicit, or unauditable authorization
+denies without reading source records, but still requires durable denial
+evidence. Audit unavailability means no export attempt may proceed or return an
+authorization result without a durable terminal outcome.
 
 One export is limited to one stream, one contiguous declared range, 10,000
 records, 16 MiB of source bytes, 16 MiB of output, and 30 seconds from an
@@ -488,6 +584,8 @@ writes, syncs, and publishes the manifest without replacement before syncing
 the export directory. The manifest is the commit point: an artifact without its
 valid manifest is incomplete and unavailable. Any failure removes only
 validated profile-owned incomplete files and exposes no partial trusted export.
+These are prospective requirements for the separately reviewed implementation,
+not authorization supplied by acceptance of this RFC.
 
 The manifest contains the RFC-0004 bounded fields, included hashes and local
 checkpoints, validated completed-retention ranges, output digest, projection
@@ -512,7 +610,7 @@ contents, raw exceptions, filesystem metadata, or operating-system error text.
 The new boundaries are trusted process to local filesystem, writer lock to
 single-process ownership, immutable commit publication, startup recovery,
 recovery replayer to importer, local checkpoint authority, retention
-maintenance, and synthetic exporter authorization.
+maintenance, and the blocked export-control boundary.
 
 Primary threats are symlink or hard-link substitution, unsafe ownership,
 concurrent writers, torn or reordered writes, stale or forged identity indexes,
@@ -525,8 +623,9 @@ Controls are a closed canonical root, safe metadata checks, exclusive ownership,
 immutable per-sequence commit units, sync-before-receipt publication, complete
 startup reconstruction, global identity conflict checks, bounded journal replay,
 same-process checkpoint labels, permanent bounded identity tombstones, separately
-authorized and durably audited manifest-before-delete retention, synthetic-only
-export qualification, and fail-closed health.
+authorized and durably audited manifest-before-delete retention, no exporter
+before a storage-neutral durable control-event extension, and fail-closed
+health.
 
 Residual risk includes host or effective-user compromise, filesystem or kernel
 failure that violates sync guarantees, same-authority deletion or replacement,
@@ -545,8 +644,10 @@ Canonical RFC-0004 event bytes, hashes, candidates, and recovery facts do not
 change. Recovery import and acknowledgement remain blocked pending a separately
 reviewed storage-neutral event-registry extension for gap declaration and
 recovery import. Retention remains blocked pending storage-neutral control-event
-and expired-identity store-port extensions. This profile does not authorize
-those contract additions.
+and expired-identity store-port extensions. Export remains blocked pending the
+export attempt, authorization, enforcement, and terminal-outcome registry
+extension specified above. This profile does not authorize those contract
+additions or an exporter.
 
 No ordinary gateway, demo, provider, MCP discovery, configuration, or network
 behavior changes.
@@ -568,7 +669,11 @@ Implementation must include deterministic tests for:
 - journal append durability, exact replay order, replay restart, pending-fact
   preservation, recovery identity conflict, blocked acknowledgement, and no
   retry; acknowledgement receipt cardinality, duplicate, digest, reference, and
-  source-binding bounds;
+  source-binding bounds; byte-exact acknowledgement/identity cross-binding,
+  identity-directory sync before acknowledgement publication, acknowledgement
+  commit only after its directory sync, and every crash-table row with
+  deterministic rollback, completion, quarantine, failed health, idempotent
+  restart, and no acknowledged visibility before durable identity protection;
 - local checkpoint fixed vectors, invalid checkpoint, tail truncation limits,
   and explicit absence of independent-witness claims;
 - capacity thresholds, free-space failure, bounded replay, and backpressure;
@@ -587,8 +692,13 @@ Implementation must include deterministic tests for:
   expiry, and after restart; tampered, colliding, missing, reordered, or
   non-monotonic identity versions; byte/count exhaustion; and proof no identity
   is recycled to regain capacity;
-- denied export, source/output/time bounds, deterministic manifest and output,
-  crash cleanup, and no partial artifact;
+- absence and unreachability of an exporter before the registry extension, zero
+  source reads when required control evidence is unavailable, and governance
+  fixtures proving the proposed extension can represent durable attempted,
+  allow/deny, enforcement, and every terminal outcome; after separate acceptance,
+  denied export, durable evidence ordering, terminal-capacity reservation,
+  source/output/time bounds, deterministic manifest and output, every crash
+  boundary, cleanup, and no partial artifact;
 - no forbidden content or raw filesystem error in records or diagnostics; and
 - existing full repository validation.
 
@@ -602,7 +712,9 @@ restart tests.
 2. Open a separate implementation issue.
 3. Implement internal ports and the repository-local adapters without gateway or
    provider imports.
-4. Qualify deterministic restart, crash, replay, retention, and export behavior.
+4. Qualify deterministic restart, crash, and replay behavior; keep retention
+   and export blocked until their storage-neutral contract extensions are
+   separately accepted.
 5. Keep the profile disabled and unreachable from ordinary runtime entry points.
 6. Review implementation evidence in a focused PR.
 
@@ -666,4 +778,6 @@ The owner must decide during review:
 2. whether the fixed capacity and retention limits are appropriate for the
    reference profile; and
 3. what separately governed storage-neutral event schemas should represent
-   recovery import and the required declared gap.
+   recovery import and the required declared gap; and
+4. whether a separate RFC should adopt the proposed export-control event set
+   without changing RFC-0004's existing `audit.export_created` compatibility.

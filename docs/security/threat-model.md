@@ -546,7 +546,8 @@ production-readiness claim.
 - Proposed architecture: RFC-0010
 - Scope: one-process repository-local primary audit store, separate recovery
   journal, deterministic restart/replay, local checkpoints, bounded retention,
-  and synthetic-only export qualification
+  and prospective retention/export requirements with both implementations
+  blocked on storage-neutral contract extensions
 - New live provider or network boundary: none
 
 | Threat | Proposed control | Residual risk / dependency |
@@ -557,16 +558,19 @@ production-readiness claim.
 | concurrent processes assign the same sequence or hide an identity conflict | one exclusive non-blocking writer lock and fail-closed startup; no stale-lock deletion or multi-process mode | lock denial is an availability attack and distributed writers remain unsupported |
 | truncation, replacement, or deletion is mistaken for immutable evidence | canonical hash chain, strict restart verification, local checkpoint manifests, and explicit `local_unwitnessed_not_complete` labeling | same-account chain replacement and unwitnessed tail truncation remain undetectable; an independent checkpoint authority is absent |
 | post-start audit failure loses, reorders, or retries a possible effect | separately synced immutable recovery facts and identity records, deterministic bounded replay, durable acknowledgement only after bound import receipts, withheld success, and no provider retry | importer schemas, reconciliation authority, and operational response still require review; pending backlog can deny future work |
-| acknowledgement retention frees a recovery ID or loses receipt binding | acknowledged source and acknowledgement records have a 24-hour minimum and 30-day maximum; the shared 8 MiB recovery cap reserves lifecycle space; profile-lifetime recovery identity records retain recovery ID, fact digest, append receipt, source/acknowledgement digests, and import receipt bindings | identity capacity is finite and fails closed; acknowledgement remains blocked pending the storage-neutral import registry extension |
+| an acknowledgement becomes visible before recovery-ID conflict protection or receipt binding is durable | the permanent `acknowledgement_prepared` identity extension contains the complete receipt binding and reproducible acknowledgement digest; its file and directory are synced before acknowledgement publication; acknowledgement commits only when its own directory is synced; startup deterministically rolls back pre-identity temporary state, completes a valid prepared identity, or quarantines conflicts before readiness | filesystem or hardware may violate sync semantics; acknowledgement remains blocked pending the storage-neutral import registry extension |
+| acknowledgement retention frees a recovery ID or loses receipt binding | acknowledged source and acknowledgement records have a 24-hour minimum and 30-day maximum; the shared 8 MiB recovery cap reserves lifecycle space; profile-lifetime recovery identity records retain recovery ID, fact digest, append receipt, source/acknowledgement digests, transaction ID, and complete import receipt bindings | identity capacity is finite and fails closed; malformed or orphaned acknowledgement state is quarantined and fails health |
 | disk pressure silently deletes evidence or permits provider start without capacity | fixed byte/count limits, free-space reservation check, degraded export denial, hard fail-closed limit, and no automatic evidence eviction | local disk denial remains possible and no backup or disaster-recovery profile exists |
 | unauthorized, held, or partially audited retention erases evidence or is mislabeled complete | fresh independent exact-plan authorization and `not_held` decision; durable attempt/allow-or-deny/enforcement/admission before unlink; intent and identity versions before deletion; synced outcome, expired identity version, and terminal outcome afterward; incomplete phases fail health and deny export | required control-event, hold-authority, and expired-identity port extensions are absent, so the first adapter must deny all retention; local operator/writer separation, legal duration, jurisdiction, and backup deletion remain unqualified |
-| export bypasses capability authorization or leaks raw store content | no public endpoint, independent explicit authorization requirement, synthetic-only qualification, one-range record/byte/time bounds, deterministic projection and manifest, and atomic publication | no accepted production identity/export authority exists; host filesystem readers remain outside application enforcement |
+| an export attempt is denied or fails without durable control evidence, or export bypasses capability authorization and leaks raw content | no exporter is authorized until an accepted storage-neutral registry extension represents durable attempt, explicit allow/deny, enforcement, and exactly one terminal outcome; prospective export remains independently authorized, bounded, deterministic, and atomically manifested | RFC-0004 currently has only `audit.export_created`, so all exporter implementation is blocked; no production identity/export authority exists and host filesystem readers remain outside application enforcement |
 | filesystem errors or rejected records disclose paths or evidence | closed health codes and counters; no raw exceptions, paths, record bytes, references, or operating-system text | coarse capacity and timing signals remain observable to the local operator |
 
-RFC-0010 is proposed, not accepted. Until owner acceptance, no durable adapter,
-checkpoint authority, recovery importer, retention action, or exporter may be
-implemented. Even if accepted, the profile would authorize only a disabled,
-network-free reference implementation. It would not authorize gateway wiring,
+RFC-0010 is proposed, not accepted. Until owner acceptance, no durable adapter
+or checkpoint authority may be implemented. Recovery import, acknowledgement,
+retention, and export remain blocked even after RFC-0010 acceptance until their
+specified storage-neutral registry/store extensions are separately accepted.
+The profile would authorize only a disabled, network-free reference
+implementation. It would not authorize gateway wiring,
 provider registration, credentials, endpoints, live mutation, Project apply, or
 production claims of durability, confidentiality, completeness, immutability,
 tamper-proofing, backup, or availability.
