@@ -1,8 +1,8 @@
 # Threat model
 
 - Status: Initial
-- Last reviewed: 2026-08-05
-- Scope: Foundation architecture, read-only vertical slice, and inert Project 5 controlled-apply credential boundary
+- Last reviewed: 2026-08-06
+- Scope: Foundation architecture, read-only vertical slice, inert Project 5 controlled-apply credential boundary, and network-free audit-writer foundation
 - Security owner: Yukh MCP maintainers
 - Review authority: an independent maintainer for security-boundary changes
 
@@ -152,7 +152,8 @@ RFCs are superseded rather than edited.
   adapters, durable replay state, and production enforcement remain absent.
 - #5 defines the versioned capability contract and bounded provider semantics.
 - RFC-0004 defines audit envelopes, redaction, retention, ordering, integrity
-  verification, and the limits of those guarantees. No backend is implemented.
+  verification, and the limits of those guarantees. A network-free writer
+  foundation exists under #84; no durable backend is implemented.
 - #10 qualifies repository, CI, dependency, and release supply-chain controls.
 
 Until those records are accepted, this model establishes constraints and stop
@@ -515,3 +516,26 @@ exists to resolve it. No approval authority or reviewed host-capsule/Coordinatio
 profile is configured by this source. Manually configuring the secret, enabling
 the job, passing the secret to a producer, invoking a provider, or applying a
 plan each require separate explicit authorization.
+
+## Audit writer foundation implementation review — 2026-08-06
+
+- Governing issue: #84
+- Accepted architecture: RFC-0003 and RFC-0004
+- Scope: closed event subset, structural projection, causal validation,
+  per-stream sequence/hash commit, retained-range verification, pre-effect
+  durable-receipt enforcement, and bounded post-start recovery facts
+- New live trust boundary: none; all implementations and tests are network-free
+
+| Threat | Control | Residual risk / dependency |
+| --- | --- | --- |
+| prompt, secret, provider body, policy, or stack trace becomes evidence | closed objects, registry-owned fields/classification, bounded identifier/digest/enumeration values, and no raw error fallback | producer semantic correctness still needs review when lifecycle producers are integrated |
+| correlation, causal predecessor, or digest binding is substituted | required correlation slots, exact parent event types, digest links, and operation/subject/capability/scope equality against committed parents | cross-stream parent availability and consistency require a deployment profile |
+| concurrent producers reorder or overwrite evidence | one writer serializes candidates; the store port requires atomic sequence, previous hash, event bytes, and identity commit | multi-writer/distributed atomicity is not implemented |
+| retained events are modified, removed, reordered, reset, or moved across streams | canonical event hash, strictly increasing sequence, previous-hash links, and deterministic retained-range verifier | unwitnessed tail truncation and compromised-writer replacement remain undetectable without qualified checkpoints |
+| audit loss permits provider start | lifecycle guard accepts only `durable` receipts and invokes the provider-start callback only after all required commits | no durable store is selected; the in-memory conformance store is explicitly rejected |
+| post-start audit failure hides possible effect or triggers retry | one bounded and correlation-bound recovery-journal append, withheld success, closed unknown outcome, and no retry | durable journal capacity, confidentiality, import, reconciliation, and recovery operations require a deployment profile |
+
+This increment supplies an executable RFC-0004 foundation but no durability
+claim. It authorizes no gateway integration, provider registration, credential,
+endpoint, checkpoint key, live mutation, Project apply, deployment, or
+production-readiness claim.

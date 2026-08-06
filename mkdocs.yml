@@ -59,6 +59,7 @@ nav:
       - Run a Yukh Projects shadow migration: guides/yukh-projects-shadow-migration.md
   - Reference:
       - Contracts and implementations: reference/contracts.md
+      - Audit writer foundation: reference/audit-writer.md
       - Project 5 Area contract: reference/project-5-area-contract.md
       - Runtime surface: architecture/runtime-skeleton.md
   - Explanation:

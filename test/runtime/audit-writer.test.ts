@@ -1,0 +1,697 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  AUDIT_REGISTRY,
+  AuditError,
+  type AuditCandidate,
+  createAuditCandidate,
+  validateAuditCandidate,
+} from "../../packages/audit/src/contract.js";
+import {
+  commitBeforeProviderStart,
+  recordAfterProviderStart,
+  type RecoveryFact,
+} from "../../packages/audit/src/lifecycle.js";
+import {
+  AUDIT_GENESIS_HASH,
+  AuditWriter,
+  InMemoryAuditStore,
+  canonicalAuditJson,
+  verifyAuditStream,
+  type AuditCommitReceipt,
+} from "../../packages/audit/src/writer.js";
+
+const D1 = `sha256:${"1".repeat(64)}`;
+const D2 = `sha256:${"2".repeat(64)}`;
+const D3 = `sha256:${"3".repeat(64)}`;
+const D4 = `sha256:${"4".repeat(64)}`;
+const NULL_CORRELATION = {
+  trace_ref: null,
+  request_ref: null,
+  authorization_request_ref: null,
+  authorization_decision_ref: null,
+  plan_ref: null,
+  approval_ref: null,
+  execution_ref: null,
+  verification_ref: null,
+  rollback_ref: null,
+};
+
+function candidate(overrides: Record<string, unknown> = {}): AuditCandidate {
+  return validateAuditCandidate({
+    audit_candidate_version: 1,
+    event_id: "event.request",
+    event_type: "request.accepted.v1",
+    occurred_at: "2026-08-06T07:00:00.000Z",
+    producer: {
+      component_ref: "component.gateway",
+      instance_ref: "instance.test",
+    },
+    correlation: {
+      ...NULL_CORRELATION,
+      trace_ref: "trace.test",
+      request_ref: "request.test",
+    },
+    causation: { parent_event_refs: [] },
+    subject: { ref: "subject.test", kind: "workload" },
+    capability: {
+      id: "service.restart",
+      version: "1.0.0",
+      definition_digest: D1,
+    },
+    scope: {
+      resource_kind: "service",
+      resource_set_ref: "resources.test",
+      resource_set_digest: D2,
+      environment_ref: "test",
+    },
+    outcome: { status: "accepted", reason_codes: ["accepted"] },
+    payload: { request_digest: D3 },
+    ...overrides,
+  });
+}
+
+function streamCandidate(): AuditCandidate {
+  return candidate({
+    event_id: "event.stream-opened",
+    event_type: "audit.stream_opened.v1",
+    producer: {
+      component_ref: "component.audit-writer",
+      instance_ref: "instance.test",
+    },
+    correlation: NULL_CORRELATION,
+    subject: { ref: "service.audit-writer", kind: "system" },
+    capability: {
+      id: "audit.writer",
+      version: "1.0.0",
+      definition_digest: D1,
+    },
+    scope: {
+      resource_kind: "security-domain",
+      resource_set_ref: "resources.audit-domain",
+      resource_set_digest: D2,
+      environment_ref: "test",
+    },
+    outcome: { status: "accepted", reason_codes: ["accepted"] },
+    payload: { genesis_hash: AUDIT_GENESIS_HASH },
+  });
+}
+
+function evaluationCandidate(): AuditCandidate {
+  return candidate({
+    event_id: "event.evaluation",
+    event_type: "authorization.evaluation_recorded.v1",
+    correlation: {
+      ...NULL_CORRELATION,
+      trace_ref: "trace.test",
+      request_ref: "request.test",
+      authorization_request_ref: "auth-request.test",
+    },
+    causation: { parent_event_refs: ["event.request"] },
+    outcome: { status: "accepted", reason_codes: ["accepted"] },
+    payload: {
+      request_digest: D3,
+      attribute_snapshot_ref: "attributes.test",
+      attribute_snapshot_digest: D2,
+      evaluator_ref: "evaluator.test",
+    },
+  });
+}
+
+function authCandidate(): AuditCandidate {
+  return candidate({
+    event_id: "event.authorization",
+    event_type: "authorization.decision_recorded.v1",
+    correlation: {
+      ...NULL_CORRELATION,
+      trace_ref: "trace.test",
+      request_ref: "request.test",
+      authorization_request_ref: "auth-request.test",
+      authorization_decision_ref: "auth-decision.test",
+    },
+    causation: { parent_event_refs: ["event.evaluation"] },
+    outcome: { status: "allowed", reason_codes: ["policy_allow"] },
+    payload: {
+      request_digest: D3,
+      decision_digest: D4,
+      effect: "allow",
+      basis: "explicit",
+      policy_revision_ref: "policy.test",
+      policy_digest: D2,
+    },
+  });
+}
+
+function enforcementCandidate(): AuditCandidate {
+  return candidate({
+    event_id: "event.enforcement",
+    event_type: "authorization.enforcement_recorded.v1",
+    correlation: authCandidate().correlation,
+    causation: { parent_event_refs: ["event.authorization"] },
+    outcome: { status: "allowed", reason_codes: ["enforced"] },
+    payload: { decision_digest: D4, enforcement_result: "enforced" },
+  });
+}
+
+function planCandidate(): AuditCandidate {
+  return candidate({
+    event_id: "event.plan",
+    event_type: "plan.created.v1",
+    correlation: {
+      ...authCandidate().correlation,
+      plan_ref: "plan.test",
+    },
+    causation: { parent_event_refs: ["event.enforcement"] },
+    outcome: { status: "created", reason_codes: ["plan_created"] },
+    payload: {
+      plan_digest: D1,
+      authorization_decision_digest: D4,
+      observation_digest: D2,
+    },
+  });
+}
+
+function approvalRequestedCandidate(): AuditCandidate {
+  return candidate({
+    event_id: "event.approval-requested",
+    event_type: "approval.requested.v1",
+    correlation: {
+      ...planCandidate().correlation,
+      approval_ref: "approval.test",
+    },
+    causation: { parent_event_refs: ["event.plan"] },
+    outcome: { status: "requested", reason_codes: ["approval_requested"] },
+    payload: { plan_digest: D1 },
+  });
+}
+
+function approvalCandidate(): AuditCandidate {
+  return candidate({
+    event_id: "event.approval",
+    event_type: "approval.approved.v1",
+    correlation: approvalRequestedCandidate().correlation,
+    causation: { parent_event_refs: ["event.approval-requested", "event.plan"] },
+    outcome: { status: "approved", reason_codes: ["approval_approved"] },
+    payload: { plan_digest: D1, approval_digest: D2 },
+  });
+}
+
+function applyCandidate(): AuditCandidate {
+  return candidate({
+    event_id: "event.apply",
+    event_type: "apply.admitted.v1",
+    correlation: {
+      ...approvalCandidate().correlation,
+      approval_ref: "approval.test",
+      execution_ref: "execution.test",
+    },
+    causation: {
+      parent_event_refs: ["event.enforcement", "event.plan", "event.approval"],
+    },
+    outcome: { status: "admitted", reason_codes: ["apply_admitted"] },
+    payload: {
+      plan_digest: D1,
+      fresh_authorization_decision_digest: D4,
+    },
+  });
+}
+
+function reservedCandidate(): AuditCandidate {
+  return candidate({
+    event_id: "event.reserved",
+    event_type: "execution.attempt_reserved.v1",
+    correlation: applyCandidate().correlation,
+    causation: { parent_event_refs: ["event.apply"] },
+    outcome: { status: "reserved", reason_codes: ["attempt_reserved"] },
+    payload: { plan_digest: D1, attempt: 1 },
+  });
+}
+
+function startedCandidate(): AuditCandidate {
+  return candidate({
+    event_id: "event.started",
+    event_type: "execution.started.v1",
+    correlation: applyCandidate().correlation,
+    causation: { parent_event_refs: ["event.reserved"] },
+    outcome: { status: "started", reason_codes: ["provider_started"] },
+    payload: { plan_digest: D1, attempt: 1 },
+  });
+}
+
+function completedCandidate(): AuditCandidate {
+  return candidate({
+    event_id: "event.completed",
+    event_type: "execution.completed.v1",
+    correlation: applyCandidate().correlation,
+    causation: { parent_event_refs: ["event.started"] },
+    outcome: { status: "completed", reason_codes: ["effect_observed"] },
+    payload: { plan_digest: D1, attempt: 1, result: "effect_observed" },
+  });
+}
+
+function preEffectCandidates(): readonly AuditCandidate[] {
+  return [
+    candidate(),
+    evaluationCandidate(),
+    authCandidate(),
+    enforcementCandidate(),
+    planCandidate(),
+    approvalRequestedCandidate(),
+    approvalCandidate(),
+    applyCandidate(),
+    reservedCandidate(),
+  ];
+}
+
+async function committedChain() {
+  const store = new InMemoryAuditStore();
+  const writer = new AuditWriter({
+    store,
+    streamRef: "stream.test",
+    writerRef: "writer.test",
+    now: () => new Date("2026-08-06T07:00:01.000Z"),
+  });
+  for (const item of [
+    streamCandidate(),
+    candidate(),
+    evaluationCandidate(),
+    authCandidate(),
+    enforcementCandidate(),
+    planCandidate(),
+    approvalRequestedCandidate(),
+    approvalCandidate(),
+    applyCandidate(),
+    reservedCandidate(),
+    startedCandidate(),
+    completedCandidate(),
+  ]) {
+    await writer.commit(item);
+  }
+  return { store, writer, events: store.readStream("stream.test") };
+}
+
+test("structurally projects only closed typed candidates", () => {
+  const parsed = candidate();
+  assert.deepEqual(Object.keys(parsed.payload), ["request_digest"]);
+  assert.equal(parsed.event_type, "request.accepted.v1");
+
+  for (const field of [
+    "raw_prompt",
+    "credential",
+    "provider_body",
+    "policy_source",
+    "stack_trace",
+    "metadata",
+  ]) {
+    assert.throws(
+      () =>
+        validateAuditCandidate({
+          ...parsed,
+          payload: { request_digest: D3, [field]: "do-not-retain-this-value" },
+        }),
+      (error: unknown) => {
+        assert(error instanceof AuditError);
+        assert.equal(error.code, "audit_candidate_invalid");
+        assert.equal(JSON.stringify(error).includes("do-not-retain-this-value"), false);
+        return true;
+      },
+    );
+  }
+
+  assert.throws(
+    () =>
+      validateAuditCandidate({
+        ...parsed,
+        classification: "operational",
+        credential: "do-not-retain-this-value",
+      }),
+    (error: unknown) =>
+      error instanceof AuditError &&
+      error.code === "audit_candidate_invalid" &&
+      !error.message.includes("do-not-retain-this-value"),
+  );
+});
+
+test("constructs typed events while the writer revalidates its trust boundary", async () => {
+  const typed = createAuditCandidate({
+    ...candidate(),
+    event_type: "request.accepted.v1",
+    event_id: "event.typed",
+    payload: { request_digest: D3 },
+  } as AuditCandidate<"request.accepted.v1">);
+  assert.equal(typed.payload.request_digest, D3);
+  assert.equal(AUDIT_REGISTRY[typed.event_type].classification, "protected");
+
+  const store = new InMemoryAuditStore();
+  const writer = new AuditWriter({
+    store,
+    streamRef: "stream.validation",
+    writerRef: "writer.test",
+  });
+  await writer.commit(streamCandidate());
+  await assert.rejects(
+    writer.commit({
+      ...typed,
+      payload: { request_digest: D3, raw_prompt: "must-not-cross-writer" },
+    } as unknown as AuditCandidate),
+    (error: unknown) =>
+      error instanceof AuditError &&
+      error.code === "audit_candidate_invalid" &&
+      !error.message.includes("must-not-cross-writer"),
+  );
+});
+
+test("canonical serialization is object-order independent and locale independent", () => {
+  const first = { z: [3, { b: 2, a: 1 }], a: "value" };
+  const second = { a: "value", z: [3, { a: 1, b: 2 }] };
+  const expected = '{"a":"value","z":[3,{"a":1,"b":2}]}';
+  assert.equal(canonicalAuditJson(first), expected);
+  assert.equal(canonicalAuditJson(second), expected);
+});
+
+test("rejects malformed versions, references, correlation, and unbounded attempts", () => {
+  const cases = [
+    { ...candidate(), audit_candidate_version: 2 },
+    { ...candidate(), event_type: "request.accepted.v2" },
+    { ...candidate(), occurred_at: "2026-08-06T09:00:00.000+02:00" },
+    {
+      ...candidate(),
+      correlation: { ...candidate().correlation, request_ref: "contains whitespace" },
+    },
+    { ...candidate(), occurred_at: "2026-08-06T09:00:00.000+02:00" },
+    {
+      ...candidate(),
+      outcome: { status: "accepted", reason_codes: ["accepted", "accepted"] },
+    },
+    { ...reservedCandidate(), payload: { plan_digest: D1, attempt: 17 } },
+  ];
+  for (const item of cases) {
+    assert.throws(
+      () => validateAuditCandidate(item),
+      (error: unknown) => error instanceof AuditError && error.code === "audit_candidate_invalid",
+    );
+  }
+});
+
+test("assigns deterministic per-stream order and verifies the retained chain", async () => {
+  const { events } = await committedChain();
+  assert.deepEqual(
+    events.map((event) => event.integrity.sequence),
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  );
+  assert.equal(events[0]?.integrity.previous_event_hash, AUDIT_GENESIS_HASH);
+  assert.equal(events[0]?.classification, "operational");
+  assert.equal(events[1]?.classification, "protected");
+  assert.equal(
+    events[0]?.integrity.event_hash,
+    "sha256:a67c9208541d1593c9ccbc087732489c4c2bcf00e874e7a64438e2faddc53a80",
+  );
+  assert.equal(events[1]?.integrity.previous_event_hash, events[0]?.integrity.event_hash);
+  assert.deepEqual(verifyAuditStream(events), { valid: true });
+});
+
+test("serializes concurrent producers without timestamp ordering authority", async () => {
+  const store = new InMemoryAuditStore();
+  const writer = new AuditWriter({
+    store,
+    streamRef: "stream.concurrent",
+    writerRef: "writer.test",
+  });
+  await writer.commit(streamCandidate());
+  const first = candidate({
+    event_id: "event.request-a",
+    occurred_at: "2026-08-06T07:00:03.000Z",
+  });
+  const second = candidate({
+    event_id: "event.request-b",
+    occurred_at: "2026-08-06T07:00:02.000Z",
+  });
+  await Promise.all([writer.commit(first), writer.commit(second)]);
+  const events = store.readStream("stream.concurrent");
+  assert.deepEqual(
+    events.map((event) => event.integrity.sequence),
+    [0, 1, 2],
+  );
+  assert.deepEqual(verifyAuditStream(events), { valid: true });
+});
+
+test("returns exact duplicates and rejects conflicting event identity reuse", async () => {
+  const store = new InMemoryAuditStore();
+  const writer = new AuditWriter({
+    store,
+    streamRef: "stream.duplicate",
+    writerRef: "writer.test",
+  });
+  await writer.commit(streamCandidate());
+  const original = await writer.commit(candidate());
+  const duplicate = await writer.commit(candidate());
+  assert.equal(duplicate.duplicate, true);
+  assert.strictEqual(duplicate.event, original.event);
+
+  await assert.rejects(
+    writer.commit(
+      candidate({
+        payload: { request_digest: D4 },
+      }),
+    ),
+    (error: unknown) => error instanceof AuditError && error.code === "audit_duplicate_conflict",
+  );
+});
+
+test("rejects causal type and operation substitution", async () => {
+  const store = new InMemoryAuditStore();
+  const writer = new AuditWriter({
+    store,
+    streamRef: "stream.causation",
+    writerRef: "writer.test",
+  });
+
+  await writer.commit(streamCandidate());
+  await writer.commit(candidate());
+  await writer.commit(evaluationCandidate());
+  await assert.rejects(
+    writer.commit(
+      authCandidate().correlation.trace_ref === "trace.test"
+        ? validateAuditCandidate({
+            ...authCandidate(),
+            correlation: { ...authCandidate().correlation, trace_ref: "trace.substituted" },
+          })
+        : authCandidate(),
+    ),
+    (error: unknown) => error instanceof AuditError && error.code === "audit_causation_invalid",
+  );
+
+  await assert.rejects(
+    writer.commit(
+      validateAuditCandidate({
+        ...authCandidate(),
+        event_id: "event.authorization-digest-substitution",
+        payload: { ...authCandidate().payload, request_digest: D4 },
+      }),
+    ),
+    (error: unknown) => error instanceof AuditError && error.code === "audit_causation_invalid",
+  );
+});
+
+test("prevents a denied authorization from causing enforcement or planning", async () => {
+  const store = new InMemoryAuditStore();
+  const writer = new AuditWriter({
+    store,
+    streamRef: "stream.denied",
+    writerRef: "writer.test",
+  });
+  await writer.commit(streamCandidate());
+  await writer.commit(candidate());
+  await writer.commit(evaluationCandidate());
+  await writer.commit(
+    validateAuditCandidate({
+      ...authCandidate(),
+      outcome: { status: "denied", reason_codes: ["policy_deny"] },
+      payload: { ...authCandidate().payload, effect: "deny" },
+    }),
+  );
+  await assert.rejects(
+    writer.commit(enforcementCandidate()),
+    (error: unknown) => error instanceof AuditError && error.code === "audit_causation_invalid",
+  );
+});
+
+test("detects mutation, deletion, reorder, reset, and cross-stream substitution", async () => {
+  const { events } = await committedChain();
+  assert.deepEqual(verifyAuditStream([{} as never]), {
+    valid: false,
+    code: "audit_integrity_failure",
+  });
+  const mutation = events.map((event, index) =>
+    index === 3
+      ? {
+          ...event,
+          payload: {
+            ...event.payload,
+            value: { ...event.payload.value, plan_digest: D4 },
+          },
+        }
+      : event,
+  );
+  assert.equal(verifyAuditStream(mutation).valid, false);
+
+  assert.equal(verifyAuditStream(events.filter((_, index) => index !== 3)).valid, false);
+  assert.equal(
+    verifyAuditStream([events[0]!, events[2]!, events[1]!, ...events.slice(3)]).valid,
+    false,
+  );
+
+  const reset = events.map((event, index) =>
+    index === 4
+      ? {
+          ...event,
+          integrity: { ...event.integrity, previous_event_hash: AUDIT_GENESIS_HASH },
+        }
+      : event,
+  );
+  assert.equal(verifyAuditStream(reset).valid, false);
+
+  const substitution = events.map((event, index) =>
+    index === 2
+      ? {
+          ...event,
+          integrity: { ...event.integrity, stream_ref: "stream.other" },
+        }
+      : event,
+  );
+  assert.equal(verifyAuditStream(substitution).valid, false);
+
+  const extraEnvelopeField = events.map((event, index) =>
+    index === 2 ? { ...event, credential: "forbidden" } : event,
+  );
+  assert.equal(verifyAuditStream(extraEnvelopeField as unknown as typeof events).valid, false);
+});
+
+test("fails closed before provider start unless every receipt is durable", async () => {
+  const { writer } = await committedChain();
+  let starts = 0;
+  const volatile = await commitBeforeProviderStart({
+    candidates: preEffectCandidates(),
+    writer,
+    startProvider: async () => {
+      starts += 1;
+      return "started";
+    },
+  });
+  assert.deepEqual(volatile, { status: "denied", code: "audit_unavailable" });
+  assert.equal(starts, 0);
+
+  const durableWriter = {
+    commit: async (item: AuditCandidate): Promise<AuditCommitReceipt> => {
+      const receipt = await writer.commit(item);
+      return { ...receipt, durability: "durable" };
+    },
+  };
+  const incomplete = await commitBeforeProviderStart({
+    candidates: [candidate()],
+    writer: durableWriter,
+    startProvider: async () => {
+      starts += 1;
+      return "started";
+    },
+  });
+  assert.deepEqual(incomplete, { status: "denied", code: "audit_unavailable" });
+  assert.equal(starts, 0);
+
+  const durable = await commitBeforeProviderStart({
+    candidates: preEffectCandidates(),
+    writer: durableWriter,
+    startProvider: async () => {
+      starts += 1;
+      return "started";
+    },
+  });
+  assert.deepEqual(durable, { status: "started", value: "started" });
+  assert.equal(starts, 1);
+});
+
+test("journals one bounded fact after start, withholds success, and never retries", async () => {
+  const { writer } = await committedChain();
+  const receipt = await writer.commit(
+    candidate({
+      event_id: "event.post-start-fixture",
+    }),
+  );
+  let writerCalls = 0;
+  let journalCalls = 0;
+  const recoveryFact: RecoveryFact = {
+    recovery_fact_version: 1,
+    recovery_id: "recovery.test",
+    event_id: "event.completed",
+    event_type: "execution.completed.v1",
+    observed_at: "2026-08-06T07:00:02.000Z",
+    cause: "primary_writer_failed_after_provider_start",
+    trace_ref: "trace.test",
+    request_ref: "request.test",
+    execution_ref: "execution.test",
+    outcome: "completion_unknown",
+  };
+  const result = await recordAfterProviderStart({
+    candidate: completedCandidate(),
+    writer: {
+      commit: async () => {
+        writerCalls += 1;
+        throw new Error("provider response must not escape");
+      },
+    },
+    recoveryFact,
+    journal: {
+      append: async (fact) => {
+        journalCalls += 1;
+        assert.deepEqual(fact, recoveryFact);
+        return { durability: "durable" };
+      },
+    },
+  });
+  assert.deepEqual(result, {
+    status: "withheld",
+    code: "operation_outcome_unknown",
+    recovery: "journaled",
+  });
+  assert.equal(writerCalls, 1);
+  assert.equal(journalCalls, 1);
+
+  const unavailable = await recordAfterProviderStart({
+    candidate: completedCandidate(),
+    writer: { commit: async () => ({ ...receipt, durability: "volatile_test_only" }) },
+    recoveryFact,
+    journal: {
+      append: async () => {
+        throw new Error("journal detail must not escape");
+      },
+    },
+  });
+  assert.deepEqual(unavailable, {
+    status: "withheld",
+    code: "operation_outcome_unknown",
+    recovery: "journal_unavailable",
+  });
+
+  let substitutedJournalCalls = 0;
+  const substituted = await recordAfterProviderStart({
+    candidate: completedCandidate(),
+    writer: {
+      commit: async () => {
+        throw new Error("closed failure");
+      },
+    },
+    recoveryFact: { ...recoveryFact, execution_ref: "execution.substituted" },
+    journal: {
+      append: async () => {
+        substitutedJournalCalls += 1;
+        return { durability: "durable" };
+      },
+    },
+  });
+  assert.deepEqual(substituted, {
+    status: "withheld",
+    code: "operation_outcome_unknown",
+    recovery: "journal_unavailable",
+  });
+  assert.equal(substitutedJournalCalls, 0);
+});

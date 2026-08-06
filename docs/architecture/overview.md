@@ -30,3 +30,15 @@ repository.
 RFC-0005 governs the adapter. RFC-0006 and issue #50 govern the first
 disabled-by-default staging qualification. They authorize no production
 endpoint, gateway wiring, provider execution, mutation, or live apply.
+
+## Audit evidence foundation
+
+The RFC-0004 audit package validates closed typed candidates, checks direct
+causation, assigns per-stream order and hash links, and verifies retained event
+ranges. The included in-memory store is conformance-only and is rejected by the
+pre-effect lifecycle guard because it cannot provide a durable receipt.
+
+Post-start writer failure crosses only a bounded recovery-fact interface,
+withholds success, and does not retry provider work. No audit package is wired
+into the gateway, and no durable store, checkpoint authority, recovery profile,
+provider, credential, or mutation is selected.
