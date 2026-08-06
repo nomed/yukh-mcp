@@ -178,39 +178,86 @@ For each append, while holding the profile lock, the adapter MUST:
    committed record;
 6. require exact event bytes, sequence, previous hash, stream reference, and
    event hash to match that expected append;
-7. write one same-directory temporary file with create-exclusive, no-follow
-   semantics and mode `0600`;
-8. write all canonical bytes, sync the file, and close it;
-9. atomically publish without replacing an existing destination;
-10. publish without replacement immutable identity version zero containing
-    exactly the event ID, candidate digest, stream reference, sequence, previous
-    hash, event hash, commit time, writer reference, durability `durable`,
-    commit-record digest, and identity-record digest;
-11. sync the `commits` and `identities` directories; and
-12. only then return a receipt with durability `durable`.
+7. construct the canonical commit and immutable identity version zero in memory,
+   cross-checking every repeated field and digest; identity version zero contains
+   exactly the event ID, candidate digest, stream reference, sequence, previous
+   hash, event hash, commit time, writer reference, durability `durable`,
+   commit-record digest, and identity-record digest;
+8. create the commit's same-directory temporary file exclusively with no-follow
+   semantics and mode `0600`, write all canonical bytes, sync the file, and close
+   it;
+9. atomically publish the commit without replacing an existing destination;
+10. sync the commit's containing `commits` directory;
+11. only after step 10 succeeds, create the identity's same-directory temporary
+    file exclusively, write its complete canonical bytes, sync the file, and
+    close it;
+12. publish identity version zero without replacement;
+13. sync the event ID's containing `identities` directory; and
+14. only then return a receipt with durability `durable`.
 
 The implementation MUST use an atomic no-replace publication primitive. A
 rename operation that can overwrite the destination is insufficient.
 
+The record-directory sync at step 10 is a strict ordering barrier: the adapter
+MUST NOT create, publish, or sync any identity temporary or final entry before
+that barrier succeeds. The commit and identity containing directories MUST
+already exist durably. When a stream or event-ID directory is first created, the
+adapter syncs the new directory and then its parent before step 8; a crash may
+leave an empty closed-topology directory, which has no evidentiary meaning.
+After any ambiguous publication or sync result, the adapter returns no receipt,
+marks health failed for that process, and leaves startup to classify the bounded
+state below. It never infers success from a temporary file.
+
 The committed sequence file is the event transaction; identity version zero is a
 derived immutable guard that becomes independently necessary only after
-retention. A crash before commit publication leaves no commit. A crash after
-commit publication but before identity publication or directory sync may leave
-a valid event for which no caller received a durable receipt. Startup derives
-and publishes the missing identity record only after validating the complete
-commit, then exact retry returns the event idempotently. Identity version zero
-without its referenced valid commit is an integrity failure unless a later
-validated permanent version binds the deletion manifest digest and
-`expired_by_policy` state. Expiry of the separate manifest does not erase that
-binding.
+retention. The protected event supplies every value needed to reproduce the
+original receipt, and the commit record supplies the candidate and record
+digests needed to reproduce identity version zero. A crash after commit
+publication but before identity-directory sync may therefore leave a valid event
+for which no caller received a durable receipt. Startup derives and publishes
+the missing identity only from the validated commit; exact retry then returns
+the event idempotently and differing reuse remains a conflict.
 
-Temporary files are never evidence. A hard-link no-replace implementation MAY
+Before readiness, startup resolves every primary append crash state in this
+order:
+
+| Durable/visible state after restart | Required deterministic action |
+| --- | --- |
+| no final commit or identity; no recognized temporary | treat the attempted append as nonexistent |
+| no final commit or identity; only a recognized commit temporary | validate its ownership, name, type, mode, size, and destination binding, unlink it, sync its containing directory, and treat the append as nonexistent |
+| valid final commit; identity absent, temporary, or not durably known | sync the commit directory first, remove any validated identity temporary and sync its directory, reproduce identity version zero from the commit, publish it without replacement, sync its directory, revalidate both records, and expose exactly one committed event |
+| valid final commit and exactly matching final identity | sync the commit directory first and the identity directory second, revalidate both records, and expose exactly one committed event |
+| final identity exists but its referenced valid commit is absent | this is unreachable from the ordered protocol on a qualified filesystem; retain the final identity as conflict protection, expose no receipt, fail health, and require explicit recovery outside this profile |
+| only an identity temporary exists and its referenced valid commit is absent | this is unreachable from the ordered protocol; preserve the suspect temporary, expose no receipt, and fail health, so no event ID can be accepted before explicit recovery |
+| either final is malformed, conflicts, or disagrees on any repeated field or digest | preserve the bounded files, expose no receipt, fail health, and require explicit recovery outside this profile |
+
+The first two rows cover crashes before commit publication, including during or
+after commit-file sync. In the third row, publication may have preceded the
+commit-directory sync; seeing the complete final commit permits startup to make
+that entry durable before deriving identity. The third and fourth rows cover
+every crash after commit publication, including identity temporary write,
+identity publication, and either directory sync. Because identity work cannot
+start before a successful commit-directory sync, loss of the commit while an
+identity artifact survives is not a protocol-generated crash state. It is
+filesystem-contract violation, tampering, or state from a nonconforming writer
+and remains fail closed. The retained orphan identity continues to reserve its
+event ID, so startup failure cannot make conflicting reuse possible.
+
+Identity version zero without its referenced valid commit is an integrity
+failure unless a later validated permanent version binds the deletion manifest
+digest and `expired_by_policy` state. Expiry of the separate manifest does not
+erase that binding.
+
+Temporary files are never evidence. Their closed names bind the transaction and
+intended destination. Startup may unlink an unpublished recognized temporary
+only in a state table row that permits it and only after validating its name,
+type, ownership, mode, location, link count of exactly one, and size bound; its
+contents need not be complete. A hard-link no-replace implementation MAY instead
 leave one profile-owned temporary name linked to an already published
-destination if the process crashes between link and unlink. Startup removes
-only such well-formed temporary names after validating their type, ownership,
-mode, location, link count of exactly two, byte identity with the validated
-destination, and destination binding. Every other hard-linked or unknown
-temporary entry fails startup.
+destination if the process crashes between link and unlink. Startup removes that
+name only after additionally validating a link count of exactly two, byte
+identity with the validated destination, and destination binding. Every other
+hard-linked, misplaced, or unknown temporary entry fails startup.
 
 ### Startup recovery and health
 
@@ -222,12 +269,14 @@ Startup occurs before the adapter reports ready:
 4. validate filenames, bounded file size, canonical bytes, record digest,
    candidate digest, protected event schema, sequence, previous hash, event hash,
    stream binding, and global event-ID uniqueness;
-5. validate or deterministically complete primary identity records and rebuild
-   in-memory stream heads plus the never-reusable event-ID map;
+5. resolve every primary append crash state using the record-before-identity
+   state table, then rebuild in-memory stream heads plus the never-reusable
+   event-ID map from validated commits and retained identity artifacts;
 6. validate checkpoints, deletion manifests, and expired-body identity bindings;
-7. validate and resolve every recovery acknowledgement transaction according to
-   the deterministic state table below, then validate all remaining pending,
-   acknowledged, quarantine, and recovery identity records; and
+7. resolve every recovery append crash state using its record-before-identity
+   table, validate and resolve every recovery acknowledgement transaction
+   according to the deterministic state table below, then validate all remaining
+   pending, acknowledged, quarantine, and recovery identity records; and
 8. calculate capacity, identity tombstone, and recovery backlog health.
 
 The following conditions make health `failed` and pre-effect operation
@@ -248,17 +297,50 @@ A recovery fact is stored separately from primary audit evidence. The pending
 record contains exactly the validated `RecoveryFact`, its canonical digest, the
 profile identifier, journal append time, and journal record version.
 
-Append uses the same create-exclusive temporary file, file sync, atomic
-no-replace publication, and directory sync protocol as a primary commit. Before
-returning, it also publishes an immutable recovery identity record containing
-exactly the recovery ID, fact digest, pending-record digest, append time,
-durability `durable`, and identity-record digest. A durable receipt is returned
-only after the pending and identity directories are synced.
+Append uses the same record-before-identity barrier as a primary commit. While
+holding the lock, the adapter constructs and cross-checks the pending record and
+immutable recovery identity in memory. It then:
+
+1. writes, syncs, and closes a create-exclusive same-directory pending
+   temporary;
+2. publishes the pending record without replacement;
+3. syncs `recovery/pending`;
+4. only after step 3 succeeds, writes, syncs, and closes the create-exclusive
+   temporary for the recovery identity containing exactly the recovery ID, fact
+   digest, pending-record digest, append time, durability `durable`, and
+   identity-record digest;
+5. publishes the identity without replacement;
+6. syncs the recovery ID's containing `identities` directory; and
+7. only then returns a durable receipt.
+
+The identity directory MUST already have been created and durably linked to its
+parent before step 1. No identity temporary or final may be created before the
+pending-directory barrier at step 3. An ambiguous publication or sync withholds
+the receipt and is resolved only on restart.
 
 Exact recovery-ID and fact-digest resubmission is idempotent. Reuse with
 different content is a journal integrity failure. Recovery identity records are
 never retention-eligible. Recovery facts are never modified in place and are
 never treated as committed audit evidence.
+
+Before readiness, startup resolves every recovery append crash state:
+
+| Durable/visible state after restart | Required deterministic action |
+| --- | --- |
+| no final pending record or identity; no recognized temporary | treat the attempted append as nonexistent |
+| no final pending record or identity; only a recognized pending temporary | validate and unlink it, sync `pending`, and treat the append as nonexistent |
+| valid final pending record; identity absent, temporary, or not durably known | sync `pending` first, remove any validated identity temporary and sync its directory, reproduce the identity from the pending record, publish it without replacement, sync its directory, revalidate both, and expose exactly one pending fact |
+| valid final pending record and exactly matching final identity | sync `pending` first and the identity directory second, revalidate both, and expose exactly one pending fact |
+| final identity exists but its referenced valid pending record is absent | this is unreachable from the ordered protocol on a qualified filesystem; retain the final identity as recovery-ID conflict protection, replay nothing, return no receipt, and fail health pending explicit recovery |
+| only an identity temporary exists and its referenced valid pending record is absent | this is unreachable from the ordered protocol; preserve the suspect temporary, replay nothing, return no receipt, and fail health, so no recovery ID can be accepted before explicit recovery |
+| either final is malformed, conflicts, or disagrees on any repeated field or digest | preserve the bounded files, replay nothing, return no receipt, and fail health pending explicit recovery |
+
+As with primary append, only a validated final pending record can cause identity
+completion. Pending publication without identity may represent a fact for which
+the caller received no receipt, but restart makes exact resubmission idempotent.
+An orphan identity cannot be created by a conforming crash because the pending
+directory was durably synced before any identity write. Orphan identity remains
+reserved and fail closed rather than being rolled back into a reusable ID.
 
 ### Deterministic replay and acknowledgement
 
@@ -668,10 +750,22 @@ behavior changes.
 Implementation must include deterministic tests for:
 
 - fresh commit, exact duplicate, conflicting duplicate, and concurrent calls;
-- restart reconstruction, identity completion after injected crash, and
-  byte-for-byte receipt stability;
-- crash before write, during write, after file sync, after publication, and
-  before/after directory sync using fault injection;
+- restart reconstruction, identity completion only from a validated final
+  record, and byte-for-byte receipt stability;
+- for both primary and recovery append, child-process crashes before temporary
+  creation, during temporary write, after file sync, after record publication,
+  before and after record-directory sync, during identity temporary write, after
+  identity publication, and before and after identity-directory sync;
+- filesystem call-order assertions proving record publication and its containing
+  directory sync complete before the first identity temporary is created, plus
+  new-directory crashes proving a durable parent link precedes record write;
+- every primary and recovery append crash-table row, including cleanup of a
+  record temporary, completion from record-without-identity, exact restart and
+  retry idempotency after unreturned receipt, conflict rejection after restart,
+  stable receipt bytes, and repeated restart convergence;
+- injected orphan identity, missing record, mismatched digest, and malformed
+  final fixtures proving no receipt, no replay, failed health, retained
+  identity reservation, conflicting-ID rejection, and zero provider-start calls;
 - torn, oversized, non-canonical, reordered, missing, truncated, substituted,
   hard-linked, symlinked, wrong-owner, wrong-mode, and unknown records;
 - two process instances contending for the lock with the loser failing closed;
