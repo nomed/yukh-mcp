@@ -14,7 +14,7 @@
     "dev": "tsx apps/gateway/src/main.ts",
     "demo": "tsx apps/demo/src/main.ts",
     "format:check": "prettier --check apps packages test/runtime package.json tsconfig.json tsconfig.build.json compose.yaml '.github/**/*.yml'",
-    "test": "node --test test/contracts/*.test.mjs test/supply-chain/*.test.mjs && npm run test:runtime",
+    "test": "bash -c 'TMPDIR=\"$PWD/.audit-test-scratch\" node --test test/contracts/*.test.mjs test/supply-chain/*.test.mjs && TMPDIR=\"$PWD/.audit-test-scratch\" npm run test:runtime'",
     "test:contracts": "node --test test/contracts/*.test.mjs",
     "test:runtime": "tsx --test test/runtime/*.test.ts",
     "typecheck": "tsc --project tsconfig.json --noEmit"
