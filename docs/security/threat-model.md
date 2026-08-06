@@ -515,3 +515,31 @@ exists to resolve it. No approval authority or reviewed host-capsule/Coordinatio
 profile is configured by this source. Manually configuring the secret, enabling
 the job, passing the secret to a producer, invoking a provider, or applying a
 plan each require separate explicit authorization.
+
+## Proposed protected approval and host-capsule delivery — 2026-08-06
+
+- Governing issue: #82
+- Proposed architecture: RFC-0010
+- Scope: the missing approval-envelope, trust-root, and host-capsule delivery
+  path for the fixed Project 5 / issue #27 profile
+- Current authority: proposal and review only
+
+The immutable v1.7.0 producer still requires protected approval and
+Coordination material even under the accepted single-token provider profile.
+RFC-0010 proposes three fixed protected-environment secrets, bounded exclusive
+runtime files, independent trust-root selection, fifteen-minute expiry,
+single-run bindings, unconditional cleanup, and structural inactivity before a
+separately reviewed activation.
+
+| Threat | Proposed control | Residual dependency |
+| --- | --- | --- |
+| dispatch, secret presence, or environment review becomes approval | independent signature and exact fresh-plan binding | approval authority remains external and unqualified |
+| stale protected material is replayed | expiry, run binding, nonce consumption and first-attempt-only execution | environment operator can provision incorrect material, causing safe denial |
+| repository substitutes approval authority | trust root selected as a protected environment secret outside source | environment administration remains trusted |
+| protected material reaches retained Actions channels | masking, step-local delivery, bounded mode-0600 files, no outputs/artifacts/cache/summary and unconditional cleanup | runner and secret-store compromise remain capable of disclosure |
+| capsule broadens mutation or rate authority | immutable producer validates fixed scope, allowlist, ceilings, reserves and Coordination epoch | a production Coordination profile remains separately unselected |
+| proposed implementation accidentally becomes live | retain the hard-coded false job condition and prove no runner or secret resolution | later activation requires separate review and authorization |
+
+This proposal authorizes no implementation, secret or environment operation,
+approval issuance, Coordination connection, provider request, workflow
+activation, mutation, deployment, legacy removal, or migration completion.
