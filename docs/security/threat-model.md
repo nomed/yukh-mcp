@@ -539,3 +539,33 @@ This increment supplies an executable RFC-0004 foundation but no durability
 claim. It authorizes no gateway integration, provider registration, credential,
 endpoint, checkpoint key, live mutation, Project apply, deployment, or
 production-readiness claim.
+
+## Proposed repository-local durable audit profile — 2026-08-06
+
+- Governing issue: #86
+- Proposed architecture: RFC-0010
+- Scope: one-process repository-local primary audit store, separate recovery
+  journal, deterministic restart/replay, local checkpoints, bounded retention,
+  and synthetic-only export qualification
+- New live provider or network boundary: none
+
+| Threat | Proposed control | Residual risk / dependency |
+| --- | --- | --- |
+| repository path, symlink, hard link, ownership, or mode substitutes audit state | fixed ignored runtime root, canonical no-follow traversal, regular-file/owner/mode/link-count checks, closed topology, and exclusive profile lock | compromise of the effective user, host, kernel, or repository filesystem remains authoritative over local state |
+| a crash exposes a partial event or a receipt that was not durable | immutable per-sequence commit files, same-directory temporary write, file sync, atomic no-replace publication, directory sync, and receipt only after the final sync | filesystem or hardware that violates documented sync semantics can still lose acknowledged data |
+| a mutable head or event-ID index diverges from committed evidence | commit files are the sole authority; startup validates every retained record and rebuilds stream heads plus the global identity map | startup cost is bounded by the small reference-profile capacity; a larger topology requires another profile |
+| concurrent processes assign the same sequence or hide an identity conflict | one exclusive non-blocking writer lock and fail-closed startup; no stale-lock deletion or multi-process mode | lock denial is an availability attack and distributed writers remain unsupported |
+| truncation, replacement, or deletion is mistaken for immutable evidence | canonical hash chain, strict restart verification, local checkpoint manifests, and explicit `local_unwitnessed_not_complete` labeling | same-account chain replacement and unwitnessed tail truncation remain undetectable; an independent checkpoint authority is absent |
+| post-start audit failure loses, reorders, or retries a possible effect | separately synced immutable recovery facts, deterministic bounded replay, durable acknowledgement only after bound import receipts, withheld success, and no provider retry | importer schemas, reconciliation authority, and operational response still require review; pending backlog can deny future work |
+| disk pressure silently deletes evidence or permits provider start without capacity | fixed byte/count limits, free-space reservation check, degraded export denial, hard fail-closed limit, and no automatic evidence eviction | local disk denial remains possible and no backup or disaster-recovery profile exists |
+| retention erases pending or noncontiguous evidence | explicit maintenance only, pending facts ineligible, contiguous checkpointed prefix requirement, durable deletion manifest before removal, and `expired_by_policy` reporting | local operator and writer are not separated; legal hold, jurisdiction, backup deletion, and production durations are unqualified |
+| export bypasses capability authorization or leaks raw store content | no public endpoint, independent explicit authorization requirement, synthetic-only qualification, one-range record/byte/time bounds, deterministic projection and manifest, and atomic publication | no accepted production identity/export authority exists; host filesystem readers remain outside application enforcement |
+| filesystem errors or rejected records disclose paths or evidence | closed health codes and counters; no raw exceptions, paths, record bytes, references, or operating-system text | coarse capacity and timing signals remain observable to the local operator |
+
+RFC-0010 is proposed, not accepted. Until owner acceptance, no durable adapter,
+checkpoint authority, recovery importer, retention action, or exporter may be
+implemented. Even if accepted, the profile would authorize only a disabled,
+network-free reference implementation. It would not authorize gateway wiring,
+provider registration, credentials, endpoints, live mutation, Project apply, or
+production claims of durability, confidentiality, completeness, immutability,
+tamper-proofing, backup, or availability.
