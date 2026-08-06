@@ -16,9 +16,10 @@ live mutation, Project apply, deployment, or a production durability claim.
 Define `yukh-mcp/repository-local-audit-v1`, the first concrete durability
 profile for the RFC-0004 writer and recovery journal. The profile uses a
 repository-local, ignored runtime directory and immutable per-sequence commit
-records. One process owns one exclusive writer lock. A committed record, rather
-than a mutable head or secondary index, is the authority for event bytes,
-candidate digest, sequence, previous hash, and event identity.
+records. One process owns one exclusive writer lock. A retained commit and its
+bounded durable identity record, or the identity record alone after authorized
+body expiry, are the authority for candidate digest and event identity. A
+retained commit remains the authority for its event bytes and chain position.
 
 The profile also defines a separately durable recovery journal, deterministic
 restart replay, local checkpoint manifests, bounded retention and export
@@ -51,6 +52,8 @@ or mutation provider.
 - define one deterministic, network-free implementation of `AuditStore`;
 - define one deterministic, network-free implementation of `RecoveryJournal`;
 - make exact event resubmission idempotent and conflicting identity reuse fatal;
+- preserve event and recovery identities for the fixed profile lifetime without
+  letting retention, restart, or pressure recycle them;
 - survive process restart without a mutable head or trusted secondary index;
 - detect and quarantine malformed, torn, reordered, truncated, or substituted
   records before reporting healthy;
@@ -120,11 +123,14 @@ The closed topology is:
     streams/<sha256-stream-ref>/
       stream.json
       commits/<20-digit-sequence>.json
+    identities/<sha256-event-id>/<8-digit-version>.json
     checkpoints/<checkpoint-id>.json
-    deletions/<deletion-id>.json
+    deletions/<deletion-id>.intent.json
+    deletions/<deletion-id>.outcome.json
   recovery/
     pending/<sha256-recovery-id>.json
     acknowledged/<sha256-recovery-id>.json
+    identities/<sha256-recovery-id>/<8-digit-version>.json
     quarantine/<sha256-record-id>.json
   exports/
     <export-id>.jsonl
@@ -141,8 +147,13 @@ Stream and recovery directory names are lowercase SHA-256 digests of already
 validated opaque references. The corresponding record binds the original
 reference. A digest collision or inconsistent binding is an integrity failure.
 
-No mutable event-ID index or stream-head file is authoritative. In-memory
-indexes are rebuilt only from validated committed records at startup.
+No mutable event-ID index or stream-head file is authoritative. Identity
+versions are immutable monotonic extensions: every version repeats all earlier
+fields exactly and may add only fields registered for its lifecycle transition.
+Before retention, in-memory indexes are rebuilt from validated committed
+records and cross-checked against identity version zero. After retention, the
+validated version chain preserves uniqueness and conflict detection for expired
+bodies.
 
 ### Primary commit protocol
 
@@ -168,17 +179,27 @@ For each append, while holding the profile lock, the adapter MUST:
    semantics and mode `0600`;
 8. write all canonical bytes, sync the file, and close it;
 9. atomically publish without replacing an existing destination;
-10. sync the containing `commits` directory; and
-11. only then return a receipt with durability `durable`.
+10. publish without replacement immutable identity version zero containing
+    exactly the event ID, candidate digest, stream reference, sequence, previous
+    hash, event hash, commit time, writer reference, durability `durable`,
+    commit-record digest, and identity-record digest;
+11. sync the `commits` and `identities` directories; and
+12. only then return a receipt with durability `durable`.
 
 The implementation MUST use an atomic no-replace publication primitive. A
 rename operation that can overwrite the destination is insufficient.
 
-The committed sequence file is the transaction. No separately mutable head,
-identity row, or receipt is needed for atomicity. A crash before publication
-leaves no commit. A crash after publication but before directory sync may leave
-a valid record, but no caller received a durable receipt; exact retry discovers
-and returns that record idempotently.
+The committed sequence file is the event transaction; identity version zero is a
+derived immutable guard that becomes independently necessary only after
+retention. A crash before commit publication leaves no commit. A crash after
+commit publication but before identity publication or directory sync may leave
+a valid event for which no caller received a durable receipt. Startup derives
+and publishes the missing identity record only after validating the complete
+commit, then exact retry returns the event idempotently. Identity version zero
+without its referenced valid commit is an integrity failure unless a later
+validated permanent version binds the deletion manifest digest and
+`expired_by_policy` state. Expiry of the separate manifest does not erase that
+binding.
 
 Temporary files are never evidence. A hard-link no-replace implementation MAY
 leave one profile-owned temporary name linked to an already published
@@ -198,10 +219,11 @@ Startup occurs before the adapter reports ready:
 4. validate filenames, bounded file size, canonical bytes, record digest,
    candidate digest, protected event schema, sequence, previous hash, event hash,
    stream binding, and global event-ID uniqueness;
-5. rebuild in-memory stream heads and the event-ID map;
-6. validate checkpoints and deletion manifests;
-7. validate all pending and acknowledged recovery records; and
-8. calculate capacity and recovery backlog health.
+5. validate or deterministically complete primary identity records and rebuild
+   in-memory stream heads plus the never-reusable event-ID map;
+6. validate checkpoints, deletion manifests, and expired-body identity bindings;
+7. validate all pending, acknowledged, and recovery identity records; and
+8. calculate capacity, identity tombstone, and recovery backlog health.
 
 The following conditions make health `failed` and pre-effect operation
 `audit_unavailable`: a gap in a retained undeleted range, non-canonical record,
@@ -222,12 +244,16 @@ record contains exactly the validated `RecoveryFact`, its canonical digest, the
 profile identifier, journal append time, and journal record version.
 
 Append uses the same create-exclusive temporary file, file sync, atomic
-no-replace publication, and directory sync protocol as a primary commit. A
-durable receipt is returned only after the pending directory is synced.
+no-replace publication, and directory sync protocol as a primary commit. Before
+returning, it also publishes an immutable recovery identity record containing
+exactly the recovery ID, fact digest, pending-record digest, append time,
+durability `durable`, and identity-record digest. A durable receipt is returned
+only after the pending and identity directories are synced.
 
 Exact recovery-ID and fact-digest resubmission is idempotent. Reuse with
-different content is a journal integrity failure. Recovery facts are never
-modified in place and are never treated as committed audit evidence.
+different content is a journal integrity failure. Recovery identity records are
+never retention-eligible. Recovery facts are never modified in place and are
+never treated as committed audit evidence.
 
 ### Deterministic replay and acknowledgement
 
@@ -252,9 +278,17 @@ change the recorded `completion_unknown` result.
 A pending fact may become acknowledged only after that registry extension is
 accepted and an importer returns durable receipts bound to the recovery ID,
 source fact digest, original observation time, import time, and declared gap.
+One acknowledgement binds at most four import receipts; an empty, oversized,
+duplicate, or inconsistently bound receipt set denies acknowledgement and
+leaves the fact pending.
 The adapter then atomically publishes an immutable acknowledgement record and
-syncs its directory. Pending source records remain until retention eligibility;
-acknowledgement is not an overwrite or deletion.
+syncs its directory. It also atomically publishes a monotonic superset recovery
+identity version that retains the recovery ID, fact digest,
+pending-record digest, acknowledgement-record digest, and digests plus event
+references for every import receipt. The earlier identity version remains
+valid, and startup requires one monotonic exact extension. Pending source
+records remain until retention eligibility; acknowledgement is not an overwrite
+or deletion.
 
 Before the registry extension exists, replay is read-only and leaves every fact
 pending. Later importer denial, unavailability, invalid receipts, duplicate
@@ -297,19 +331,38 @@ The fixed first-profile limits are:
 | --- | ---: |
 | one primary commit record | 64 KiB |
 | one recovery record | 4 KiB |
+| one primary or recovery identity record | 2 KiB |
 | primary committed bytes | 64 MiB |
-| recovery pending and acknowledged bytes | 8 MiB |
+| recovery pending, acknowledged, and identity bytes | 8 MiB |
+| event identity records | 16 MiB |
 | checkpoint and deletion metadata | 4 MiB |
 | completed export artifacts | 32 MiB |
 | temporary bytes | 16 MiB |
 | streams | 64 |
 | pending recovery facts | 1,000 |
+| total recovery identities in all lifecycle states | 1,000 |
+| total event identities in all lifecycle states | 8,192 |
 
-Limits include filesystem record bytes, not only payload bytes. At 90% of any
-byte or count limit health becomes `degraded` and new export work is denied. At
-the limit, or when free space cannot cover the maximum next record plus its
-temporary copy, health becomes `failed`; pre-effect commits deny before provider
-start. Existing evidence is never deleted automatically to admit a write.
+Limits include filesystem record bytes, not only payload bytes. Primary append
+admission accounts for its maximum identity version-zero bytes. Recovery append
+admission accounts for the pending record and reserves space under the same
+8 MiB cap for the maximum acknowledgement and every later identity version
+needed to acknowledge and compact that recovery ID. Acknowledgement cannot
+consume that reservation. Retention admission likewise reserves all identity
+versions, manifests, and terminal-control evidence before recording `admitted`.
+At 90% of any byte or count limit health becomes `degraded` and new export work
+is denied. At the limit, or when free space cannot cover the maximum next record
+plus its temporary copy, health becomes `failed`; pre-effect commits and new
+recovery identities deny. Exact duplicate lookup remains available. Existing
+evidence is never deleted automatically to admit a write.
+
+Identity capacity is not reclaimed. The explicit lifetime of an identity is the
+lifetime of this profile root: from `profile.json` creation until the complete
+root is retired under a separately accepted migration or destruction profile.
+Restart, upgrade, repository movement, body expiry, and capacity pressure do not
+end that lifetime. Version 1 defines no identity eviction, rollover, reset, or
+reuse. Reaching a byte or identity limit therefore fails closed and requires an
+accepted successor profile.
 
 ### Retention and deletion
 
@@ -318,26 +371,103 @@ This reference profile registers:
 | Class | Minimum | Maximum |
 | --- | ---: | ---: |
 | protected event body | 24 hours | 30 days |
-| acknowledged recovery source | 24 hours after acknowledgement | 30 days |
+| acknowledged recovery fact and acknowledgement record | 24 hours after acknowledgement | 30 days |
+| primary and recovery identity tombstone | profile lifetime | profile lifetime |
 | local checkpoint or deletion manifest | 30 days | 90 days |
 | export artifact | 1 hour | 24 hours |
 
-Pending recovery facts are not retention-eligible. If they exceed 30 days, the
-profile fails health rather than deleting evidence.
+Pending recovery facts are not retention-eligible. If a pending fact exceeds 30
+days, or an acknowledged fact or acknowledgement reaches 30 days without a
+completed authorized compaction, the profile fails health rather than deleting,
+overwriting, or silently extending evidence.
 
 Retention is an explicit, locally invoked maintenance operation. There is no
-timer or startup deletion. It may remove only a contiguous stream prefix whose
-maximum retention has elapsed, whose terminal hash is covered by a valid local
-checkpoint, and whose deletion manifest has first been durably published.
+timer or startup deletion. Every invocation requires a fresh injected explicit
+authorization decision, independent from capability execution, bound to the
+exact profile, action, classes, stream/range or recovery IDs, body digests,
+identity digests, policy reference, expiry, and deletion plan digest. Missing,
+malformed, stale, denied, or non-explicit authorization denies before deletion.
+One invocation covers either one contiguous prefix of one stream or one exact
+recovery-ID set, never both, and is limited to 1,000 filesystem records, 16 MiB
+of source bytes, 4 MiB of generated identity/control metadata, and 30 seconds
+from an injected monotonic clock. Crossing any bound before the first unlink is
+`denied`; crossing one afterward is `failed` and `retention_incomplete`.
 
-The manifest records the exact range, class, deletion time, fixed authority
-reference, method, event count, terminal hash, checkpoint reference, and reason
-`expired_by_policy`. It contains no event body. After deletion, verification and
-export report that range as `expired_by_policy`, never `missing`.
+Before any deletion, the writer MUST durably commit registered control evidence
+for the attempt, authorization allow or deny decision, enforcement, hold
+decision, exact deletion-plan digest, and pre-action result `admitted` or
+`denied`. A denied attempt MUST durably record terminal outcome `denied` before
+returning. An allowed no-op MUST durably record terminal outcome `no_action`.
+Admission MUST reserve capacity for the terminal record. After physical work it
+MUST record exactly one terminal outcome: `applied` only after all directory
+syncs, otherwise `failed` with a bounded phase code. Every terminal record binds
+the pre-action evidence, plan, intent and outcome manifest digests, and exact
+counts. Audit unavailability denies before deletion; failure after deletion
+begins fails health and requires explicit reconciliation.
+
+PR #85 does not implement retention-control event schemas, and the accepted
+`AuditStore.findById` result cannot represent an expired identity without the
+complete protected event needed for its original receipt. Therefore the first
+adapter implementation MUST NOT delete primary or recovery bodies. Retention is
+blocked until separately reviewed storage-neutral event-registry and store-port
+extensions define the control evidence, expired identity state, and closed
+retry result without making an expired ID reusable.
+
+No hold request, absence of a hold record, or local operator assertion proves
+that deletion is unheld. Retention also requires a fresh explicit `not_held`
+decision from a separately accepted hold authority bound to the same scope and
+plan; `held`, missing, stale, unavailable, or unknown denies. No such authority
+is selected here, so only synthetic hold fixtures may be used in qualification.
+
+After those extensions are accepted, retention may remove a primary body only
+from a contiguous stream prefix whose maximum retention has elapsed, whose
+terminal hash is covered by a valid local checkpoint, whose immutable identity
+record is durable, and whose deletion manifest and pre-action control evidence
+have first been durably committed. The exact transaction order is:
+
+1. durably commit attempt, authorization, hold, enforcement, and `admitted`
+   control evidence and reserve terminal capacity;
+2. publish and sync an immutable intent manifest;
+3. append and sync a permanent identity version for every affected identity,
+   repeating its event ID/candidate digest or recovery ID/fact digest and binding
+   the intent digest with state `deletion_admitted`;
+4. revalidate authorization time, `not_held`, exact files, identity versions,
+   checkpoint, and intent immediately before the first unlink;
+5. unlink only the declared files and sync every affected directory;
+6. publish and sync an immutable outcome manifest with result `applied`;
+7. append and sync identity versions binding the intent and outcome digests,
+   deletion time, method, reason, applicable stream range/terminal hash/
+   checkpoint digest, terminal control event ID and candidate digest, and state
+   `expired_by_policy`; and
+8. durably commit the terminal `applied` control event.
+
+The intent records exact event range or recovery IDs, class, authorization,
+hold, and pre-action evidence references, method, record count, identity-set
+digest, terminal hash and checkpoint where applicable, and reason
+`expired_by_policy`. The outcome binds the intent, exact removed record set,
+directory-sync completion, and result. Neither contains an event or recovery
+body.
+
+An acknowledged recovery fact and acknowledgement record are deleted together
+only after both reach maximum retention and their recovery identity versions
+bind the source digest, acknowledgement digest, and every import receipt digest
+and event reference. Pending facts and identity records are never eligible.
+
+A crash or error after step 1 but before step 8 is `retention_incomplete`, fails
+health, and requires explicit reconciliation; no startup or retry silently
+resumes deletion. Verification and export deny the affected range until all
+intent, identity, outcome, and terminal-control bindings validate. After a
+detailed intent, outcome manifest, checkpoint, or terminal-control body reaches
+its own retention maximum, the permanent identity versions retain the closed
+completion fields and digests needed to continue reporting
+`expired_by_policy`; they do not claim more checkpoint authority than the
+original local anchor. Exact or conflicting reuse always consults the
+profile-lifetime identity chain and can never create a new record.
 
 The local operator and writer are the same host authority; this profile does not
-qualify legal holds or separation of duties. Any hold request denies retention
-because no accepted hold-authority profile exists.
+qualify legal holds or separation of duties. Because no hold authority is
+accepted, an actual hold result is unknown and all non-synthetic retention
+denies.
 
 ### Bounded export
 
@@ -360,10 +490,12 @@ valid manifest is incomplete and unavailable. Any failure removes only
 validated profile-owned incomplete files and exposes no partial trusted export.
 
 The manifest contains the RFC-0004 bounded fields, included hashes and local
-checkpoints, declared retention gaps, output digest, projection version, and the
-explicit limitation `local_unwitnessed_not_complete`. Export never includes
-raw-store records, candidate digests, writer filesystem metadata, source paths,
-credentials, resolver data, or forbidden content.
+checkpoints, validated completed-retention ranges, output digest, projection
+version, and the explicit limitation `local_unwitnessed_not_complete`.
+`retention_incomplete` denies export of the affected range. Export never
+includes raw-store records, identity records, candidate or fact digests, writer
+filesystem metadata, source paths, credentials, resolver data, or forbidden
+content.
 
 ### Diagnostics
 
@@ -384,15 +516,17 @@ maintenance, and synthetic exporter authorization.
 
 Primary threats are symlink or hard-link substitution, unsafe ownership,
 concurrent writers, torn or reordered writes, stale or forged identity indexes,
-event-ID conflict, chain truncation, recovery fact loss or replay confusion,
-checkpoint overclaim, disk exhaustion, retention erasing evidence, unauthorized
-export, and forbidden content in diagnostics.
+event- or recovery-ID reuse after retention, chain truncation, recovery fact
+loss or replay confusion, unbounded acknowledgements, checkpoint overclaim,
+disk exhaustion, unauthorized or partially audited retention erasing evidence,
+unauthorized export, and forbidden content in diagnostics.
 
 Controls are a closed canonical root, safe metadata checks, exclusive ownership,
 immutable per-sequence commit units, sync-before-receipt publication, complete
 startup reconstruction, global identity conflict checks, bounded journal replay,
-same-process checkpoint labels, explicit manifest-before-delete retention,
-synthetic-only export qualification, and fail-closed health.
+same-process checkpoint labels, permanent bounded identity tombstones, separately
+authorized and durably audited manifest-before-delete retention, synthetic-only
+export qualification, and fail-closed health.
 
 Residual risk includes host or effective-user compromise, filesystem or kernel
 failure that violates sync guarantees, same-authority deletion or replacement,
@@ -410,7 +544,9 @@ accepted write contracts do not acquire backend-specific fields.
 Canonical RFC-0004 event bytes, hashes, candidates, and recovery facts do not
 change. Recovery import and acknowledgement remain blocked pending a separately
 reviewed storage-neutral event-registry extension for gap declaration and
-recovery import. This profile does not authorize those schema additions.
+recovery import. Retention remains blocked pending storage-neutral control-event
+and expired-identity store-port extensions. This profile does not authorize
+those contract additions.
 
 No ordinary gateway, demo, provider, MCP discovery, configuration, or network
 behavior changes.
@@ -420,7 +556,8 @@ behavior changes.
 Implementation must include deterministic tests for:
 
 - fresh commit, exact duplicate, conflicting duplicate, and concurrent calls;
-- restart reconstruction and byte-for-byte receipt stability;
+- restart reconstruction, identity completion after injected crash, and
+  byte-for-byte receipt stability;
 - crash before write, during write, after file sync, after publication, and
   before/after directory sync using fault injection;
 - torn, oversized, non-canonical, reordered, missing, truncated, substituted,
@@ -429,12 +566,27 @@ Implementation must include deterministic tests for:
 - zero provider-start callback calls for every unhealthy or non-durable
   pre-effect path;
 - journal append durability, exact replay order, replay restart, pending-fact
-  preservation, duplicate conflict, blocked acknowledgement, and no retry;
+  preservation, recovery identity conflict, blocked acknowledgement, and no
+  retry; acknowledgement receipt cardinality, duplicate, digest, reference, and
+  source-binding bounds;
 - local checkpoint fixed vectors, invalid checkpoint, tail truncation limits,
   and explicit absence of independent-witness claims;
 - capacity thresholds, free-space failure, bounded replay, and backpressure;
-- retention eligibility, noncontiguous deletion denial, manifest-before-delete,
-  pending-fact preservation, and `expired_by_policy` reporting;
+- retention denial without explicit bound authorization, durable denial
+  evidence, durable allow/deny/admitted/no-action/applied/failed semantics,
+  audit-capacity and missing/stale/held/unknown hold denial, authorization expiry
+  and hold insertion immediately before unlink, blocked retention before
+  contract extensions, range/record/source/generated-byte/time and
+  noncontiguous deletion denial, intent-before-identity-before-delete ordering,
+  every crash point through terminal outcome,
+  `retention_incomplete` health/export behavior, event-ID and recovery-ID
+  conflict detection after restart and body expiry, bounded acknowledgement
+  expiry under the shared 8 MiB cap, pending-fact preservation, and
+  `expired_by_policy` only after complete terminal bindings;
+- exact duplicate and conflicting event/recovery reuse before expiry, after
+  expiry, and after restart; tampered, colliding, missing, reordered, or
+  non-monotonic identity versions; byte/count exhaustion; and proof no identity
+  is recycled to regain capacity;
 - denied export, source/output/time bounds, deterministic manifest and output,
   crash cleanup, and no partial artifact;
 - no forbidden content or raw filesystem error in records or diagnostics; and
@@ -490,6 +642,13 @@ integrity.
 
 Rejected because capacity pressure must not silently erase evidence to allow a
 provider operation. The adapter fails closed and requires explicit retention.
+
+### Delete identity or acknowledgement metadata with expired bodies
+
+Rejected because restart would forget prior event or recovery identities, permit
+conflicting reuse, and sever journal/import receipt bindings. Version 1 keeps
+bounded identity records for its explicit profile lifetime and fails closed at
+the cap.
 
 ### Implement before accepting a profile
 
