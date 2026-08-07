@@ -1,12 +1,13 @@
 # RFC-0010 — Repository-local durable audit and recovery profile
 
-- Status: Proposed
+- Status: Accepted
 - Authors: Copilot
 - Created: 2026-08-06
+- Accepted: 2026-08-07
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/86
 - Depends on: RFC-0003, RFC-0004
 
-Acceptance of this RFC would authorize only a network-free reference
+Acceptance of this RFC authorizes only a network-free reference
 implementation and deterministic qualification behind the existing audit ports.
 It would not authorize gateway integration, a provider, credential, endpoint,
 live mutation, Project apply, deployment, or a production durability claim.
