@@ -3,4 +3,5 @@ dist/
 coverage/
 site/
 .audit-test-scratch/
+.yukh/runtime/
 *.log

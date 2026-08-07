@@ -395,8 +395,9 @@ function parseRecoveryOutcome(value: unknown): RecoveryOutcome {
   return value as RecoveryOutcome;
 }
 
-function validateRecoveryFactShape(fact: RecoveryFact): RecoveryFact {
-  const keys = Object.keys(fact).sort();
+export function validateRecoveryFactShape(value: unknown): RecoveryFact {
+  if (!isRecord(value)) throw new AuditError("audit_candidate_invalid");
+  const keys = Object.keys(value).sort();
   const expected = [
     "cause",
     "event_id",
@@ -413,45 +414,61 @@ function validateRecoveryFactShape(fact: RecoveryFact): RecoveryFact {
     "trace_ref",
     "withheld_outcome",
   ].sort();
-  const boundedRef = (value: string) => value.length <= 128 && REF.test(value);
+  const recoveryFactVersion = readOwn(value, "recovery_fact_version");
+  const recoveryId = readOwn(value, "recovery_id");
+  const eventId = readOwn(value, "event_id");
+  const eventType = readOwn(value, "event_type");
+  const originalObservedAt = readOwn(value, "original_observed_at");
+  const originalObservationParentEventRef = readOwn(value, "original_observation_parent_event_ref");
+  const cause = readOwn(value, "cause");
+  const traceRef = readOwn(value, "trace_ref");
+  const requestRef = readOwn(value, "request_ref");
+  const executionRef = readOwn(value, "execution_ref");
+  const planDigest = readOwn(value, "plan_digest");
+  const attempt = readOwn(value, "attempt");
+  const observedOutcome = readOwn(value, "observed_outcome");
+  const withheldOutcome = readOwn(value, "withheld_outcome");
+  const boundedRef = (candidate: unknown): candidate is string =>
+    typeof candidate === "string" && candidate.length <= 128 && REF.test(candidate);
   if (
     keys.length !== expected.length ||
     keys.some((key, index) => key !== expected[index]) ||
-    fact.recovery_fact_version !== 1 ||
-    !boundedRef(fact.recovery_id) ||
-    !boundedRef(fact.event_id) ||
-    !boundedRef(fact.trace_ref) ||
-    !boundedRef(fact.request_ref) ||
-    !boundedRef(fact.execution_ref) ||
-    !boundedRef(fact.original_observation_parent_event_ref) ||
-    (fact.event_type !== "execution.started.v1" && fact.event_type !== "execution.completed.v1") ||
-    !isValidAuditTimestamp(fact.original_observed_at) ||
-    !DIGEST.test(fact.plan_digest) ||
-    !Number.isInteger(fact.attempt) ||
-    fact.attempt < 1 ||
-    fact.attempt > 16 ||
-    fact.cause !== "primary_writer_failed_after_provider_start" ||
-    fact.withheld_outcome !== "completion_unknown" ||
-    !RECOVERY_OUTCOMES.includes(fact.observed_outcome) ||
-    (fact.event_type === "execution.started.v1" && fact.observed_outcome !== "completion_unknown")
+    recoveryFactVersion !== 1 ||
+    !boundedRef(recoveryId) ||
+    !boundedRef(eventId) ||
+    !boundedRef(traceRef) ||
+    !boundedRef(requestRef) ||
+    !boundedRef(executionRef) ||
+    !boundedRef(originalObservationParentEventRef) ||
+    (eventType !== "execution.started.v1" && eventType !== "execution.completed.v1") ||
+    !isValidAuditTimestamp(originalObservedAt) ||
+    typeof planDigest !== "string" ||
+    !DIGEST.test(planDigest) ||
+    !Number.isInteger(attempt) ||
+    (attempt as number) < 1 ||
+    (attempt as number) > 16 ||
+    cause !== "primary_writer_failed_after_provider_start" ||
+    withheldOutcome !== "completion_unknown" ||
+    !RECOVERY_OUTCOMES.includes(observedOutcome as RecoveryOutcome) ||
+    (eventType === "execution.started.v1" && observedOutcome !== "completion_unknown")
   ) {
     throw new AuditError("audit_candidate_invalid");
   }
   return {
     recovery_fact_version: 1,
-    recovery_id: fact.recovery_id,
-    event_id: fact.event_id,
-    event_type: fact.event_type,
-    original_observed_at: fact.original_observed_at,
-    original_observation_parent_event_ref: fact.original_observation_parent_event_ref,
-    cause: fact.cause,
-    trace_ref: fact.trace_ref,
-    request_ref: fact.request_ref,
-    execution_ref: fact.execution_ref,
-    plan_digest: fact.plan_digest,
-    attempt: fact.attempt,
-    observed_outcome: fact.observed_outcome,
-    withheld_outcome: fact.withheld_outcome,
+    recovery_id: recoveryId,
+    event_id: eventId,
+    event_type: eventType,
+    original_observed_at: originalObservedAt,
+    original_observation_parent_event_ref: originalObservationParentEventRef,
+    cause,
+    trace_ref: traceRef,
+    request_ref: requestRef,
+    execution_ref: executionRef,
+    plan_digest: planDigest,
+    attempt: attempt as number,
+    observed_outcome: observedOutcome as RecoveryOutcome,
+    withheld_outcome: withheldOutcome,
   };
 }
 
