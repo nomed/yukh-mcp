@@ -18,6 +18,7 @@ export type RepositoryLocalHealthPhase =
   | "closed"
   | "closing"
   | "pending_read"
+  | "pre_effect_check"
   | "primary_append"
   | "ready"
   | "recovery_append"

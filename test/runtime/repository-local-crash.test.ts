@@ -67,7 +67,7 @@ function options(root: string, later = false) {
     trustedRepositoryRoot: root,
     writerRef: WRITER_REF,
     now: () => new Date(later ? FIXED_LATER : FIXED_NOW),
-    filesystemHooks: { filesystemKindOverride: "apfs" as const },
+    filesystemHooks: { filesystemKindOverride: "ext" as const },
   };
 }
 
@@ -253,7 +253,7 @@ test("record publication and directory sync precede all identity writes", async 
     const profile = await openRepositoryLocalAuditProfileForQualification({
       ...options(root),
       filesystemHooks: {
-        filesystemKindOverride: "apfs",
+        filesystemKindOverride: "ext",
         onEvent: (event) => {
           events.push(event);
         },

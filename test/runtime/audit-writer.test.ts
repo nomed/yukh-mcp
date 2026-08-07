@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { chmod, mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
   AUDIT_REGISTRY,
@@ -13,6 +16,11 @@ import {
   recordAfterProviderStart,
   type RecoveryFact,
 } from "../../packages/audit/src/lifecycle.js";
+import {
+  openRepositoryLocalAuditProfileForQualification,
+  type RepositoryLocalAuditProfile,
+} from "../../packages/audit/src/repository-local.js";
+import type { RepositoryLocalFilesystemEvent } from "../../packages/audit/src/repository-local-filesystem.js";
 import {
   AUDIT_GENESIS_HASH,
   AuditWriter,
@@ -335,6 +343,10 @@ function preEffectCandidates(): readonly AuditCandidate[] {
   ];
 }
 
+const alwaysReady = Object.freeze({
+  assertReadyForProviderStart: async (): Promise<void> => undefined,
+});
+
 async function committedChain() {
   const store = new InMemoryAuditStore();
   const writer = new AuditWriter({
@@ -501,6 +513,7 @@ test("rejects every non-explicit allow before provider invocation", async () => 
           throw new Error("invalid authorization must not reach the writer");
         },
       },
+      readiness: alwaysReady,
       startProvider: async () => {
         starts += 1;
         return "started";
@@ -692,6 +705,7 @@ test("binds planning to its decision and rejects stale planning authorization at
         throw new Error("stale authorization must fail before commit");
       },
     },
+    readiness: alwaysReady,
     startProvider: async () => {
       starts += 1;
       return "started";
@@ -785,6 +799,7 @@ test("fails closed before provider start unless every receipt is durable", async
   const volatile = await commitBeforeProviderStart({
     candidates: preEffectCandidates(),
     writer,
+    readiness: alwaysReady,
     startProvider: async () => {
       starts += 1;
       return "started";
@@ -802,6 +817,7 @@ test("fails closed before provider start unless every receipt is durable", async
   const incomplete = await commitBeforeProviderStart({
     candidates: [candidate()],
     writer: durableWriter,
+    readiness: alwaysReady,
     startProvider: async () => {
       starts += 1;
       return "started";
@@ -813,6 +829,7 @@ test("fails closed before provider start unless every receipt is durable", async
   const durable = await commitBeforeProviderStart({
     candidates: preEffectCandidates(),
     writer: durableWriter,
+    readiness: alwaysReady,
     startProvider: async () => {
       starts += 1;
       return "started";
@@ -820,6 +837,93 @@ test("fails closed before provider start unless every receipt is durable", async
   });
   assert.deepEqual(durable, { status: "started", value: "started" });
   assert.equal(starts, 1);
+});
+
+test("final capacity and failed-health duplicates never authorize provider start", async () => {
+  const createdRoot = await mkdtemp(path.join(tmpdir(), "audit-readiness-capacity-"));
+  await chmod(createdRoot, 0o700);
+  const root = await realpath(createdRoot);
+  let profile: RepositoryLocalAuditProfile | undefined;
+  let closed = false;
+  try {
+    let armed = false;
+    let remainingIdentitySyncs = 0;
+    const hooks = {
+      filesystemKindOverride: "ext" as const,
+      availableBytesOverride: BigInt(Number.MAX_SAFE_INTEGER),
+      onEvent: (event: RepositoryLocalFilesystemEvent) => {
+        if (armed && event === "primary_identity.after_directory_sync") {
+          remainingIdentitySyncs -= 1;
+          if (remainingIdentitySyncs === 0) hooks.availableBytesOverride = 0n;
+        }
+      },
+    };
+    profile = await openRepositoryLocalAuditProfileForQualification({
+      trustedRepositoryRoot: root,
+      writerRef: "writer.test",
+      now: () => new Date("2026-08-06T07:00:01.000Z"),
+      filesystemHooks: hooks,
+    });
+    const writer = new AuditWriter({
+      store: profile.store,
+      streamRef: "stream.test",
+      writerRef: "writer.test",
+      now: () => new Date("2026-08-06T07:00:01.000Z"),
+    });
+    await writer.commit(streamCandidate());
+    const candidates = preEffectCandidates();
+    armed = true;
+    remainingIdentitySyncs = candidates.length;
+    let starts = 0;
+    let durableReceipts = 0;
+    const exhausted = await commitBeforeProviderStart({
+      candidates,
+      writer: {
+        commit: async (item) => {
+          const receipt = await writer.commit(item);
+          assert.equal(receipt.durability, "durable");
+          durableReceipts += 1;
+          return receipt;
+        },
+      },
+      readiness: profile.readiness,
+      startProvider: async () => {
+        starts += 1;
+        return "started";
+      },
+    });
+    assert.deepEqual(exhausted, { status: "denied", code: "audit_unavailable" });
+    assert.equal(remainingIdentitySyncs, 0);
+    assert.equal(durableReceipts, candidates.length);
+    assert.equal(profile.diagnostic().reason, "capacity_exhausted");
+    assert.equal(starts, 0);
+
+    let duplicateReceipts = 0;
+    const duplicates = await commitBeforeProviderStart({
+      candidates,
+      writer: {
+        commit: async (item) => {
+          const receipt = await writer.commit(item);
+          assert.equal(receipt.duplicate, true);
+          duplicateReceipts += 1;
+          return receipt;
+        },
+      },
+      readiness: profile.readiness,
+      startProvider: async () => {
+        starts += 1;
+        return "started";
+      },
+    });
+    assert.deepEqual(duplicates, { status: "denied", code: "audit_unavailable" });
+    assert.equal(duplicateReceipts, candidates.length);
+    assert.equal(starts, 0);
+    await profile.close();
+    closed = true;
+  } finally {
+    if (profile !== undefined && !closed) await profile.close();
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("journals one bounded fact after start, withholds success, and never retries", async () => {

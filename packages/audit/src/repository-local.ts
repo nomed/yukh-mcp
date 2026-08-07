@@ -6,7 +6,12 @@ import {
   isValidAuditTimestamp,
   type ProtectedAuditEvent,
 } from "./contract.js";
-import { validateRecoveryFactShape, type RecoveryFact, type RecoveryJournal } from "./lifecycle.js";
+import {
+  validateRecoveryFactShape,
+  type RecoveryFact,
+  type RecoveryJournal,
+  type RequiredAuditReadiness,
+} from "./lifecycle.js";
 import {
   canonicalRepositoryLocalBytes,
   computeRecoveryFactDigest,
@@ -83,6 +88,7 @@ export interface RepositoryLocalAuditProfileOptions {
 export interface RepositoryLocalAuditProfile {
   readonly store: AuditStore;
   readonly journal: RecoveryJournal;
+  readonly readiness: RequiredAuditReadiness;
   pendingFacts(): AsyncIterable<RecoveryFact>;
   diagnostic(): RepositoryLocalHealthDiagnostic;
   close(): Promise<void>;
@@ -92,6 +98,12 @@ export interface RepositoryLocalQualificationOptions extends RepositoryLocalAudi
   readonly now?: () => Date;
   readonly monotonicNow?: () => number;
   readonly filesystemHooks?: RepositoryLocalFilesystemHooks;
+  readonly startupPrimaryScanLimits?: RepositoryLocalStartupScanLimits;
+}
+
+export interface RepositoryLocalStartupScanLimits {
+  readonly maxRecords: number;
+  readonly maxBytes: number;
 }
 
 interface RepositoryLocalClock {
@@ -156,6 +168,42 @@ const RECOVERY_ENTRY_LIMIT = REPOSITORY_LOCAL_LIMITS.max_recovery_identities + 1
 const STREAM_ENTRY_LIMIT = REPOSITORY_LOCAL_LIMITS.max_streams + 1;
 const RECORD_DIRECTORY_ENTRY_LIMIT = 3;
 const IDENTITY_DIRECTORY_ENTRY_LIMIT = 2;
+const DEFAULT_PRIMARY_STARTUP_SCAN_LIMITS: RepositoryLocalStartupScanLimits = Object.freeze({
+  maxRecords: REPOSITORY_LOCAL_LIMITS.max_event_identities,
+  maxBytes: REPOSITORY_LOCAL_LIMITS.max_primary_committed_bytes,
+});
+
+class PrimaryStartupScanBudget {
+  private records = 0;
+  private bytes = 0;
+
+  constructor(private readonly limits: RepositoryLocalStartupScanLimits) {
+    if (
+      !Number.isSafeInteger(limits.maxRecords) ||
+      !Number.isSafeInteger(limits.maxBytes) ||
+      limits.maxRecords <= 0 ||
+      limits.maxBytes <= 0 ||
+      limits.maxRecords > REPOSITORY_LOCAL_LIMITS.max_event_identities ||
+      limits.maxBytes > REPOSITORY_LOCAL_LIMITS.max_primary_committed_bytes
+    ) {
+      corruption();
+    }
+  }
+
+  admitRecord(): void {
+    if (this.records >= this.limits.maxRecords) {
+      throw new RepositoryLocalFilesystemError("capacity_exhausted");
+    }
+    this.records += 1;
+  }
+
+  admitBytes(bytes: number): void {
+    if (!Number.isSafeInteger(bytes) || bytes <= 0 || this.bytes > this.limits.maxBytes - bytes) {
+      throw new RepositoryLocalFilesystemError("capacity_exhausted");
+    }
+    this.bytes += bytes;
+  }
+}
 
 function freezeDeep<T>(value: T): T {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
@@ -239,6 +287,7 @@ async function readValidatedRecord<T>(
   hooks: RepositoryLocalFilesystemHooks | undefined,
   validate: (value: unknown) => T,
   expectedLinks: 1 | 2 = 1,
+  beforeRead?: (size: number) => void,
 ): Promise<LoadedRecord<T>> {
   const loaded = await readBoundedRepositoryLocalFile(
     filePath,
@@ -246,6 +295,7 @@ async function readValidatedRecord<T>(
     expectedDevice,
     hooks,
     expectedLinks,
+    beforeRead,
   );
   let record: T;
   try {
@@ -511,6 +561,7 @@ async function scanCommitDirectory(
   directoryPath: string,
   expectedDevice: number,
   hooks: RepositoryLocalFilesystemHooks | undefined,
+  budget: PrimaryStartupScanBudget,
 ): Promise<readonly LoadedCommit[]> {
   const names = await listRepositoryLocalDirectory(
     directoryPath,
@@ -538,6 +589,7 @@ async function scanCommitDirectory(
     if (!Number.isSafeInteger(sequence) || repositoryLocalSequenceFileName(sequence) !== name) {
       corruption();
     }
+    budget.admitRecord();
     const filePath = path.join(directoryPath, name);
     const loaded = await readValidatedRecord(
       filePath,
@@ -546,6 +598,7 @@ async function scanCommitDirectory(
       hooks,
       validateRepositoryLocalPrimaryCommitRecord,
       temporaryDestinations.has(name) ? 2 : 1,
+      (size) => budget.admitBytes(size),
     );
     if (loaded.record.event.integrity.sequence !== sequence) corruption();
     finals.set(name, { ...loaded, directoryPath, filePath });
@@ -578,6 +631,7 @@ async function scanStreams(
   hooks: RepositoryLocalFilesystemHooks | undefined,
   writerRef: string,
   state: RepositoryLocalState,
+  budget: PrimaryStartupScanBudget,
 ): Promise<readonly LoadedStream[]> {
   const streamDirectoryNames = await listRepositoryLocalDirectory(
     paths.streams,
@@ -611,7 +665,7 @@ async function scanStreams(
       if (streamFileExists || temporaries.length !== 0 || entries.length !== 0) corruption();
       continue;
     }
-    const commits = await scanCommitDirectory(commitsDirectoryPath, expectedDevice, hooks);
+    const commits = await scanCommitDirectory(commitsDirectoryPath, expectedDevice, hooks, budget);
     let loadedMetadata: LoadedRecord<RepositoryLocalStreamRecord> | undefined;
     if (streamFileExists) {
       loadedMetadata = await readValidatedRecord(
@@ -1337,6 +1391,7 @@ function mapFilesystemReason(
 class RepositoryLocalProfileCore {
   readonly store: AuditStore;
   readonly journal: RecoveryJournal;
+  readonly readiness: RequiredAuditReadiness;
   private queue: Promise<void> = Promise.resolve();
   private closed = false;
 
@@ -1357,6 +1412,9 @@ class RepositoryLocalProfileCore {
     });
     this.journal = Object.freeze({
       append: (fact: RecoveryFact) => this.appendRecovery(fact),
+    });
+    this.readiness = Object.freeze({
+      assertReadyForProviderStart: () => this.assertReadyForProviderStart(),
     });
   }
 
@@ -1430,7 +1488,7 @@ class RepositoryLocalProfileCore {
   }
 
   private run<T>(
-    phase: "pending_read" | "primary_append" | "recovery_append",
+    phase: "pending_read" | "pre_effect_check" | "primary_append" | "recovery_append",
     operation: () => Promise<T>,
   ): Promise<T> {
     const result = this.queue.then(async () => {
@@ -1451,6 +1509,21 @@ class RepositoryLocalProfileCore {
       () => undefined,
     );
     return result;
+  }
+
+  private assertReadyForProviderStart(): Promise<void> {
+    return this.run("pre_effect_check", async () => {
+      this.state.assertWritable();
+      const availableBytes = await repositoryLocalAvailableBytes(
+        this.paths.runtimeRoot,
+        this.hooks,
+      );
+      if (availableBytes < this.state.requiredFreeBytesForNextWrite()) {
+        this.state.fail("capacity_exhausted");
+        throw unavailable();
+      }
+      this.state.assertWritable();
+    });
   }
 
   private translate(error: unknown): AuditError {
@@ -1889,6 +1962,7 @@ class RepositoryLocalProfileCore {
 
 async function openRepositoryLocalAuditProfileInternal(
   options: RepositoryLocalQualificationOptions,
+  startupPrimaryScanLimits: RepositoryLocalStartupScanLimits,
 ): Promise<RepositoryLocalAuditProfile> {
   if (!isRepositoryLocalReference(options.writerRef)) {
     throw new AuditError("audit_candidate_invalid");
@@ -1932,6 +2006,7 @@ async function openRepositoryLocalAuditProfileInternal(
       options.filesystemHooks,
       profile.writer_ref,
       state,
+      new PrimaryStartupScanBudget(startupPrimaryScanLimits),
     );
     const primaryIdentityDirectories = await scanPrimaryIdentityDirectories(
       paths,
@@ -2008,6 +2083,7 @@ async function openRepositoryLocalAuditProfileInternal(
     return Object.freeze({
       store: core.store,
       journal: core.journal,
+      readiness: core.readiness,
       pendingFacts: () => core.pendingFacts(),
       diagnostic: () => core.diagnostic(),
       close: () => core.close(),
@@ -2048,11 +2124,14 @@ async function openRepositoryLocalAuditProfileInternal(
 export function openRepositoryLocalAuditProfile(
   options: RepositoryLocalAuditProfileOptions,
 ): Promise<RepositoryLocalAuditProfile> {
-  return openRepositoryLocalAuditProfileInternal(options);
+  return openRepositoryLocalAuditProfileInternal(options, DEFAULT_PRIMARY_STARTUP_SCAN_LIMITS);
 }
 
 export function openRepositoryLocalAuditProfileForQualification(
   options: RepositoryLocalQualificationOptions,
 ): Promise<RepositoryLocalAuditProfile> {
-  return openRepositoryLocalAuditProfileInternal(options);
+  return openRepositoryLocalAuditProfileInternal(
+    options,
+    options.startupPrimaryScanLimits ?? DEFAULT_PRIMARY_STARTUP_SCAN_LIMITS,
+  );
 }

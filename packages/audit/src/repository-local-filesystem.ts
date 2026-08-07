@@ -721,6 +721,7 @@ export async function readBoundedRepositoryLocalFile(
   expectedDevice: number,
   hooks?: RepositoryLocalFilesystemHooks,
   expectedLinks: 1 | 2 = 1,
+  beforeRead?: (size: number) => void,
 ): Promise<RepositoryLocalReadResult> {
   let handle: FileHandle;
   try {
@@ -739,6 +740,7 @@ export async function readBoundedRepositoryLocalFile(
       hooks,
     );
     if (before.size <= 0) return fail("corruption_detected");
+    beforeRead?.(before.size);
     bytes = Buffer.allocUnsafe(before.size);
     let offset = 0;
     while (offset < bytes.length) {
@@ -872,6 +874,11 @@ export async function qualifyRepositoryLocalFilesystem(
           : "unsupported";
   }
   if (filesystemKind === "unsupported") return fail("unsupported_filesystem");
+  if (filesystemKind === "apfs") {
+    // Node exposes no descriptor-based APFS ACL API, while /dev/fd reports the
+    // fdesc vnode rather than the opened target. Reopening a path would race.
+    return fail("unsupported_filesystem");
+  }
 
   const sourceName = ".qualification.source.tmp";
   const destinationName = ".qualification.destination.tmp";

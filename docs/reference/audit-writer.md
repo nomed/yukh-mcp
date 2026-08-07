@@ -14,19 +14,28 @@ pre-effect evidence requirement in RFC-0003 apply admission step 9. It provides:
   hash;
 - exact duplicate handling and conflicting event-identity rejection;
 - retained-range chain verification; and
-- lifecycle guards that require a durable receipt before provider start and use
-  a separate bounded recovery fact after provider start.
+- lifecycle guards that require durable receipts plus a final typed
+  audit-readiness check immediately before provider start, and use a separate
+  bounded recovery fact after provider start.
 
 `InMemoryAuditStore` is only a deterministic conformance store. Its receipts are
 marked `volatile_test_only`, so `commitBeforeProviderStart` rejects them and does
-not call the supplied provider-start callback. The guard requires complete
-causal evidence through attempt reservation. Planning authorization is labeled
-and bound to the plan; after plan creation and any approval, a distinct
-apply-phase evaluation, explicit allow decision, and enforcement triplet is
-bound to apply admission. A future store must implement the `AuditStore` port,
-atomically compare event identity and stream head, and return `durable` only
-after committing the exact event bytes, candidate digest, sequence, and previous
-hash under a separately accepted deployment profile.
+not call the supplied provider-start callback. Even durable exact-duplicate
+receipts are non-authorizing: the guard calls the separate
+`RequiredAuditReadiness` port after the final receipt and denies if current
+health is failed. The guard requires complete causal evidence through attempt
+reservation. Planning authorization is labeled and bound to the plan; after
+plan creation and any approval, a distinct apply-phase evaluation, explicit
+allow decision, and enforcement triplet is bound to apply admission. A future
+store must implement the `AuditStore` port, atomically compare event identity and
+stream head, and return `durable` only after committing the exact event bytes,
+candidate digest, sequence, and previous hash under a separately accepted
+deployment profile.
+
+The repository-local implementation keeps Linux ext-family qualification. It
+fails closed on APFS because the supported Node runtime has no descriptor-based
+ACL inspection API, and reopening a path for an ACL utility would introduce a
+substitution race. It therefore makes no APFS qualification claim.
 
 Canonical JSON sorts object keys by code unit, preserves array order, permits
 only validated JSON values, and is covered by an object-order vector and a

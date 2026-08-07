@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmod,
@@ -73,6 +74,7 @@ function profileOptions(
     now?: () => Date;
     monotonicNow?: () => number;
     hooks?: RepositoryLocalFilesystemHooks;
+    startupPrimaryScanLimits?: Readonly<{ maxRecords: number; maxBytes: number }>;
   }> = {},
 ) {
   return {
@@ -80,8 +82,11 @@ function profileOptions(
     writerRef: WRITER_REF,
     now: overrides.now ?? (() => new Date(FIXED_NOW)),
     ...(overrides.monotonicNow === undefined ? {} : { monotonicNow: overrides.monotonicNow }),
+    ...(overrides.startupPrimaryScanLimits === undefined
+      ? {}
+      : { startupPrimaryScanLimits: overrides.startupPrimaryScanLimits }),
     filesystemHooks: {
-      filesystemKindOverride: "apfs" as const,
+      filesystemKindOverride: "ext" as const,
       ...overrides.hooks,
     },
   };
@@ -311,6 +316,8 @@ test("closed records and local checkpoint claims are canonical and fixed", () =>
   );
   assert.throws(() => validateRepositoryLocalCheckpointRecord({ ...checkpoint, unknown: true }));
   assert.equal(REPOSITORY_LOCAL_LIMITS.recovery_identity_reservation_bytes, 16 * 1024);
+  assert.equal(REPOSITORY_LOCAL_LIMITS.max_event_identities, 8_192);
+  assert.equal(REPOSITORY_LOCAL_LIMITS.max_primary_committed_bytes, 64 * 1024 * 1024);
   assert.equal(
     REPOSITORY_LOCAL_LIMITS.max_recovery_identities *
       REPOSITORY_LOCAL_LIMITS.recovery_identity_reservation_bytes,
@@ -359,12 +366,60 @@ test("clean shutdown publishes one honest checkpoint per changed stream", async 
   }
 });
 
+test("startup commit budgets are global across stream directories", async () => {
+  const root = await repositoryRoot("repository-local-global-scan-budget-");
+  try {
+    const profile = await openProfile(root);
+    const first = protectedGenesisEvent();
+    const second = protectedGenesisEvent({
+      eventId: "event.repository-local-scan-budget-second",
+      streamRef: "stream.repository-local-scan-budget-second",
+    });
+    await profile.store.append(first, candidateDigest(first));
+    await profile.store.append(second, candidateDigest(second));
+    await profile.close();
+
+    const firstPath = commitPath(root, 0);
+    const secondPath = runtime(
+      root,
+      "primary",
+      "streams",
+      repositoryLocalReferencePathDigest(second.integrity.stream_ref),
+      "commits",
+      "00000000000000000000.json",
+    );
+    const sizes = [(await lstat(firstPath)).size, (await lstat(secondPath)).size];
+    const singleDirectoryByteAllowance = Math.max(...sizes);
+    assert(sizes.every((size) => size <= singleDirectoryByteAllowance));
+    assert(sizes.reduce((total, size) => total + size, 0) > singleDirectoryByteAllowance);
+
+    await expectUnavailable(
+      openProfile(root, {
+        startupPrimaryScanLimits: {
+          maxRecords: 1,
+          maxBytes: REPOSITORY_LOCAL_LIMITS.max_primary_committed_bytes,
+        },
+      }),
+    );
+    await expectUnavailable(
+      openProfile(root, {
+        startupPrimaryScanLimits: {
+          maxRecords: REPOSITORY_LOCAL_LIMITS.max_event_identities,
+          maxBytes: singleDirectoryByteAllowance,
+        },
+      }),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("the per-stream checkpoint interval commits at exactly 1,000 records", async () => {
   const root = await repositoryRoot("repository-local-checkpoint-interval-");
   try {
     const options = profileOptions(root);
     const mutableHooks = options.filesystemHooks as {
-      filesystemKindOverride: "apfs";
+      filesystemKindOverride: "ext";
       availableBytesOverride?: bigint;
     };
     const profile = await openRepositoryLocalAuditProfileForQualification(options);
@@ -542,6 +597,71 @@ test("persistent lock, paths, links, ownership, modes, and filesystem support fa
       );
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  await t.test("APFS fails closed for direct and inherited ACL state", async () => {
+    const cleanRoot = await repositoryRoot("repository-local-apfs-clean-");
+    try {
+      await expectUnavailable(
+        openProfile(cleanRoot, {
+          hooks: { filesystemKindOverride: "apfs" },
+        }),
+      );
+    } finally {
+      await rm(cleanRoot, { recursive: true, force: true });
+    }
+    if (process.platform !== "darwin") return;
+
+    for (const kind of ["direct", "inherited"] as const) {
+      const root = await repositoryRoot(`repository-local-apfs-acl-${kind}-`);
+      try {
+        if (kind === "direct") {
+          await initialize(root);
+          const target = runtime(root);
+          const added = spawnSync(
+            "/bin/chmod",
+            ["+a", "everyone allow write,delete_child,file_inherit,directory_inherit", target],
+            { encoding: "utf8" },
+          );
+          assert.equal(added.error, undefined);
+          assert.equal(added.status, 0, added.stderr);
+          assert.equal(added.stdout, "");
+          const listed = spawnSync("/bin/ls", ["-lde", target], { encoding: "utf8" });
+          assert.equal(listed.error, undefined);
+          assert.equal(listed.status, 0, listed.stderr);
+          assert.equal(listed.stderr, "");
+          assert.match(listed.stdout, /everyone allow .*delete_child/);
+        } else {
+          const added = spawnSync(
+            "/bin/chmod",
+            ["+a", "everyone allow write,delete_child,file_inherit,directory_inherit", root],
+            { encoding: "utf8" },
+          );
+          assert.equal(added.error, undefined);
+          assert.equal(added.status, 0, added.stderr);
+          assert.equal(added.stdout, "");
+        }
+
+        await expectUnavailable(
+          openProfile(root, {
+            hooks: { filesystemKindOverride: "apfs" },
+          }),
+        );
+        if (kind === "inherited") {
+          const listed = spawnSync("/bin/ls", ["-lde", runtime(root)], { encoding: "utf8" });
+          assert.equal(listed.error, undefined);
+          assert.equal(listed.status, 0, listed.stderr);
+          assert.equal(listed.stderr, "");
+          assert.match(listed.stdout, /everyone inherited allow .*delete_child/);
+        }
+      } finally {
+        const cleared = spawnSync("/bin/chmod", ["-RN", root], { encoding: "utf8" });
+        assert.equal(cleared.error, undefined);
+        assert.equal(cleared.status, 0, cleared.stderr);
+        assert.equal(cleared.stdout, "");
+        await rm(root, { recursive: true, force: true });
+      }
     }
   });
 
@@ -1054,15 +1174,23 @@ test("simulated I/O, disk-full, and free-space failures are closed and restart-s
   await t.test("insufficient free space denies recovery before record creation", async () => {
     const root = await repositoryRoot("repository-local-recovery-free-space-");
     try {
-      const requiredFree =
+      const recoveryRequiredFree =
         2 *
         (REPOSITORY_LOCAL_LIMITS.max_recovery_record_bytes +
           REPOSITORY_LOCAL_LIMITS.max_identity_record_bytes);
-      const profile = await openProfile(root, {
+      const startupRequiredFree =
+        2 *
+        (REPOSITORY_LOCAL_LIMITS.max_primary_commit_record_bytes +
+          REPOSITORY_LOCAL_LIMITS.max_identity_record_bytes +
+          REPOSITORY_LOCAL_LIMITS.max_checkpoint_record_bytes);
+      const options = profileOptions(root, {
         hooks: {
-          availableBytesOverride: BigInt(requiredFree - 1),
+          availableBytesOverride: BigInt(startupRequiredFree),
         },
       });
+      const profile = await openRepositoryLocalAuditProfileForQualification(options);
+      assert.equal(profile.diagnostic().state, "healthy");
+      options.filesystemHooks.availableBytesOverride = BigInt(recoveryRequiredFree - 1);
       const fact = recoveryFact();
       await expectUnavailable(profile.journal.append(fact));
       assert.equal(profile.diagnostic().state, "failed");
@@ -1089,6 +1217,7 @@ test("511/512/513 recovery capacity uses the full 16 KiB lifetime reservation", 
     assert.equal(profile.diagnostic().counts.recovery_identities, 511);
     assert.equal(profile.diagnostic().state, "degraded");
     assert.equal(profile.diagnostic().capacity.recovery_bytes, "degraded");
+    await profile.readiness.assertReadyForProviderStart();
 
     const boundary = recoveryFact(511);
     assert.deepEqual(await profile.journal.append(boundary), {
@@ -1098,6 +1227,7 @@ test("511/512/513 recovery capacity uses the full 16 KiB lifetime reservation", 
     assert.equal(profile.diagnostic().state, "failed");
     assert.equal(profile.diagnostic().reason, "capacity_exhausted");
     assert.equal(profile.diagnostic().capacity.recovery_bytes, "exhausted");
+    await expectUnavailable(profile.readiness.assertReadyForProviderStart());
     assert.deepEqual(await profile.journal.append(boundary), {
       durability: "durable",
     });
@@ -1113,6 +1243,7 @@ test("511/512/513 recovery capacity uses the full 16 KiB lifetime reservation", 
     });
     assert.equal(restarted.diagnostic().state, "failed");
     assert.equal(restarted.diagnostic().reason, "capacity_exhausted");
+    await expectUnavailable(restarted.readiness.assertReadyForProviderStart());
     assert.deepEqual(await restarted.journal.append(boundary), {
       durability: "durable",
     });

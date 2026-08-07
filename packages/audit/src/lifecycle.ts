@@ -13,6 +13,10 @@ export interface RequiredAuditWriter {
   commit(candidate: AuditCandidate): Promise<AuditCommitReceipt>;
 }
 
+export interface RequiredAuditReadiness {
+  assertReadyForProviderStart(): Promise<void>;
+}
+
 export interface RecoveryFact {
   readonly recovery_fact_version: 1;
   readonly recovery_id: string;
@@ -87,6 +91,7 @@ export async function commitBeforeProviderStart<T>(
   options: Readonly<{
     candidates: readonly AuditCandidate[];
     writer: RequiredAuditWriter;
+    readiness: RequiredAuditReadiness;
     startProvider: () => Promise<T>;
   }>,
 ): Promise<
@@ -210,6 +215,7 @@ export async function commitBeforeProviderStart<T>(
         throw new AuditError("audit_unavailable");
       }
     }
+    await options.readiness.assertReadyForProviderStart();
   } catch {
     return { status: "denied", code: "audit_unavailable" };
   }

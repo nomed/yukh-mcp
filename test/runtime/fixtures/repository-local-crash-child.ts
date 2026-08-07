@@ -22,7 +22,7 @@ if (mode === "expect-lock") {
       trustedRepositoryRoot: repositoryRoot,
       writerRef: WRITER_REF,
       now: () => new Date(FIXED_NOW),
-      filesystemHooks: { filesystemKindOverride: "apfs" },
+      filesystemHooks: { filesystemKindOverride: "ext" },
     });
     await profile.close();
     process.exit(65);
@@ -41,7 +41,7 @@ const profile = await openRepositoryLocalAuditProfileForQualification({
   writerRef: WRITER_REF,
   now: () => new Date(FIXED_NOW),
   filesystemHooks: {
-    filesystemKindOverride: "apfs",
+    filesystemKindOverride: "ext",
     onEvent: (event) => {
       if (armed && event === crashEvent) {
         occurrence += 1;
