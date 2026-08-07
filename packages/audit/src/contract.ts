@@ -377,7 +377,8 @@ const REF = z
   .min(1)
   .max(128)
   .regex(/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/);
-const DIGEST = z.string().regex(/^sha256:[0-9a-f]{64}$/);
+const SHA256_DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
+const DIGEST = z.string().regex(SHA256_DIGEST_PATTERN);
 const AUDIT_TIMESTAMP_MAX_FRACTIONAL_DIGITS = 9;
 const AUDIT_TIMESTAMP_MAX_LENGTH = 21 + AUDIT_TIMESTAMP_MAX_FRACTIONAL_DIGITS;
 const AUDIT_TIMESTAMP_PATTERN = new RegExp(
@@ -390,6 +391,28 @@ const auditTimestampSchema = z.iso
 
 export function isValidAuditTimestamp(value: unknown): value is string {
   return auditTimestampSchema.safeParse(value).success;
+}
+
+export function compareAuditTimestamps(left: string, right: string): -1 | 0 | 1 {
+  if (!isValidAuditTimestamp(left) || !isValidAuditTimestamp(right)) {
+    throw new AuditError("audit_integrity_failure");
+  }
+  const normalize = (value: string): string => {
+    const withoutZulu = value.slice(0, -1);
+    const dot = withoutZulu.indexOf(".");
+    return dot === -1
+      ? `${withoutZulu}.${"0".repeat(AUDIT_TIMESTAMP_MAX_FRACTIONAL_DIGITS)}`
+      : `${withoutZulu.slice(0, dot)}.${withoutZulu
+          .slice(dot + 1)
+          .padEnd(AUDIT_TIMESTAMP_MAX_FRACTIONAL_DIGITS, "0")}`;
+  };
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  return normalizedLeft < normalizedRight ? -1 : normalizedLeft > normalizedRight ? 1 : 0;
+}
+
+export function isValidSha256Digest(value: unknown): value is string {
+  return typeof value === "string" && value.length === 71 && SHA256_DIGEST_PATTERN.test(value);
 }
 
 const REASON = z.enum([
