@@ -4,6 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY tsconfig.json tsconfig.build.json ./
 COPY apps ./apps
+COPY contracts ./contracts
 COPY packages ./packages
 RUN npm run build && npm prune --omit=dev --ignore-scripts
 
