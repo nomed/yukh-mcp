@@ -17,6 +17,6 @@
     "skipLibCheck": false,
     "types": ["node"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "test/runtime/**/*.ts"],
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "test/contracts/**/*.ts", "test/runtime/**/*.ts"],
   "exclude": ["dist", "node_modules"]
 }
