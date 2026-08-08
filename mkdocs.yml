@@ -60,6 +60,7 @@ nav:
   - Reference:
       - Contracts and implementations: reference/contracts.md
       - Audit writer foundation: reference/audit-writer.md
+      - Synthetic setting qualification: reference/example-setting-qualification.md
       - Project 5 Area contract: reference/project-5-area-contract.md
       - Runtime surface: architecture/runtime-skeleton.md
   - Explanation:

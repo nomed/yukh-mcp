@@ -1,0 +1,35 @@
+{
+  "qualification_evidence_version": 1,
+  "capability": {
+    "id": "example.setting.update",
+    "version": "1.0.0",
+    "definition_digest": "sha256:d3436429587715737dc9fbae282eeff4d9296600e98f30c735d49c0c4356b0a7"
+  },
+  "fixture": {
+    "resource_kind": "example_setting",
+    "resource_ref": "setting-example-01",
+    "environment_ref": "development",
+    "idempotency": {
+      "classification": "keyed",
+      "key": "required"
+    },
+    "verifier_ref": "setting_value_matches",
+    "rollback_mode": "restore",
+    "ordered_operation_set_digest": "sha256:dbff0e308503e936c076944c420d89c38c6882d49238583aabbd6929d0f897ad"
+  },
+  "implementation": {
+    "ref": "impl_example_setting_qualification_v1",
+    "source_path": "packages/providers/synthetic-local/src/example-setting.ts",
+    "source_digest": "sha256:d0e1101146409afdca82d439a1a89f251f615fa3c163293bebd9d611dbb18201"
+  },
+  "non_authorizations": [
+    "approval_issuance",
+    "credentials_or_endpoints",
+    "deployment",
+    "external_or_production_state",
+    "gateway_or_provider_registration",
+    "projects_apply",
+    "step9_execution"
+  ],
+  "evidence_digest": "sha256:9114a49c648a71b858b2827c945c81824371a95a4635022fa82a898db8e24198"
+}

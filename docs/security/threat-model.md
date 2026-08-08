@@ -595,7 +595,36 @@ tamper-proofing, backup, or availability.
 | rollback silently reuses old authority, bypasses an unavailable declaration, or erases the original failure           | rollback records bind the validated original plan, its declared exact rollback capability, original execution, and observed state, while rollback execution repeats planning, approval, fresh authorization, reservation, effect accounting, verification, and terminal audit | safe compensation may be unavailable, and no real rollback capability is registered                                                                      |
 | local state is substituted, exhausted, or concurrently written                                                        | fixed ignored root, owned private directories/files, canonical bounded records, no-follow metadata checks, immutable no-replace publication, directory sync before receipt, closed topology, one exclusive writer, capacity checks, and fail-closed restart validation        | effective-user, host, kernel, filesystem, disk-denial, backup, and independent-witness risks remain; this is not a production durability claim           |
 
-The package is not imported by the gateway and registers no provider. All effect,
-verification, and rollback ports used in qualification are fake and network-free.
-This review authorizes no gateway activation, real mutation, credential,
-endpoint, Project apply, deployment, production-readiness claim, or MCP Step 9.
+The package is not imported by the gateway and registers no provider. Its generic
+effect, verification, and rollback test doubles are network-free. Concrete
+synthetic fixture semantics are reviewed separately below. This review authorizes
+no gateway activation, real mutation, credential, endpoint, Project apply,
+deployment, production-readiness claim, or MCP Step 9.
+
+## Synthetic setting mutation qualification review — 2026-08-08
+
+- Governing issue: #94
+- Accepted constraints: RFC-0001, RFC-0002, RFC-0003, RFC-0004, and RFC-0010
+- Scope: one in-memory `example.setting.update@1.0.0` effect port, independent
+  state verifier, health/capacity preconditions, keyed replay behavior, and one
+  separately authorized synthetic restore lifecycle
+- New live provider, credential, endpoint, network, or production boundary: none
+
+| Threat | Implemented control | Residual risk / dependency |
+| --- | --- | --- |
+| a different capability, target, environment, input, verifier, or operation is substituted | the provider accepts only the frozen definition digest, one canonical synthetic resource, `development`, exact input digest, exact verifier, closed lifecycle step, and both public-fixture and internal lifecycle operation-set bindings | a future registry must bind the reviewed evidence digest and must not hot-replace this exact version |
+| a keyed replay applies the setting twice or conflicting intent reuses a key | the in-memory fixture atomically stores one exact binding/result before returning; exact replay returns that result, while any changed binding raises a state conflict; the durable lifecycle ledger independently prevents another effect call across restart | the provider map is deliberately process-local and is not a production idempotency store |
+| provider return, stale state, or target substitution is reported as success | `setting_value_matches` re-hashes resource, environment, name, value, and version from current fixture state; only the exact declared digest verifies, and lifecycle success remains withheld until durable terminal evidence | a live target identity and independently operated verifier require a separately accepted provider/deployment profile |
+| a lost response or post-effect evidence failure is retried | the lifecycle durably records `started`, reports `completion_unknown`, appends a recovery fact, and exact restart returns the stored unknown outcome without invoking the effect port | recovery import, acknowledgement, reconciliation, and operator workflow remain absent |
+| restore silently reuses original authority or overwrites newer state | restore has a distinct capability, input digest, idempotency key, plan, approval, fresh authorization, reservation, exact current-state precondition, effect, verifier, and terminal rollback record | the restore capability is synthetic and unregistered; no live rollback authority or safety claim exists |
+| health, capacity, policy, approval, audit, or reservation failure still reaches an effect | all such paths fail before the effect port; qualification asserts zero effect calls and the implementation has no external-call mechanism | deployment availability, rate limits, distributed concurrency, and production storage remain unselected |
+
+The fixture source is compiled but not imported by the gateway or another runtime
+entry point. It has no filesystem, process, credential, endpoint, or network
+adapter and mutates only instance-local synthetic memory. Canonical evidence is
+for a future registration review, not registration authority.
+
+This review does **not** authorize gateway/provider registration, discovery,
+approval issuance for Step 9, Step 9 execution, credentials/endpoints, external
+or production state, Projects apply, deployment, recovery automation, or any
+production-readiness claim.
