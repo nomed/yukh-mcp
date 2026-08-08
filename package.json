@@ -13,10 +13,10 @@
     "start": "node dist/apps/gateway/src/main.js",
     "dev": "tsx apps/gateway/src/main.ts",
     "demo": "tsx apps/demo/src/main.ts",
-    "format:check": "prettier --check apps packages test/runtime package.json tsconfig.json tsconfig.build.json compose.yaml '.github/**/*.yml'",
-    "test": "bash -c 'rm -rf .audit-test-scratch && mkdir .audit-test-scratch && trap \"rm -rf .audit-test-scratch\" EXIT; TMPDIR=\"$PWD/.audit-test-scratch\" node --test test/contracts/*.test.mjs test/supply-chain/*.test.mjs && TMPDIR=\"$PWD/.audit-test-scratch\" npm run test:runtime'",
-    "test:contracts": "node --test test/contracts/*.test.mjs",
-    "test:runtime": "tsx --test test/runtime/*.test.ts",
+    "format:check": "prettier --check apps packages test/contracts/authorization-v1.test.mjs 'test/contracts/*.test.ts' test/runtime package.json tsconfig.json tsconfig.build.json compose.yaml '.github/**/*.yml'",
+    "test": "bash -c 'rm -rf .audit-test-scratch && mkdir .audit-test-scratch && trap \"rm -rf .audit-test-scratch\" EXIT; TMPDIR=\"$PWD/.audit-test-scratch\" npm run test:contracts && TMPDIR=\"$PWD/.audit-test-scratch\" node --test test/supply-chain/*.test.mjs && TMPDIR=\"$PWD/.audit-test-scratch\" npm run test:runtime'",
+    "test:contracts": "bash -c 'mkdir -p .audit-test-scratch && TMPDIR=\"$PWD/.audit-test-scratch\" node --import tsx --test test/contracts/*.test.mjs test/contracts/*.test.ts'",
+    "test:runtime": "bash -c 'mkdir -p .audit-test-scratch && TMPDIR=\"$PWD/.audit-test-scratch\" node --import tsx --test test/runtime/*.test.ts'",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {

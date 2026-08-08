@@ -77,6 +77,8 @@ function sameOperation(parent: ProtectedAuditEvent, candidate: AuditCandidate): 
           "plan_ref",
           "approval_ref",
           "execution_ref",
+          "verification_ref",
+          "rollback_ref",
         ] as const);
   return (
     correlationKeys.every(
@@ -165,6 +167,11 @@ function payloadBindingsMatch(
         child.plan_digest === value(parent(parents, "approval.requested.v1")).plan_digest &&
         child.plan_digest === value(parent(parents, "plan.created.v1")).plan_digest
       );
+    case "approval.rejected.v1":
+      return (
+        child.plan_digest === value(parent(parents, "approval.requested.v1")).plan_digest &&
+        child.plan_digest === value(parent(parents, "plan.created.v1")).plan_digest
+      );
     case "apply.admitted.v1": {
       const enforcement = value(parent(parents, "authorization.enforcement_recorded.v1"));
       return (
@@ -186,6 +193,59 @@ function payloadBindingsMatch(
     case "execution.completed.v1": {
       const started = value(parent(parents, "execution.started.v1"));
       return child.plan_digest === started.plan_digest && child.attempt === started.attempt;
+    }
+    case "verification.started.v1": {
+      const completed = value(parent(parents, "execution.completed.v1"));
+      return child.plan_digest === completed.plan_digest && child.attempt === completed.attempt;
+    }
+    case "verification.completed.v1":
+    case "verification.failed.v1": {
+      const started = value(parent(parents, "verification.started.v1"));
+      return child.plan_digest === started.plan_digest && child.attempt === started.attempt;
+    }
+    case "result.released.v1": {
+      const verification = value(parent(parents, "verification.completed.v1"));
+      return (
+        child.plan_digest === verification.plan_digest &&
+        child.attempt === verification.attempt &&
+        child.verification_digest === verification.verification_digest
+      );
+    }
+    case "result.withheld.v1": {
+      if (candidate.correlation.verification_ref === null) {
+        const completed = value(parent(parents, "execution.completed.v1"));
+        return (
+          child.plan_digest === completed.plan_digest &&
+          child.attempt === completed.attempt &&
+          child.verification_digest === null &&
+          child.verification_result === null
+        );
+      }
+      const verification = value(
+        parent(
+          parents,
+          child.verification_result === "verified"
+            ? "verification.completed.v1"
+            : "verification.failed.v1",
+        ),
+      );
+      return (
+        child.plan_digest === verification.plan_digest &&
+        child.attempt === verification.attempt &&
+        child.verification_digest === verification.verification_digest &&
+        child.verification_result === verification.result
+      );
+    }
+    case "rollback.requested.v1":
+      return true;
+    case "rollback.completed.v1": {
+      const result = value(parent(parents, "result.released.v1"));
+      return child.rollback_plan_digest === result.plan_digest;
+    }
+    case "rollback.failed.v1":
+    case "rollback.completion_unknown.v1": {
+      const result = value(parent(parents, "result.withheld.v1"));
+      return child.rollback_plan_digest === result.plan_digest;
     }
   }
 }

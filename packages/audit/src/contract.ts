@@ -9,10 +9,20 @@ export const AUDIT_EVENT_TYPES = [
   "plan.created.v1",
   "approval.requested.v1",
   "approval.approved.v1",
+  "approval.rejected.v1",
   "apply.admitted.v1",
   "execution.attempt_reserved.v1",
   "execution.started.v1",
   "execution.completed.v1",
+  "verification.started.v1",
+  "verification.completed.v1",
+  "verification.failed.v1",
+  "result.released.v1",
+  "result.withheld.v1",
+  "rollback.requested.v1",
+  "rollback.completed.v1",
+  "rollback.failed.v1",
+  "rollback.completion_unknown.v1",
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -25,13 +35,24 @@ export type AuditReasonCode =
   | "plan_created"
   | "approval_requested"
   | "approval_approved"
+  | "approval_rejected"
   | "apply_admitted"
   | "attempt_reserved"
   | "provider_started"
   | "effect_observed"
   | "no_effect_proven"
   | "partial_effect"
-  | "completion_unknown";
+  | "completion_unknown"
+  | "verification_started"
+  | "verification_verified"
+  | "verification_failed"
+  | "verification_inconclusive"
+  | "result_released"
+  | "result_withheld"
+  | "rollback_requested"
+  | "rollback_completed"
+  | "rollback_failed"
+  | "rollback_completion_unknown";
 
 export interface AuditCorrelation {
   readonly trace_ref: string | null;
@@ -82,6 +103,10 @@ export interface AuditPayloadByEventType {
     plan_digest: string;
     approval_digest: string;
   }>;
+  readonly "approval.rejected.v1": Readonly<{
+    plan_digest: string;
+    approval_digest: string | null;
+  }>;
   readonly "apply.admitted.v1": Readonly<{
     plan_digest: string;
     fresh_authorization_decision_digest: string;
@@ -98,6 +123,57 @@ export interface AuditPayloadByEventType {
     plan_digest: string;
     attempt: number;
     result: "effect_observed" | "no_effect_proven" | "partial_effect" | "completion_unknown";
+  }>;
+  readonly "verification.started.v1": Readonly<{
+    plan_digest: string;
+    attempt: number;
+  }>;
+  readonly "verification.completed.v1": Readonly<{
+    plan_digest: string;
+    attempt: number;
+    verification_digest: string;
+    result: "verified";
+  }>;
+  readonly "verification.failed.v1": Readonly<{
+    plan_digest: string;
+    attempt: number;
+    verification_digest: string;
+    result: "failed" | "inconclusive";
+  }>;
+  readonly "result.released.v1": Readonly<{
+    plan_digest: string;
+    attempt: number;
+    verification_digest: string;
+    result: "succeeded";
+  }>;
+  readonly "result.withheld.v1": Readonly<{
+    plan_digest: string;
+    attempt: number;
+    verification_digest: string | null;
+    verification_result: "verified" | "failed" | "inconclusive" | null;
+    result: "failed" | "partial_effect" | "completion_unknown";
+  }>;
+  readonly "rollback.requested.v1": Readonly<{
+    original_execution_digest: string;
+    rollback_plan_digest: string;
+  }>;
+  readonly "rollback.completed.v1": Readonly<{
+    original_execution_digest: string;
+    rollback_plan_digest: string;
+    rollback_execution_digest: string;
+    result: "completed";
+  }>;
+  readonly "rollback.failed.v1": Readonly<{
+    original_execution_digest: string;
+    rollback_plan_digest: string;
+    rollback_execution_digest: string | null;
+    result: "failed";
+  }>;
+  readonly "rollback.completion_unknown.v1": Readonly<{
+    original_execution_digest: string;
+    rollback_plan_digest: string;
+    rollback_execution_digest: string | null;
+    result: "completion_unknown";
   }>;
 }
 
@@ -137,10 +213,18 @@ interface AuditCandidateShape<T extends AuditEventType> {
       | "created"
       | "requested"
       | "approved"
+      | "rejected"
       | "admitted"
       | "reserved"
       | "started"
-      | "completed";
+      | "completed"
+      | "verifying"
+      | "verified"
+      | "failed"
+      | "inconclusive"
+      | "released"
+      | "withheld"
+      | "unknown";
     readonly reason_codes: readonly AuditReasonCode[];
   }>;
   readonly payload: AuditPayloadByEventType[T];
@@ -190,7 +274,16 @@ type CorrelationKey = keyof AuditCorrelation;
 export interface AuditRegistryEntry {
   readonly classification: AuditClassification;
   readonly durability: "control" | "required_pre_effect" | "required_post_start";
-  readonly phase: "audit_control" | "ingress" | "authorization" | "planning" | "approval" | "apply";
+  readonly phase:
+    | "audit_control"
+    | "ingress"
+    | "authorization"
+    | "planning"
+    | "approval"
+    | "apply"
+    | "verification"
+    | "result"
+    | "rollback";
   readonly schemaRef: string;
   readonly producers: readonly string[];
   readonly statuses: readonly AuditCandidate["outcome"]["status"][];
@@ -212,6 +305,8 @@ const decision = [...authorization, "authorization_decision_ref"] as const;
 const plan = [...decision, "plan_ref"] as const;
 const approval = [...plan, "approval_ref"] as const;
 const execution = [...plan, "execution_ref"] as const;
+const verification = [...execution, "verification_ref"] as const;
+const rollback = [...execution, "rollback_ref"] as const;
 
 export const AUDIT_REGISTRY = {
   "audit.stream_opened.v1": {
@@ -318,6 +413,19 @@ export const AUDIT_REGISTRY = {
     optionalCorrelation: [],
     requiredParentTypes: ["approval.requested.v1", "plan.created.v1"],
   },
+  "approval.rejected.v1": {
+    ...standard,
+    classification: "protected",
+    durability: "required_pre_effect",
+    phase: "approval",
+    schemaRef: "audit.approval_rejected.v1",
+    producers: ["component.gateway"],
+    statuses: ["rejected"],
+    reasonCodes: ["approval_rejected"],
+    requiredCorrelation: plan,
+    optionalCorrelation: ["approval_ref"],
+    requiredParentTypes: ["approval.requested.v1", "plan.created.v1"],
+  },
   "apply.admitted.v1": {
     ...standard,
     classification: "protected",
@@ -369,6 +477,123 @@ export const AUDIT_REGISTRY = {
     requiredCorrelation: execution,
     optionalCorrelation: ["approval_ref"],
     requiredParentTypes: ["execution.started.v1"],
+  },
+  "verification.started.v1": {
+    ...standard,
+    classification: "protected",
+    durability: "required_post_start",
+    phase: "verification",
+    schemaRef: "audit.verification_started.v1",
+    producers: ["component.gateway"],
+    statuses: ["verifying"],
+    reasonCodes: ["verification_started"],
+    requiredCorrelation: verification,
+    optionalCorrelation: ["approval_ref", "rollback_ref"],
+    requiredParentTypes: ["execution.completed.v1"],
+  },
+  "verification.completed.v1": {
+    ...standard,
+    classification: "protected",
+    durability: "required_post_start",
+    phase: "verification",
+    schemaRef: "audit.verification_completed.v1",
+    producers: ["component.gateway"],
+    statuses: ["verified"],
+    reasonCodes: ["verification_verified"],
+    requiredCorrelation: verification,
+    optionalCorrelation: ["approval_ref", "rollback_ref"],
+    requiredParentTypes: ["verification.started.v1"],
+  },
+  "verification.failed.v1": {
+    ...standard,
+    classification: "protected",
+    durability: "required_post_start",
+    phase: "verification",
+    schemaRef: "audit.verification_failed.v1",
+    producers: ["component.gateway"],
+    statuses: ["failed", "inconclusive"],
+    reasonCodes: ["verification_failed", "verification_inconclusive"],
+    requiredCorrelation: verification,
+    optionalCorrelation: ["approval_ref", "rollback_ref"],
+    requiredParentTypes: ["verification.started.v1"],
+  },
+  "result.released.v1": {
+    ...standard,
+    classification: "protected",
+    durability: "required_post_start",
+    phase: "result",
+    schemaRef: "audit.result_released.v1",
+    producers: ["component.gateway"],
+    statuses: ["released"],
+    reasonCodes: ["result_released"],
+    requiredCorrelation: verification,
+    optionalCorrelation: ["approval_ref", "rollback_ref"],
+    requiredParentTypes: ["verification.completed.v1"],
+  },
+  "result.withheld.v1": {
+    ...standard,
+    classification: "protected",
+    durability: "required_post_start",
+    phase: "result",
+    schemaRef: "audit.result_withheld.v1",
+    producers: ["component.gateway"],
+    statuses: ["withheld"],
+    reasonCodes: ["result_withheld"],
+    requiredCorrelation: execution,
+    optionalCorrelation: ["approval_ref", "verification_ref", "rollback_ref"],
+    requiredParentTypes: ["execution.completed.v1"],
+  },
+  "rollback.requested.v1": {
+    ...standard,
+    classification: "protected",
+    durability: "required_post_start",
+    phase: "rollback",
+    schemaRef: "audit.rollback_requested.v1",
+    producers: ["component.gateway"],
+    statuses: ["requested"],
+    reasonCodes: ["rollback_requested"],
+    requiredCorrelation: rollback,
+    optionalCorrelation: ["approval_ref", "verification_ref"],
+    requiredParentTypes: [],
+  },
+  "rollback.completed.v1": {
+    ...standard,
+    classification: "protected",
+    durability: "required_post_start",
+    phase: "rollback",
+    schemaRef: "audit.rollback_completed.v1",
+    producers: ["component.gateway"],
+    statuses: ["completed"],
+    reasonCodes: ["rollback_completed"],
+    requiredCorrelation: rollback,
+    optionalCorrelation: ["approval_ref", "verification_ref"],
+    requiredParentTypes: ["result.released.v1"],
+  },
+  "rollback.failed.v1": {
+    ...standard,
+    classification: "protected",
+    durability: "required_post_start",
+    phase: "rollback",
+    schemaRef: "audit.rollback_failed.v1",
+    producers: ["component.gateway"],
+    statuses: ["failed"],
+    reasonCodes: ["rollback_failed"],
+    requiredCorrelation: rollback,
+    optionalCorrelation: ["approval_ref", "verification_ref"],
+    requiredParentTypes: ["result.withheld.v1"],
+  },
+  "rollback.completion_unknown.v1": {
+    ...standard,
+    classification: "protected",
+    durability: "required_post_start",
+    phase: "rollback",
+    schemaRef: "audit.rollback_completion_unknown.v1",
+    producers: ["component.gateway"],
+    statuses: ["unknown"],
+    reasonCodes: ["rollback_completion_unknown"],
+    requiredCorrelation: rollback,
+    optionalCorrelation: ["approval_ref", "verification_ref"],
+    requiredParentTypes: ["result.withheld.v1"],
   },
 } as const satisfies Record<AuditEventType, AuditRegistryEntry>;
 
@@ -423,6 +648,7 @@ const REASON = z.enum([
   "plan_created",
   "approval_requested",
   "approval_approved",
+  "approval_rejected",
   "apply_admitted",
   "attempt_reserved",
   "provider_started",
@@ -430,6 +656,16 @@ const REASON = z.enum([
   "no_effect_proven",
   "partial_effect",
   "completion_unknown",
+  "verification_started",
+  "verification_verified",
+  "verification_failed",
+  "verification_inconclusive",
+  "result_released",
+  "result_withheld",
+  "rollback_requested",
+  "rollback_completed",
+  "rollback_failed",
+  "rollback_completion_unknown",
 ]);
 const correlationSchema = z
   .object({
@@ -491,10 +727,18 @@ const candidateSchema = z
           "created",
           "requested",
           "approved",
+          "rejected",
           "admitted",
           "reserved",
           "started",
           "completed",
+          "verifying",
+          "verified",
+          "failed",
+          "inconclusive",
+          "released",
+          "withheld",
+          "unknown",
         ]),
         reason_codes: z.array(REASON).min(1).max(4),
       })
@@ -545,6 +789,9 @@ const payloadSchemas = {
     .strict(),
   "approval.requested.v1": z.object({ plan_digest: DIGEST }).strict(),
   "approval.approved.v1": z.object({ plan_digest: DIGEST, approval_digest: DIGEST }).strict(),
+  "approval.rejected.v1": z
+    .object({ plan_digest: DIGEST, approval_digest: DIGEST.nullable() })
+    .strict(),
   "apply.admitted.v1": z
     .object({ plan_digest: DIGEST, fresh_authorization_decision_digest: DIGEST })
     .strict(),
@@ -564,6 +811,75 @@ const payloadSchemas = {
         "partial_effect",
         "completion_unknown",
       ]),
+    })
+    .strict(),
+  "verification.started.v1": z
+    .object({
+      plan_digest: DIGEST,
+      attempt: z.number().int().min(1).max(16),
+    })
+    .strict(),
+  "verification.completed.v1": z
+    .object({
+      plan_digest: DIGEST,
+      attempt: z.number().int().min(1).max(16),
+      verification_digest: DIGEST,
+      result: z.literal("verified"),
+    })
+    .strict(),
+  "verification.failed.v1": z
+    .object({
+      plan_digest: DIGEST,
+      attempt: z.number().int().min(1).max(16),
+      verification_digest: DIGEST,
+      result: z.enum(["failed", "inconclusive"]),
+    })
+    .strict(),
+  "result.released.v1": z
+    .object({
+      plan_digest: DIGEST,
+      attempt: z.number().int().min(1).max(16),
+      verification_digest: DIGEST,
+      result: z.literal("succeeded"),
+    })
+    .strict(),
+  "result.withheld.v1": z
+    .object({
+      plan_digest: DIGEST,
+      attempt: z.number().int().min(1).max(16),
+      verification_digest: DIGEST.nullable(),
+      verification_result: z.enum(["verified", "failed", "inconclusive"]).nullable(),
+      result: z.enum(["failed", "partial_effect", "completion_unknown"]),
+    })
+    .strict(),
+  "rollback.requested.v1": z
+    .object({
+      original_execution_digest: DIGEST,
+      rollback_plan_digest: DIGEST,
+    })
+    .strict(),
+  "rollback.completed.v1": z
+    .object({
+      original_execution_digest: DIGEST,
+      rollback_plan_digest: DIGEST,
+      rollback_execution_digest: DIGEST,
+      result: z.literal("completed"),
+    })
+    .strict(),
+  "rollback.failed.v1": z
+    .object({
+      original_execution_digest: DIGEST,
+      rollback_plan_digest: DIGEST,
+      rollback_execution_digest: DIGEST.nullable(),
+      result: z.literal("failed"),
+    })
+    .strict(),
+  "rollback.completion_unknown.v1": z
+    .object({
+      original_execution_digest: DIGEST,
+      rollback_plan_digest: DIGEST,
+      rollback_execution_digest: DIGEST.nullable(),
+      result: z.literal("completion_unknown"),
     })
     .strict(),
 } as const;
@@ -597,6 +913,13 @@ export function requiredParentTypes(candidate: AuditCandidate): readonly AuditEv
     return candidate.correlation.approval_ref === null
       ? [...registered, "plan.created.v1"]
       : [...registered, "plan.created.v1", "approval.approved.v1"];
+  }
+  if (candidate.event_type === "result.withheld.v1") {
+    return candidate.correlation.verification_ref === null
+      ? ["execution.completed.v1"]
+      : candidate.payload.verification_result === "verified"
+        ? ["verification.completed.v1"]
+        : ["verification.failed.v1"];
   }
   return candidate.event_type === "apply.admitted.v1" && candidate.correlation.approval_ref !== null
     ? [...registered, "approval.approved.v1"]
@@ -671,7 +994,21 @@ export function validateAuditCandidate(value: unknown): AuditCandidate {
           (parsed.payload.enforcement_result === "enforced" ? "enforced" : "policy_deny"))) ||
     (parsed.event_type === "execution.completed.v1" &&
       (parsed.outcome.reason_codes.length !== 1 ||
-        parsed.outcome.reason_codes[0] !== parsed.payload.result))
+        parsed.outcome.reason_codes[0] !== parsed.payload.result)) ||
+    (parsed.event_type === "verification.failed.v1" &&
+      (parsed.outcome.status !== parsed.payload.result ||
+        parsed.outcome.reason_codes.length !== 1 ||
+        parsed.outcome.reason_codes[0] !==
+          (parsed.payload.result === "failed"
+            ? "verification_failed"
+            : "verification_inconclusive"))) ||
+    (parsed.event_type === "result.withheld.v1" &&
+      ((parsed.correlation.verification_ref === null &&
+        (parsed.payload.verification_digest !== null ||
+          parsed.payload.verification_result !== null)) ||
+        (parsed.correlation.verification_ref !== null &&
+          (parsed.payload.verification_digest === null ||
+            parsed.payload.verification_result === null))))
   ) {
     throw new AuditError("audit_candidate_invalid");
   }
