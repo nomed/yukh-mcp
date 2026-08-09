@@ -10,6 +10,7 @@ access.
 | Authorization v1     | [RFC-0002](https://github.com/nomed/yukh-mcp/blob/main/.context/rfcs/RFC-0002-deny-by-default-authorization.md)                                                                                                                                | [Package and API](https://github.com/nomed/yukh-mcp/tree/main/contracts/authorization/v1)                                                                                       |
 | Mutation lifecycle   | [RFC-0003](https://github.com/nomed/yukh-mcp/blob/main/.context/rfcs/RFC-0003-bound-plan-approval-apply-lifecycle.md)                                                                                                                          | [`packages/lifecycle`](https://github.com/nomed/yukh-mcp/tree/main/packages/lifecycle/src): disabled, provider-neutral reference engine and repository-local reservation ledger |
 | Mutation qualification fixture | [Issue #94](https://github.com/nomed/yukh-mcp/issues/94), constrained by RFC-0001 through RFC-0004 and RFC-0010 | [Synthetic setting qualification](example-setting-qualification.md): in-memory, network-free, unregistered effect/verifier/restore fixture |
+| Sandbox Projects Effect B | [Proposed RFC-0011](https://github.com/nomed/yukh-mcp/blob/main/.context/rfcs/RFC-0011-sandbox-github-projects-capability.md) and [issue #96](https://github.com/nomed/yukh-mcp/issues/96) | Contract review only; no implementation, registration, credential, network, provider, or gateway path |
 | Audit evidence       | [RFC-0004](https://github.com/nomed/yukh-mcp/blob/main/.context/rfcs/RFC-0004-structured-redacted-audit-evidence.md), [RFC-0010](https://github.com/nomed/yukh-mcp/blob/main/.context/rfcs/RFC-0010-repository-local-durable-audit-profile.md) | [Writer and repository-local profile](audit-writer.md)                                                                                                                          |
 | Coordination adapter | [RFC-0005](https://github.com/nomed/yukh-mcp/blob/main/.context/rfcs/RFC-0005-stable-coordination-consumer-adapter.md)                                                                                                                         | Synthetic loopback qualification only                                                                                                                                           |
 
@@ -31,6 +32,10 @@ mutation surface.
 The synthetic setting package is a provider fixture only. It qualifies exact
 effect, verification, idempotency, recovery, and separately authorized restore
 behavior but remains unreachable from gateway discovery or invocation.
+
+RFC-0011 is Proposed and has no implementation authority. The ordinary gateway
+must remain inert unless the owner first accepts the component contract and a
+later separately reviewed gate authorizes registration or activation.
 
 ## Validate the repository
 
