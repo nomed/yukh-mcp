@@ -5,7 +5,7 @@
 - Suite issue: https://github.com/nomed/nomed.github.io/issues/40
 - Suite RFC: accepted on `nomed/nomed.github.io` `main` at
   `12d9215f10c4b7fb1762a5025367e3e81543800f` (PR #42)
-- Status: Proposed component RFC awaiting owner acceptance
+- Status: Proposed component RFC blocked on `nomed/yukh-projects#150`
 
 ## Objective
 
@@ -24,6 +24,13 @@ RFC-0011 therefore remains Proposed. This session introduces no runtime,
 provider, registry, gateway, workflow, identity, credential, endpoint, network,
 mutation, restore, deployment, or readiness behavior.
 
+Independent review established that the strict MCP `ApprovalReceiptV1` and
+Yukh Projects `SignedApprovalEnvelope` cannot be one envelope, and that the
+immutable v1.7.0 producer exports primitives rather than one reviewed MCP-safe
+wrapper. Issue `nomed/yukh-projects#150` now governs the required compound
+approval bridge and immutable wrapper contract/artifact. RFC-0011 is blocked on
+its acceptance and publication.
+
 ## Proposed contract
 
 RFC-0011 proposes:
@@ -31,8 +38,12 @@ RFC-0011 proposes:
 - `github.projects.item.status.set@1.0.0` for one fixed synthetic Effect B item;
 - a single `mcp_pending` to `mcp_verified` status operation through immutable
   Yukh Projects v1.7.0 controlled apply;
-- independent Effect B plan, authorization, approval, materialization,
-  Coordination, durable audit, provider, verification, and evidence;
+- a compound admission with separate MCP and Projects assertions plus an
+  accepted non-authorizing cross-binding bridge;
+- an MCP provider boundary blocked on a future immutable Yukh Projects wrapper
+  rather than direct composition of v1.7.0 primitives;
+- independent authorization, materialization, Coordination, durable audit,
+  verification, and evidence;
 - durable `completion_unknown` with no automatic retry; and
 - `github.projects.item.status.restore@1.0.0` as a separately planned and
   approved restore lifecycle.
@@ -49,7 +60,9 @@ accepted suite RFC.
 
 ## Required next gate
 
-The project owner must explicitly accept RFC-0011 and its threat-model delta
-before a separate issue may implement even an unreachable disabled registration
-skeleton. Deployment, activation, credentials, network access, a live synthetic
-apply, restore, and operational readiness each retain later independent gates.
+Yukh Projects must first accept and immutably publish the bridge and wrapper
+contract/artifact governed by issue #150. RFC-0011 must then pin those accepted
+artifacts and receive explicit owner acceptance before a separate issue may
+implement even an unreachable disabled registration skeleton. Deployment,
+activation, credentials, network access, a live synthetic apply, restore, and
+operational readiness each retain later independent gates.

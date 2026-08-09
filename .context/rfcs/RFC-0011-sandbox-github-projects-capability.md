@@ -8,6 +8,7 @@
   `12d9215f10c4b7fb1762a5025367e3e81543800f` (PR #42)
 - Depends on: RFC-0001, RFC-0002, RFC-0003, RFC-0004, RFC-0005, RFC-0006,
   RFC-0010
+- Blocked by: https://github.com/nomed/yukh-projects/issues/150
 - Producer baseline:
   `nomed/yukh-projects v1.7.0@71784218366805922e5a12903eef9073f715f59f`
 
@@ -15,6 +16,12 @@ This proposal is a contract-review gate only. It authorizes no implementation,
 registration, discovery, gateway wiring, workflow activation, endpoint,
 credential, OIDC trust, materializer, provider request, GitHub request,
 mutation, restore, deployment, preview tag, or readiness claim.
+
+RFC-0011 is blocked on acceptance and immutable publication of the
+Yukh Projects compound-approval bridge and MCP-safe controlled-apply wrapper
+contract governed by `nomed/yukh-projects#150`. No MCP registration skeleton or
+provider adapter may be implemented from this proposal while that dependency
+is unresolved.
 
 RFC-0007 through RFC-0009 govern the separate Project 5 / issue 27 migration
 profile. RFC-0008 permanently rejects OIDC materialization only for that fixed
@@ -31,12 +38,29 @@ preprovisioned synthetic GitHub Projects item from logical status
 option are fixed by a later accepted sandbox deployment profile and cannot be
 selected through capability input.
 
-The provider boundary is the immutable Yukh Projects v1.7.0 controlled-apply
-library. It may execute only one `set_field_value` operation produced by a
-fresh exact Projects plan for logical field `status`. The MCP lifecycle owns
-capability authorization, planning, approval enforcement, durable admission,
-result release, and independent verification. Yukh Projects retains authority
-over Projects observation, reconciliation-plan semantics, mutation
+Effect B is a compound admission with two independent assertions:
+
+- the strict MCP `ApprovalReceiptV1` binds the MCP plan, authenticated MCP
+  subject and context, capability definition, and provider identity through the
+  approved plan and operation-set digests; and
+- the strict Yukh Projects `SignedApprovalEnvelope` must bind a distinct
+  Projects plan, scope, operation set, protected environment, producer versions,
+  and the GitHub-observed authenticated principal under an accepted closed
+  schema.
+
+Neither assertion authorizes the other. An explicit producer-owned,
+independently verifiable cross-binding artifact must prove their exact
+relationship before provider admission. Its schema, canonicalization,
+signature, trust, and field names are not invented here; they are blocked on
+the accepted `nomed/yukh-projects#150` contract.
+
+The provider boundary is also blocked on an immutable MCP-safe Yukh Projects
+wrapper contract and artifact from that issue. It may execute only one
+`set_field_value` operation produced by a fresh exact Projects plan for logical
+field `status`. The MCP lifecycle owns capability authorization, MCP planning,
+MCP assertion enforcement, bridge enforcement, durable admission, result
+release, and independent verification. Yukh Projects retains authority over
+its assertion, Projects observation, reconciliation-plan semantics, mutation
 allowlisting, provider preconditions, Coordination nonce and fenced lease use,
 and final zero-drift reconciliation.
 
@@ -76,10 +100,13 @@ the provider-neutral lifecycle engine.
   arbitrary fields, arbitrary values, queries, commands, and workflow inputs;
 - bind the target through one server-owned sandbox profile;
 - require distinct planning and apply authorization decisions under RFC-0002;
-- require one independently authenticated, exact, expiring approval;
+- require separately signed and verified MCP and Projects assertions;
+- require an accepted exact cross-binding bridge artifact without making
+  either assertion authority for the other;
 - use one atomic, one-shot OIDC material package with distinct read and write
   credentials;
-- invoke only the immutable Yukh Projects controlled-apply library;
+- invoke only a future immutable MCP-safe Yukh Projects wrapper artifact
+  accepted under `nomed/yukh-projects#150`;
 - preserve Yukh Projects nonce, lease, precondition, mutation, and convergence
   semantics without reimplementation;
 - durably commit all required RFC-0004 evidence and the RFC-0010 attempt
@@ -95,6 +122,9 @@ the provider-neutral lifecycle engine.
 - add a tool to the ordinary gateway or demo;
 - implement a provider, verifier, materializer, approval adapter, identity
   adapter, Coordination profile, or sandbox;
+- define or implement the producer-owned cross-binding artifact or wrapper;
+- directly compose Yukh Projects internal ports or exported primitives before
+  their MCP-safe wrapper contract is accepted;
 - enable a GitHub Actions workflow or request `id-token: write`;
 - configure OIDC federation, an Actions environment, a materializer origin, a
   trust root, a Coordination endpoint, a GitHub App, or credentials;
@@ -130,6 +160,9 @@ The profile binds exactly:
   `e37a6d50f0cc862b4f8c68ec5b9be2386184a69c6800fcbb98cc132e46ffa9a2`;
 - the accepted v1.7.0 controlled-apply entrypoint, reconciliation-plan,
   controlled-mutations, and protected-host-capsule contracts; and
+- a future immutable wrapper contract and artifact accepted under
+  `nomed/yukh-projects#150`, with separately recorded source and artifact
+  digests; and
 - one fixed policy commit and one fixed protected qualification workflow
   identity selected by a later accepted deployment profile.
 
@@ -206,7 +239,7 @@ output:
         maxLength: 12
       observation_ref:
         type: string
-        pattern: "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+        pattern: "^[a-z][a-z0-9_.-]{0,127}$"
         minLength: 1
         maxLength: 128
       zero_drift:
@@ -291,7 +324,7 @@ input:
         maxLength: 71
       original_execution_ref:
         type: string
-        pattern: "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+        pattern: "^[a-z][a-z0-9_.-]{0,127}$"
         minLength: 1
         maxLength: 128
       original_execution_digest:
@@ -318,7 +351,7 @@ output:
         maxLength: 11
       observation_ref:
         type: string
-        pattern: "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+        pattern: "^[a-z][a-z0-9_.-]{0,127}$"
         minLength: 1
         maxLength: 128
       zero_drift:
@@ -349,6 +382,12 @@ verification:
     - projects_fresh_zero_drift
 rollback:
   mode: unavailable
+  rationale: A second automatic restore could overwrite newer valid state.
+  recovery: Reconcile current state, then create a separately approved operator plan.
+  stop_conditions:
+    - current state differs from the exact restore precondition
+    - original execution or source snapshot binding cannot be verified
+    - outcome of this restore attempt is unknown
 errors:
   taxonomy_version: 1
 ```
@@ -385,9 +424,11 @@ indeterminate result is a denial and produces no provider call.
 
 The MCP planner creates one RFC-0003 plan with one update step. Its operation
 digest binds the fixed profile, capability definition, normalized input,
-logical target, policy commit, Yukh Projects producer and artifact digests,
-fresh Projects plan ID, ordered one-operation digest, target snapshot, declared
-provider mode, Coordination epoch, verifier identities, and postconditions.
+logical target, policy commit, Yukh Projects producer and future wrapper
+contract/artifact digests, fresh Projects plan ID, ordered one-operation digest,
+target snapshot, declared provider mode, Coordination epoch, verifier
+identities, and postconditions. The MCP `ApprovalReceiptV1` binds that exact
+plan and operation-set digest; it does not acquire Projects assertion semantics.
 
 The embedded Projects plan must be executable, contain no diagnostic, contain
 exactly one `set_field_value` operation for logical field `status`, require the
@@ -402,31 +443,66 @@ constraint and obligation enforced. Authentication, discovery, planning allow,
 approval, materialization, Coordination success, workflow admission, or
 provider capability cannot substitute for this decision.
 
-## Independent approval
+## Compound approval and bridge
 
-One independent human-governed approval authority authenticates the approver
-and signs the exact Effect B plan. The approval follows RFC-0003 and additionally
-binds:
+Effect B admission requires two separately signed, separately verified
+assertions plus one explicit reviewed cross-binding artifact.
 
-- suite RFC and profile versions;
-- the fixed Effect B target and disjoint operation-set digest;
-- Yukh Projects source, release artifact, entrypoint, and contract versions;
-- fixed policy commit and protected workflow identity;
-- materialization profile and expected package binding digest;
-- Coordination profile and positive restore epoch;
-- MCP verifier identities and postcondition digests; and
-- one unique approval nonce with at most fifteen minutes of validity.
+### MCP assertion
 
-The approval is not shared with Effect A. The actor is independent from the
-requesting workload unless a later accepted policy explicitly permits otherwise.
-Approval cannot be inferred from MCP authentication, chat, issue state, Project
-state, workflow dispatch, environment review, OIDC claims, package retrieval,
-credential possession, Coordination outcome, provider response, or test status.
+The MCP assertion is exactly the closed RFC-0003 `ApprovalReceiptV1`. It binds
+the exact MCP plan and digest, authenticated MCP subject and authentication
+context, capability definition, normalized input, resource set, environment,
+policy, target snapshot, and operation-set digest. The MCP plan operation digest
+also binds the future accepted wrapper identity and artifact digest, so the
+strict assertion covers the provider without adding fields to its schema.
 
-The approval public trust root is selected by materializer policy and protected
-runtime configuration, never by repository content or the envelope itself.
-Private signing keys never enter MCP, GitHub Actions, Yukh Projects, repository
-content, or evidence.
+The MCP assertion is verified only by the MCP approval adapter against an
+MCP-selected trust profile. Its nonce digest is distinct from the Projects
+nonce, is consumed only by the MCP lifecycle reservation/enforcement path, and
+never crosses into Yukh Projects as provider approval.
+
+### Projects assertion
+
+The Projects assertion is exactly the immutable producer's closed
+`SignedApprovalEnvelope` and `ApprovalClaims` schema, or a separately accepted
+version from `nomed/yukh-projects#150`. It binds the distinct Projects plan and
+operation digest, repository/Project/issue scope, `environment: apply`,
+protected environment, producer contract/planner/snapshot/entrypoint versions,
+expiry, nonce, key fingerprint, issuer, and Projects `subjectRef`.
+
+The upstream contract must define how `subjectRef` is derived from and bound to
+the GitHub-observed authenticated principal. RFC-0011 does not reinterpret that
+opaque value or add identity fields to the closed v1.7.0 assertion. The Projects
+assertion is verified only under the Projects-selected trust profile and is the
+only assertion presented to the controlled-apply producer.
+
+### Cross-binding bridge
+
+Neither assertion can be parsed as, converted into, or substituted for the
+other. Their actors, subjects, plans, schemas, nonces, trust roots, verification
+receipts, and authority remain distinct.
+
+Before MCP apply admission, a producer-owned bridge artifact must establish
+exact equality or an explicitly accepted mapping across the MCP plan, Projects
+plan, fixed target, disjoint Effect B operation set, environments, policy
+commit, producer/wrapper identities, expiry window, and authenticated principals.
+The bridge is evidence of an exact compound relationship; it is not an
+approval, bearer capability, credential, authorization decision, or permission
+to invoke either component.
+
+The bridge artifact's identifier, schema fields, canonical bytes, signature
+domain, issuing authority, trust root, expiry, replay semantics, and validation
+API must be defined and accepted by `nomed/yukh-projects#150`. Until then, this
+RFC is blocked. MCP must not invent an extension object, overload assertion
+fields, compare only human-readable summaries, or trust a materializer-created
+ad hoc mapping.
+
+Neither assertion or bridge is shared with Effect A. Approval cannot be inferred
+from authentication, chat, issue or Project state, workflow dispatch,
+environment review, OIDC claims, package retrieval, credential possession,
+Coordination outcome, provider response, or test status. Private signing keys
+never enter MCP, GitHub Actions, Yukh Projects, repository content, or evidence.
 
 ## One-shot OIDC materialization
 
@@ -439,54 +515,61 @@ and teardown.
 The protected qualification workflow obtains one OIDC assertion. A fixed
 materializer verifies at least repository identity, workflow ref and digest,
 environment, event, run ID, run attempt equal to one, policy commit, MCP plan
-digest, Projects plan ID, approval digest, operation-set digest, profile,
-audience, issue and expiry. It then atomically returns one closed package no
+digest, Projects plan ID, both assertion digests, the accepted bridge artifact
+digest, operation-set digest, wrapper identity, profile, audience, issue and
+expiry. It then atomically returns one closed package no
 larger than 64 KiB containing:
 
 1. one short-lived GitHub read credential;
 2. one distinct short-lived GitHub write credential;
-3. the exact signed approval envelope;
-4. its independently selected public trust root;
-5. one bounded Yukh Projects protected host capsule; and
-6. one single-use package receipt bound to the exact run and plan.
+3. the exact signed MCP assertion and its independently selected trust root;
+4. the exact signed Projects assertion and its independently selected trust root;
+5. the accepted cross-binding bridge artifact and its trust material;
+6. one bounded Yukh Projects protected host capsule; and
+7. one single-use package receipt bound to the exact run and both plans.
 
 The package is retrieved once with one direct TLS request, one deadline, no
 redirect, proxy discovery, refresh, polling, fallback, or retry. An ambiguous
 retrieval consumes the run and requires a new plan, approval, run, and package.
 It cannot trigger provider execution.
 
-Materialization occurs before MCP can validate the approval because the package
-delivers the approval and trust root. Retrieval itself grants no MCP
-authorization. MCP validates the package and approval, obtains and enforces the
-fresh apply authorization, reserves the attempt, and commits required audit
-evidence before the provider receives either credential.
+Materialization occurs before MCP can validate the assertions because the
+package delivers them and their independently selected trust roots. Retrieval
+itself grants no MCP authorization. MCP validates the package, verifies only
+the MCP assertion through its approval adapter, verifies the bridge through the
+accepted bridge validator, obtains and enforces the fresh apply authorization,
+reserves the attempt, and commits required audit evidence before the provider
+receives either credential. The wrapper independently verifies the Projects
+assertion through the accepted Projects verifier.
 
-Approval and trust-root files are private bounded regular files or equivalently
-bounded handles. The host capsule remains below the accepted Yukh Projects
-limit. Credentials are masked before any consumer step. The read credential is
-available only to fixed read adapters and the write credential only to the
-fixed controlled mutation transport. Both are removed in an unconditional
-finalizer. Cleanup failure cannot erase a possible effect and becomes
-operator-review evidence.
+Assertion, bridge, and trust-root files are private bounded regular files or
+equivalently bounded handles. The host capsule remains below the accepted Yukh
+Projects limit. Credentials are masked before any consumer step. The read
+credential is available only to fixed read adapters and the write credential
+only to the fixed controlled mutation transport. Both are removed in an
+unconditional finalizer. Cleanup failure cannot erase a possible effect and
+becomes operator-review evidence.
 
 Repository inputs, environment variables, command arguments, workflow inputs,
 outputs, artifacts, caches, summaries, logs, errors, audit events, and model
-context contain no credential, token, key, proof, approval bytes, host capsule,
-package, receipt secret, endpoint, or provider identifier.
+context contain no credential, token, key, proof, assertion bytes, bridge bytes,
+host capsule, package, receipt secret, endpoint, or provider identifier.
 
 ## Coordination nonce and lease
 
-Yukh Projects controlled apply remains authoritative for consuming the approval
-nonce and acquiring the repository-Project-issue fenced lease through the
-accepted protected host capsule. MCP must not preconsume the same nonce or
+Yukh Projects controlled apply remains authoritative for consuming the Projects
+assertion nonce and acquiring the repository-Project-issue fenced lease through
+the accepted protected host capsule. MCP must not preconsume that nonce or
 acquire a competing lease, because that would make the immutable producer
 reject the only attempt.
 
 Before provider start, MCP independently:
 
-- binds the approval nonce digest, positive Coordination epoch, lease scope
-  digest, holder digest, and expected provider operation into its durable
-  reservation and audit records;
+- consumes the distinct MCP assertion nonce through its own one-shot durable
+  lifecycle enforcement;
+- binds both assertion digests, both nonce digests, the accepted bridge digest,
+  positive Coordination epoch, lease scope digest, holder digest, and expected
+  provider operation into its durable reservation and audit records;
 - validates that the closed host capsule matches the approved profile and exact
   protected binding; and
 - proves that no package, nonce, lease, or capability from Effect A is present.
@@ -494,7 +577,7 @@ Before provider start, MCP independently:
 During the one provider attempt, the immutable Projects host:
 
 1. performs its complete fresh preflight;
-2. consumes the exact approval nonce once;
+2. verifies the Projects assertion and consumes its exact nonce once;
 3. acquires the exact fenced lease;
 4. re-observes and recreates the same Projects plan;
 5. sends at most one allowlisted mutation request; and
@@ -505,23 +588,48 @@ conflict, stale epoch or fence, lease loss, malformed response, timeout, or
 Coordination unavailability stops without retry. Nonce or lease success is not
 approval, MCP authorization, provider success, or verification.
 
-## Provider boundary
+## Provider boundary and upstream wrapper dependency
 
 The future provider is a Yukh MCP-owned adapter behind
 `LifecycleEffectPort`. It receives only the exact immutable MCP plan, execution
 reference, attempt number one, abort signal, and private runtime handles created
 from the validated package.
 
-The adapter may invoke only the reviewed exported controlled-apply library
-entrypoint from the immutable v1.7.0 artifact. It may not invoke a CLI, shell,
-workflow dispatcher, generic Action runner, dynamic import path, package
-installer, GraphQL client, REST client, HTTP client, or GitHub SDK. It cannot
-construct a query, URL, method, header, mutation document, provider identifier,
-or credential.
+The immutable v1.7.0 apply artifact actually exports
+`parseProtectedHostCapsule`, `createControlledApplyHostFactory`, and
+`runApplyEntrypoint`. The accepted v1.7.0 data flow parses the protected capsule,
+passes its bounded options into `createControlledApplyHostFactory`, calls the
+factory's `create` method with reconciliation mode `native-v1`, fixed requested
+scope, fixed policy source, and distinct read/write tokens, then passes the
+returned `scope` and `host` with the approved Projects plan ID, protected
+environment, Projects assertion, and Projects public key to
+`runApplyEntrypoint`.
 
-The adapter passes fixed native mode `apply`, exact protected scope, policy
-commit, approved Projects plan ID, approval and trust-root handles, host capsule
-handle, and distinct credential handles. It rejects any result that reports:
+Those exports are producer primitives, not a reviewed MCP provider API.
+v1.7.0 does not export one function that accepts the compound admission,
+validates the bridge, fixes every host input, and returns one MCP-safe closed
+outcome. Direct consumer composition would create unreviewed glue across
+credentials, policy, host construction, approval, Coordination, network, and
+result mapping.
+
+RFC-0011 is therefore blocked on `nomed/yukh-projects#150`, which must accept
+and immutably publish one reproducible wrapper contract/artifact. The wrapper
+must own the exact composition above, accept the Projects assertion and accepted
+bridge only through closed bounded inputs, fix native mode and target scope,
+validate the bridge before provider access, and expose one narrow exported
+function with closed stable outcomes. Its source commit, artifact digest,
+provenance, SBOM, and conformance vectors become mandatory profile bindings.
+
+The MCP adapter may invoke only that future wrapper function. It may not invoke
+the v1.7.0 primitives directly, or invoke a CLI, shell, workflow dispatcher,
+generic Action runner, dynamic import path, package installer, GraphQL client,
+REST client, HTTP client, or GitHub SDK. It cannot construct a query, URL,
+method, header, mutation document, provider identifier, or credential.
+
+The wrapper receives fixed native mode `apply`, exact protected scope, policy
+commit, approved Projects plan ID, Projects assertion and trust-root handles,
+accepted bridge handle, host capsule handle, and distinct credential handles.
+It rejects any input or result that reports:
 
 - a different plan ID, scope, mode, producer, operation set, or target;
 - more than one operation;
@@ -551,9 +659,10 @@ Before provider start, the runtime must durably commit:
 - apply admission; and
 - the exact execution-attempt reservation.
 
-The attempt reservation binds the package receipt digest, approval nonce
-digest, Coordination epoch and scope digest, producer and artifact digests,
-Projects plan and operation-set digests, verifier identities, and Effect B
+The attempt reservation binds the package receipt digest, MCP and Projects
+assertion digests and distinct nonce digests, accepted bridge artifact digest,
+Coordination epoch and scope digest, producer and wrapper artifact digests,
+both plan and operation-set digests, verifier identities, and Effect B
 disjointness evidence through accepted bounded references or obligation
 receipts. If the existing closed audit schemas cannot represent a required
 binding without weakening or omission, implementation is blocked pending a
@@ -599,10 +708,10 @@ Restore verification follows the same procedure but requires status
 
 ## Completion unknown and retry
 
-The effect boundary starts immediately before calling the immutable controlled
-apply library. After that point, abort, crash, timeout, process restart, lost
-response, producer ambiguity, Coordination ambiguity, lease loss, cleanup
-failure, audit failure, or conflicting observations produce
+The effect boundary starts immediately before calling the future immutable
+MCP-safe Projects wrapper. After that point, abort, crash, timeout, process
+restart, lost response, producer ambiguity, Coordination ambiguity, lease loss,
+cleanup failure, audit failure, or conflicting observations produce
 `completion_unknown` unless independent evidence proves effect or no effect.
 
 `completion_unknown` is durable and terminal for the reservation. Exact replay
@@ -626,7 +735,8 @@ Public results use existing bounded error codes:
 | no explicit allow or explicit deny | `authorization_denied` | 0 |
 | policy, identity, attribute, or obligation unavailable | `authorization_unavailable` | 0 |
 | stale or substituted plan, target, producer, or operation | `plan_invalidated` | 0 |
-| missing, rejected, expired, or mismatched approval | `approval_required` or `approval_denied` | 0 |
+| missing, rejected, expired, or mismatched MCP assertion | `approval_required` or `approval_denied` | 0 |
+| missing, rejected, expired, or mismatched Projects assertion or bridge | `approval_denied` | 0 |
 | package unavailable, invalid, replayed, or ambiguous | `authorization_unavailable` | 0 |
 | reservation conflict or exact duplicate before start | `apply_already_reserved` | 0 |
 | audit unavailable before start | `audit_unavailable` | 0 |
@@ -644,29 +754,33 @@ cleanup causes. Raw dependency text is never retained or released.
 Proposed boundaries are:
 
 - authenticated MCP subject to deny-by-default policy;
-- MCP plan to independent approval authority;
+- MCP plan to the MCP assertion authority;
+- Projects plan and observed principal to the Projects assertion authority;
+- both assertions to the producer-owned cross-binding bridge validator;
 - protected workflow OIDC assertion to fixed materializer;
 - materializer package to private runtime handles;
 - MCP admission to durable audit and reservation stores;
 - protected capsule to Coordination nonce and lease primitives;
-- MCP provider adapter to immutable Yukh Projects controlled apply;
+- MCP provider adapter to the future immutable Yukh Projects wrapper;
 - distinct credentials to fixed read and mutation transports;
 - GitHub Projects state to independent MCP verifier; and
 - original execution state to separately authorized restore.
 
 Primary threats are Effect A/B authority collapse, generic-field widening,
-subject or target substitution, approval replay, OIDC claim substitution,
-package replay, credential confusion, host-capsule broadening, duplicate nonce
-consumption, stale fencing, provider-version replacement, arbitrary network or
-query construction, pre-effect audit bypass, provider success treated as
-verification, unsafe retry after ambiguity, automatic restore, and evidence
-disclosure.
+subject or target substitution, assertion-schema confusion, one assertion
+authorizing the other, bridge substitution, assertion or package replay, OIDC
+claim substitution, credential confusion, host-capsule broadening, duplicate
+nonce consumption, stale fencing, wrapper replacement, direct composition of
+producer primitives, arbitrary network or query construction, pre-effect audit
+bypass, provider success treated as verification, unsafe retry after ambiguity,
+automatic restore, and evidence disclosure.
 
 Controls are disjoint exact bindings, closed enum schemas, server-owned target
-resolution, two fresh explicit authorization decisions, independent signed
-approval, one-shot package retrieval, separate credentials, immutable producer
-and artifact digests, producer-owned Coordination gates, durable reservation
-and audit-before-effect, one provider attempt, independent fresh zero-drift
+resolution, two fresh explicit authorization decisions, two separately signed
+and verified assertions, an accepted non-authorizing bridge, one-shot package
+retrieval, separate credentials, immutable producer and wrapper artifact
+digests, producer-owned Coordination gates, durable reservation and
+audit-before-effect, one provider attempt, independent fresh zero-drift
 verification, durable unknown completion, separately authorized restore, and
 structural redaction.
 
@@ -694,16 +808,20 @@ unchanged. No accepted exact capability version may later be widened to another
 field, value, item, Project, repository, environment, mode, producer, provider,
 verification profile, credential path, retry rule, or restore behavior.
 
-Any change to the schemas, target cardinality, operation type, scope, producer
-baseline, materialization profile, Coordination ownership, error meaning,
-verification, retry, or restore authority requires compatibility review and,
-when authority expands or semantics break, a new RFC and capability version.
+Any change to the schemas, bridge, assertion separation, target cardinality,
+operation type, scope, producer or wrapper baseline, materialization profile,
+Coordination ownership, error meaning, verification, retry, or restore
+authority requires compatibility review and, when authority expands or
+semantics break, a new RFC and capability version.
 
 ## Validation and acceptance evidence
 
-After explicit acceptance, a separate implementation issue may add only an
-unreachable, disabled registration skeleton and synthetic conformance tests
-unless a later accepted gate explicitly authorizes more. Tests must prove:
+RFC-0011 cannot be accepted for implementation until
+`nomed/yukh-projects#150` accepts and immutably publishes the bridge and wrapper
+contract/artifact. After both acceptances, a separate implementation issue may
+add only an unreachable, disabled registration skeleton and synthetic
+conformance tests unless a later accepted gate explicitly authorizes more.
+Tests must prove:
 
 - canonical definition and schema validation with fixed digests;
 - ordinary gateway discovery remains empty and direct invocation is impossible;
@@ -714,12 +832,15 @@ unless a later accepted gate explicitly authorizes more. Tests must prove:
   materialization, precondition, reservation, audit, and package failures;
 - fresh planning and apply decisions are distinct, explicit, current, and
   one-shot;
-- package and approval substitution, replay, expiry, ambiguity, and cleanup
-  failure;
-- nonce replay, lease conflict/loss, epoch mismatch, and proof that MCP does
-  not preconsume the producer nonce;
-- immutable provider entrypoint selection with no CLI, shell, dynamic install,
-  generic network, GraphQL, REST, or workflow-dispatch path;
+- independent MCP and Projects assertion verification, strict schema rejection,
+  trust-root separation, principal binding, bridge substitution, and proof that
+  neither assertion authorizes the other;
+- package, assertion, and bridge replay, expiry, ambiguity, and cleanup failure;
+- distinct nonce enforcement, lease conflict/loss, epoch mismatch, and proof
+  that MCP does not preconsume the Projects assertion nonce;
+- immutable wrapper selection and proof that direct primitive composition, CLI,
+  shell, dynamic install, generic network, GraphQL, REST, and workflow-dispatch
+  paths are absent;
 - one exact provider attempt, exact result mapping, partial/unknown outcomes,
   and no hidden retry;
 - independent verification rejects provider-only evidence and requires a fresh
@@ -737,17 +858,21 @@ production data.
 ## Rollout and rollback
 
 1. Review this Proposed RFC, its threat-model delta, and suite RFC alignment.
-2. Obtain explicit owner acceptance or revise the proposal.
-3. After acceptance, open a separate implementation issue.
-4. Implement at most an unreachable, disabled registration skeleton and
+2. Accept and immutably publish the producer-owned bridge and wrapper contract
+   under `nomed/yukh-projects#150`.
+3. Update this RFC with the accepted contract, wrapper artifact, and immutable
+   digests without weakening either assertion boundary.
+4. Obtain explicit owner acceptance of this RFC or revise the proposal.
+5. After acceptance, open a separate implementation issue.
+6. Implement at most an unreachable, disabled registration skeleton and
    network-free synthetic conformance fixtures under that issue.
-5. Require another accepted deployment RFC before configuring OIDC,
+7. Require another accepted deployment RFC before configuring OIDC,
    materializer, identity, approval, Coordination, audit, verifier, workflow,
    target, credential, endpoint, or network paths.
-6. Require a separate activation review before gateway discovery or invocation.
-7. Require a separately reviewed exact Effect B plan and explicit human
+8. Require a separate activation review before gateway discovery or invocation.
+9. Require a separately reviewed exact Effect B plan and explicit human
    authorization before one live synthetic apply.
-8. Require separate authorization for a zero-operation second observation,
+10. Require separate authorization for a zero-operation second observation,
    restore, teardown, and operational-readiness acceptance.
 
 Before acceptance, rollback is closing or revising this proposal. After a
@@ -777,10 +902,10 @@ would create a broad GitHub mutation capability and defeat policy review.
 ### Dispatch a workflow from the provider
 
 Rejected because it adds another GitHub authority and ambiguous asynchronous
-boundary, and workflow dispatch is not approval. The proposed provider calls
-only the fixed in-process controlled-apply library entrypoint.
+boundary, and workflow dispatch is not approval. The proposed provider remains
+blocked until a producer-owned MCP-safe wrapper is accepted.
 
-### Let MCP consume the producer approval nonce first
+### Let MCP consume the Projects assertion nonce first
 
 Rejected because the immutable Projects controlled-apply host must consume it.
 Preconsumption would convert the only attempt into a replay denial. MCP binds
@@ -802,16 +927,15 @@ Restore is a separate high-risk capability with fresh authority.
 The owner must explicitly decide:
 
 1. whether the exact capability and restore schemas are accepted;
-2. whether invoking the immutable controlled-apply library in process is the
-   correct provider boundary for the sandbox;
-3. whether one approval envelope may be independently verified by MCP and Yukh
-   Projects without collapsing their authorization boundaries;
-4. whether the existing RFC-0004 event schemas can carry every required
+2. whether the accepted `nomed/yukh-projects#150` bridge schema and wrapper
+   artifact preserve both component authority boundaries;
+3. whether the existing RFC-0004 event schemas can carry every required
    digest-bound obligation receipt or need a separate registry RFC;
-5. whether the repository-local audit and reservation profiles are acceptable
+4. whether the repository-local audit and reservation profiles are acceptable
    for the ephemeral preview qualification;
-6. which later deployment profile owns OIDC, materializer, approval,
+5. which later deployment profile owns OIDC, materializer, both approval
+   trust profiles, bridge trust, wrapper loading,
    Coordination, verifier, workflow, and sandbox target configuration; and
-7. which exact Effect A target and operation set prove disjointness.
+6. which exact Effect A target and operation set prove disjointness.
 
 No open question may be resolved by implementation before explicit acceptance.
