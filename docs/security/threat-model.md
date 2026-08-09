@@ -632,8 +632,8 @@ production-readiness claim.
 ## Proposed sandbox Projects Effect B capability - 2026-08-09
 
 - Governing issue: #96
-- Suite authority: accepted `nomed.github.io` RFC-0005 at
-  `b23f47f2c90ec6b106eb4c9c746f6d1958e0c182`
+- Suite authority: accepted `nomed.github.io` RFC-0005 on `main` at
+  `12d9215f10c4b7fb1762a5025367e3e81543800f` (PR #42)
 - Proposed component contract: RFC-0011
 - Scope: contract review for one fixed synthetic GitHub Projects status update
   and one separately authorized restore capability

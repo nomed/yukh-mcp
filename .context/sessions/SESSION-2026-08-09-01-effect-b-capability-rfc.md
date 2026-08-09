@@ -3,8 +3,8 @@
 - Date: 2026-08-09
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/96
 - Suite issue: https://github.com/nomed/nomed.github.io/issues/40
-- Suite RFC:
-  `nomed/nomed.github.io@b23f47f2c90ec6b106eb4c9c746f6d1958e0c182`
+- Suite RFC: accepted on `nomed/nomed.github.io` `main` at
+  `12d9215f10c4b7fb1762a5025367e3e81543800f` (PR #42)
 - Status: Proposed component RFC awaiting owner acceptance
 
 ## Objective
