@@ -628,3 +628,36 @@ This review does **not** authorize gateway/provider registration, discovery,
 approval issuance for Step 9, Step 9 execution, credentials/endpoints, external
 or production state, Projects apply, deployment, recovery automation, or any
 production-readiness claim.
+
+## Proposed sandbox Projects Effect B capability - 2026-08-09
+
+- Governing issue: #96
+- Suite authority: accepted `nomed.github.io` RFC-0005 at
+  `b23f47f2c90ec6b106eb4c9c746f6d1958e0c182`
+- Proposed component contract: RFC-0011
+- Scope: contract review for one fixed synthetic GitHub Projects status update
+  and one separately authorized restore capability
+- New live provider, credential, endpoint, network, gateway, or mutation
+  boundary: none in this proposal
+
+| Threat | Proposed required control | Residual risk / later gate |
+| --- | --- | --- |
+| Effect A authority is reused or treated as approval for Effect B | different synthetic item and disjoint operation set; separate plan, authorization decisions, approval, snapshot, nonce, lease, idempotency key, package, credentials, verifier, and audit chain | the suite compatibility matrix must identify and independently verify both exact operation sets |
+| a caller widens the capability into arbitrary Projects, fields, values, GraphQL, REST, workflows, or commands | closed enum-only input, one server-owned logical resource, one status transition, fixed environment and native provider mode, and no provider identifiers or execution mechanics in public schemas | trusted deployment resolution and provider conformance require later accepted profiles and synthetic negative tests |
+| authentication, discovery, planning allow, approval, workflow admission, OIDC, Coordination, credential possession, or provider output becomes MCP authorization | distinct fresh RFC-0002 planning and apply decisions; only exact explicit allow with enforced constraints and obligations can progress | production identity, policy, attribute, approval, and obligation adapters remain unselected |
+| approval is replayed, substituted, shared with Effect A, or selected by repository content | independently authenticated exact plan-bound approval, separate trust-root selection, fifteen-minute maximum, unique nonce, and complete producer/materializer/verifier binding | approval identity, signing-key custody, trust-root delivery, and separation of duties require a later deployment RFC |
+| OIDC claims or a one-shot package are replayed, broadened, redirected, logged, or treated as authority | fixed audience/workflow/environment/run/attempt/commit/plan binding; atomic one-shot bounded package; distinct short-lived read/write credentials; direct TLS; no retry, fallback, output, artifact, cache, summary, or log | identity-provider, materializer, TLS, runner, and credential-issuer compromise remain operational dependencies |
+| MCP preconsumes the same nonce or competes for the lease required by immutable Projects controlled apply | MCP binds nonce/epoch/lease digests in its reservation but the producer remains the sole consumer of that approval nonce and fenced lease | exact host-capsule and Coordination deployment qualification remains a later gate |
+| provider replacement, dynamic execution, or a generic network path bypasses Projects mutation semantics | immutable v1.7.0 source and apply-library artifact digests; fixed in-process controlled-apply entrypoint; no CLI, shell, dispatcher, dynamic install, generic HTTP, GraphQL, REST, or SDK path | artifact provenance, loader integrity, and sandbox-host compromise remain residual risks |
+| pre-effect audit outage permits mutation or post-start evidence failure hides a possible effect | durable RFC-0010 reservation and every required RFC-0004 pre-effect commit before provider start; post-start failure journals recovery, withholds success, and records `completion_unknown` | the existing event registry may need a separate RFC if it cannot represent every package, Coordination, producer, and verifier binding |
+| provider acknowledgement or final report is released as MCP success | separate read-only verifier re-resolves the target, observes status, reruns the Projects planner, and requires zero operations and zero diagnostics | verifier identity, observation integrity, and read-credential profile require later acceptance |
+| crash, timeout, lost response, lease loss, cleanup failure, or conflicting observation triggers a duplicate effect | one durable attempt, retry `never`, restart-stable `completion_unknown`, no redispatch or replacement intent before reconciliation | operator reconciliation and recovery acknowledgement remain unimplemented |
+| restore runs automatically or overwrites newer legitimate state | distinct restore capability with exact source snapshot, original execution bindings, fresh plan/approval/authorization/package/nonce/lease/audit, and conflict-detecting preconditions | restore can fail or become unknown and has no recursive automatic rollback |
+| credentials, approvals, capsules, provider identifiers, observations, or private target data enter evidence | closed structural projections with only allowlisted references, digests, states, stable codes, counts, and duration buckets | host, effective-user, runner, filesystem, and administrator compromise can still observe runtime material |
+
+RFC-0011 is **Proposed**. This threat-model delta authorizes no implementation
+or operational authority. Owner acceptance is required before a separate issue
+may add even an unreachable disabled registration skeleton. OIDC, approval,
+materializer, Coordination, audit, verifier, workflow, target, credential,
+endpoint, network, gateway activation, live synthetic apply, restore,
+deployment, and operational readiness each require later explicit review.
