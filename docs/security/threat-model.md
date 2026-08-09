@@ -629,40 +629,44 @@ approval issuance for Step 9, Step 9 execution, credentials/endpoints, external
 or production state, Projects apply, deployment, recovery automation, or any
 production-readiness claim.
 
-## Proposed sandbox Projects Effect B capability - 2026-08-09
+## Proposed sandbox Projects add-dependency Effect B capability - 2026-08-09
 
 - Governing issue: #96
 - Suite authority: accepted `nomed.github.io` RFC-0005 on `main` at
   `12d9215f10c4b7fb1762a5025367e3e81543800f` (PR #42)
+- Autonomous mandate: accepted `nomed.github.io` RFC-0007 at
+  `bb8628edf7a07c2af56f07e4f9140f58c851ef47`
+- Accepted Projects contract:
+  `nomed/yukh-projects@521be0d0ef1297579e84a6322dea29f80c2549dc`
 - Proposed component contract: RFC-0011
-- Blocking producer contract: `nomed/yukh-projects#150`
-- Scope: contract review for one fixed synthetic GitHub Projects status update
-  and one separately authorized restore capability
+- Scope: contract review for fixed capability `projects.add-dependency.v1`,
+  exactly one `add_dependency(201 blocks 202)` operation, and the Accepted
+  compound-admission contract
 - New live provider, credential, endpoint, network, gateway, or mutation
   boundary: none in this proposal
 
 | Threat | Proposed required control | Residual risk / later gate |
 | --- | --- | --- |
-| Effect A authority is reused or treated as approval for Effect B | different synthetic item and disjoint operation set; separate plans, authorization decisions, MCP and Projects assertions, bridge, snapshots, nonces, lease, idempotency key, package, credentials, verifier, and audit chain | the suite compatibility matrix must identify and independently verify both exact operation sets |
-| a caller widens the capability into arbitrary Projects, fields, values, GraphQL, REST, workflows, or commands | closed enum-only input, one server-owned logical resource, one status transition, fixed environment and native provider mode, and no provider identifiers or execution mechanics in public schemas | trusted deployment resolution and provider conformance require later accepted profiles and synthetic negative tests |
+| stale status semantics or Effect A authority is reused for Effect B | remove the nonconforming status capability; bind empty input to the Accepted fixed dependency target and one `add_dependency`; separate plans, approvals, bridge, snapshots, nonces, lease, credentials, verifiers, and audit chains | conformance tests must prove no status or dependency-removal path and exact Effect A/B disjointness |
+| a caller reverses or widens the relationship into arbitrary Projects, fields, values, GraphQL, REST, workflows, or commands | empty closed input, server-owned `201 blocks 202` target, one operation, fixed environment and native mode, and no provider identifiers or execution mechanics in public schemas | trusted target resolution and provider conformance require later accepted profiles and adversarial fixtures |
 | authentication, discovery, planning allow, either assertion, the bridge, workflow admission, OIDC, Coordination, credential possession, or provider output becomes MCP authorization | distinct fresh RFC-0002 planning and apply decisions; only exact explicit allow with enforced constraints and obligations can progress | production identity, policy, attribute, assertion, bridge, and obligation adapters remain unselected |
-| one approval envelope is forced through incompatible strict schemas or one assertion authorizes the other | strict MCP `ApprovalReceiptV1` and Projects `SignedApprovalEnvelope` remain separately signed and verified; an accepted producer-owned bridge proves exact cross-binding but grants no authority | bridge schema, trust, canonicalization, and principal mapping are blocked on `nomed/yukh-projects#150` |
+| one approval envelope is forced through incompatible strict schemas or one assertion authorizes the other | strict MCP `ApprovalReceiptV1` and unchanged Projects `SignedApprovalEnvelope` v1 remain separately authenticated; Accepted `yukh-projects-approval-bridge-v2` exact-matches them but grants no authority | executable bridge-verifier artifact and deployment trust profiles remain unpublished |
 | either assertion, its trust root, or the bridge is replayed, substituted, shared with Effect A, or selected by repository content | distinct plans, principals, schemas, trust profiles, nonces, expiry, verification receipts, and accepted cross-binding; neither assertion is presented as the other | identity, signing-key custody, trust-root delivery, and separation of duties require later deployment review |
 | OIDC claims or a one-shot package are replayed, broadened, redirected, logged, or treated as authority | fixed audience/workflow/environment/run/attempt/commit/both-plan binding; atomic one-shot bounded package; both assertions and bridge; distinct short-lived read/write credentials; direct TLS; no retry, fallback, output, artifact, cache, summary, or log | identity-provider, materializer, TLS, runner, and credential-issuer compromise remain operational dependencies |
 | MCP preconsumes the Projects assertion nonce or competes for the lease required by controlled apply | MCP consumes only its distinct assertion nonce and binds both nonce digests; the producer remains the sole consumer of the Projects nonce and fenced lease | exact host-capsule and Coordination deployment qualification remains a later gate |
-| direct composition of v1.7.0 primitives, wrapper replacement, dynamic execution, or a generic network path bypasses Projects semantics | v1.7.0 exports are documented but forbidden as a direct MCP boundary; implementation is blocked on an immutable producer-owned wrapper contract/artifact with fixed composition and no CLI, shell, dispatcher, dynamic install, generic HTTP, GraphQL, REST, or SDK path | wrapper contract, provenance, artifact, loader integrity, and sandbox-host risks are blocked on `nomed/yukh-projects#150` |
+| direct composition of v1.7.0 primitives, wrapper replacement, dynamic execution, or a generic network path bypasses Projects semantics | only the Accepted `runMcpEffectBControlledApplyV1` contract is eligible; direct primitives, CLI, shell, dispatcher, dynamic install, generic HTTP, GraphQL, REST, and SDK paths are forbidden | immutable wrapper implementation, provenance, SBOM, digest, conformance vectors, and loader integrity remain unpublished |
 | pre-effect audit outage permits mutation or post-start evidence failure hides a possible effect | durable RFC-0010 reservation and every required RFC-0004 pre-effect commit before provider start; post-start failure journals recovery, withholds success, and records `completion_unknown` | the existing event registry may need a separate RFC if it cannot represent every package, Coordination, producer, and verifier binding |
-| provider acknowledgement or final report is released as MCP success | separate read-only verifier re-resolves the target, observes status, reruns the Projects planner, and requires zero operations and zero diagnostics | verifier identity, observation integrity, and read-credential profile require later acceptance |
+| provider acknowledgement or final report is released as MCP success | separate read-only verifier proves `201 blocks 202`, exact `effectBPostconditionBinding`, and a fresh zero-operation Projects plan | verifier implementation, observation integrity, and read-credential profile require later acceptance |
 | crash, timeout, lost response, lease loss, cleanup failure, or conflicting observation triggers a duplicate effect | one durable attempt, retry `never`, restart-stable `completion_unknown`, no redispatch or replacement intent before reconciliation | operator reconciliation and recovery acknowledgement remain unimplemented |
-| restore runs automatically or overwrites newer legitimate state | distinct restore capability with exact source snapshot, original execution bindings, fresh plans/assertions/bridge/authorization/package/nonces/lease/audit, conflict-detecting preconditions, and explicit unavailable-rollback rationale, recovery, and stop conditions | restore can fail or become unknown and has no recursive automatic rollback |
+| reverse mutation or teardown is presented as automatic rollback | capability rollback is explicitly unavailable because dependency removal is not Accepted; teardown remains separate sandbox-owner authority and cannot rewrite effect outcome | teardown implementation, credentials, final-state verifier, and operational authority remain unselected |
 | credentials, approvals, capsules, provider identifiers, observations, or private target data enter evidence | closed structural projections with only allowlisted references, digests, states, stable codes, counts, and duration buckets | host, effective-user, runner, filesystem, and administrator compromise can still observe runtime material |
 
-RFC-0011 is **Proposed** and blocked on acceptance and immutable publication of
-the producer-owned bridge and wrapper contract/artifact under
-`nomed/yukh-projects#150`. This threat-model delta authorizes no implementation
-or operational authority. After that dependency, explicit owner acceptance is
-still required before a separate issue may add even an unreachable disabled
-registration skeleton. OIDC, both assertion authorities, bridge trust,
-materializer, Coordination, audit, verifier, workflow, target, credential,
-endpoint, network, gateway activation, live synthetic apply, restore,
-deployment, and operational readiness each require later explicit review.
+RFC-0011 is **Proposed**. Projects #150 accepted the bridge v2 and MCP-safe
+wrapper specifications, not an implementation or release. Immutable
+bridge-verifier and wrapper artifacts, provenance, SBOM, digests, and
+conformance evidence remain unpublished. RFC-0011 must pin those future
+artifacts and receive acceptance before a separate implementation issue.
+OIDC, assertion authorities, bridge trust, materializer, Coordination, audit,
+verifier, workflow, target, credentials, endpoints, network, gateway
+activation, live synthetic apply, teardown, deployment, and operational
+readiness each require later explicit review.
