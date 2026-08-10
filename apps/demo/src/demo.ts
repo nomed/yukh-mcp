@@ -187,10 +187,7 @@ async function stopServer(child: ChildProcess): Promise<void> {
 }
 
 export async function runReadOnlyDemo(
-  options: {
-    readonly onFixtureCreated?: (root: string) => void;
-    readonly disconnectControlBeforeCleanup?: boolean;
-  } = {},
+  options: { readonly onFixtureCreated?: (root: string) => void } = {},
 ): Promise<DemoTranscript> {
   const root = await mkdtemp(join(tmpdir(), "yukh-demo-"));
   let child: ChildProcess | undefined;
@@ -267,7 +264,6 @@ export async function runReadOnlyDemo(
       denied,
       evidence_projection: evidence,
     };
-    if (options.disconnectControlBeforeCleanup) child.disconnect();
   } finally {
     let serverExited = child === undefined;
     try {
