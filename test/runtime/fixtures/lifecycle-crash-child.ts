@@ -14,6 +14,7 @@ import {
   approvalFixture,
   planFixture,
 } from "../lifecycle-test-fixtures.js";
+import { writeCrashProtocolEvent } from "./crash-protocol.js";
 
 const [, , repositoryRoot, boundaryValue] = process.argv;
 const boundaries: readonly LifecycleBoundary[] = [
@@ -66,10 +67,19 @@ const engine = new LifecycleEngine({
   ledger,
   hooks: {
     onBoundary: (observed) => {
-      if (observed === boundary) process.exit(86);
+      if (observed === boundary) {
+        writeCrashProtocolEvent({
+          phase: "crash",
+          fixture: "lifecycle",
+          boundary: observed,
+          occurrence: 1,
+        });
+        process.exit(86);
+      }
     },
   },
 });
+writeCrashProtocolEvent({ phase: "ready", fixture: "lifecycle" });
 const plan = planFixture();
 await engine.execute({ plan, approval: approvalFixture(plan) });
 await ledger.close();

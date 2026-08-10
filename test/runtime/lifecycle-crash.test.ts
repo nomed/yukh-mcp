@@ -21,6 +21,7 @@ import {
   approvalFixture,
   planFixture,
 } from "./lifecycle-test-fixtures.js";
+import { parseCrashProtocolEvents } from "./fixtures/crash-protocol.js";
 
 const scratchRoot = path.join(process.cwd(), ".audit-test-scratch");
 const childPath = fileURLToPath(new URL("./fixtures/lifecycle-crash-child.ts", import.meta.url));
@@ -63,7 +64,6 @@ test("real child crashes converge conservatively at every lifecycle boundary", a
           cwd: process.cwd(),
           encoding: "utf8",
           env: process.env,
-          timeout: 30_000,
         });
         assert.equal(
           child.status,
@@ -71,6 +71,15 @@ test("real child crashes converge conservatively at every lifecycle boundary", a
           `child did not crash at ${boundary}: stdout=${child.stdout} stderr=${child.stderr}`,
         );
         assert.equal(child.signal, null);
+        assert.deepEqual(parseCrashProtocolEvents(child.stdout), [
+          { phase: "ready", fixture: "lifecycle" },
+          {
+            phase: "crash",
+            fixture: "lifecycle",
+            boundary,
+            occurrence: 1,
+          },
+        ]);
         const effectExpected = [
           "post_start",
           "pre_result",

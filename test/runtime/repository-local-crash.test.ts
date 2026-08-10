@@ -16,6 +16,7 @@ import {
   protectedGenesisEvent,
   recoveryFact,
 } from "./repository-local-test-fixtures.js";
+import { parseCrashProtocolEvents } from "./fixtures/crash-protocol.js";
 
 const childPath = fileURLToPath(
   new URL("./fixtures/repository-local-crash-child.ts", import.meta.url),
@@ -89,7 +90,6 @@ function crashChild(
       cwd: process.cwd(),
       encoding: "utf8",
       env: process.env,
-      timeout: 30_000,
     },
   );
   assert.equal(
@@ -98,6 +98,15 @@ function crashChild(
     `child did not crash at ${boundary}: stdout=${result.stdout} stderr=${result.stderr}`,
   );
   assert.equal(result.signal, null);
+  assert.deepEqual(parseCrashProtocolEvents(result.stdout), [
+    { phase: "ready", fixture: "repository-local", mode },
+    {
+      phase: "crash",
+      fixture: "repository-local",
+      boundary,
+      occurrence,
+    },
+  ]);
 }
 
 async function assertPersistentLockThenRemove(root: string): Promise<void> {
@@ -301,7 +310,6 @@ test("a second real process cannot acquire the live create-exclusive lock", asyn
         cwd: process.cwd(),
         encoding: "utf8",
         env: process.env,
-        timeout: 30_000,
       },
     );
     assert.equal(result.status, 0, result.stderr);
