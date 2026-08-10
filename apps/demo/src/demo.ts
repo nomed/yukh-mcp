@@ -110,16 +110,28 @@ function waitForExit(child: ChildProcess, timeoutMs: number): Promise<void> {
   });
 }
 
-export async function runReadOnlyDemo(): Promise<DemoTranscript> {
+async function stopServer(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null) return waitForExit(child, 2_000);
+  if (!child.connected) throw new Error("demo server control channel unavailable");
+  await new Promise<void>((resolve, reject) => {
+    child.send({ type: "stop" }, (error) => (error ? reject(error) : resolve()));
+  });
+  await waitForExit(child, 2_000);
+}
+
+export async function runReadOnlyDemo(
+  options: { readonly onFixtureCreated?: (root: string) => void } = {},
+): Promise<DemoTranscript> {
   const root = await mkdtemp(join(tmpdir(), "yukh-demo-"));
   let child: ChildProcess | undefined;
   let client: Client | undefined;
   const evidence: DemoEvidence[] = [];
   let transcript: Omit<DemoTranscript, "cleanup"> | undefined;
   try {
+    options.onFixtureCreated?.(root);
     await writeFile(join(root, "status.txt"), "synthetic healthy fixture\n", "utf8");
     child = spawn(process.execPath, [...process.execArgv, serverEntrypoint(), root], {
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
     child.stderr?.resume();
     const ready = new Promise<number>((resolve, reject) => {
@@ -190,8 +202,7 @@ export async function runReadOnlyDemo(): Promise<DemoTranscript> {
       try {
         await client?.close();
       } finally {
-        if (child && child.exitCode === null) child.kill("SIGTERM");
-        if (child) await waitForExit(child, 2_000);
+        if (child) await stopServer(child);
       }
     } finally {
       await rm(root, { recursive: true, force: true });

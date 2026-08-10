@@ -88,7 +88,16 @@ const stop = async () => {
     process.exitCode = 0;
   } catch {
     process.exitCode = 1;
+  } finally {
+    process.disconnect();
   }
 };
-process.once("SIGINT", stop);
-process.once("SIGTERM", stop);
+process.on("message", (message: unknown) => {
+  if (
+    message &&
+    typeof message === "object" &&
+    Object.keys(message).length === 1 &&
+    (message as { type?: unknown }).type === "stop"
+  )
+    void stop();
+});
