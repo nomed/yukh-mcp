@@ -4,9 +4,16 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { runReadOnlyDemo } from "../../apps/demo/src/demo.js";
 
-test("five-minute demo discovers one read tool and proves allow plus deny", async () => {
+test("local E2E crosses MCP/HTTP and proves allow, deny, evidence, and cleanup", async () => {
   const before = new Set((await readdir(tmpdir())).filter((name) => name.startsWith("yukh-demo-")));
   const transcript = await runReadOnlyDemo();
+  assert.equal(transcript.mode, "local_e2e");
+  assert.deepEqual(transcript.transport, {
+    protocol: "mcp_streamable_http",
+    binding: "127.0.0.1:ephemeral",
+    client: "@modelcontextprotocol/client",
+    server_process: "isolated_child",
+  });
   assert.deepEqual(transcript.discovery.tools, ["node.inspect"]);
   assert.equal((transcript.allowed as { isError?: boolean }).isError, false);
   assert.equal((transcript.denied as { isError?: boolean }).isError, true);
@@ -21,6 +28,10 @@ test("five-minute demo discovers one read tool and proves allow plus deny", asyn
     ),
   );
   assert.equal(JSON.stringify(transcript).includes("synthetic healthy fixture"), false);
+  assert.deepEqual(transcript.cleanup, {
+    server_process: "stopped",
+    fixture: "removed",
+  });
   const after = (await readdir(tmpdir())).filter((name) => name.startsWith("yukh-demo-"));
   assert.deepEqual(
     after.filter((name) => !before.has(name)),

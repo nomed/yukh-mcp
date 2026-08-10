@@ -16,12 +16,13 @@ Requires Node.js 22 or newer:
 
 ```sh
 npm ci --ignore-scripts
-npm run demo
+npm run demo:e2e
 ```
 
-The demo runs locally with synthetic data and no credentials. It discovers
-`node.inspect`, shows one allowed read, one denied read, and the resulting
-in-memory evidence.
+The demo starts an isolated child gateway on an ephemeral loopback port, then a
+real MCP client discovers `node.inspect`, shows one allowed read, one denied
+read, and the resulting in-memory evidence. It needs no credentials and cleans
+up its process and fixture before exit.
 
 [Follow the tutorial](https://nomed.github.io/yukh-mcp/guides/read-only-demo/)
 · [Read the documentation](https://nomed.github.io/yukh-mcp/)

@@ -1,130 +1,206 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawn, type ChildProcess } from "node:child_process";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { McpServer } from "@modelcontextprotocol/server";
-import { z } from "zod";
-import { createGatewayRuntime } from "../../gateway/src/server.js";
-import { createNodeInspectCapability } from "../../../packages/capabilities/src/node-inspect.js";
-import { createLocalReadNodeProvider } from "../../../packages/providers/local-read/src/node-inspect.js";
-import { createLogger } from "../../../packages/logging/src/logger.js";
 
-const inputSchema = z
-  .object({ node_ref: z.enum(["node-demo", "node-denied"]), path: z.literal("status.txt") })
-  .strict();
+export interface DemoEvidence {
+  readonly evidence_ref: string;
+  readonly event_type: "authorization.enforcement_recorded.v1";
+  readonly effect: "allow" | "deny";
+  readonly basis: "explicit";
+  readonly subject_ref: "subject_demo";
+  readonly policy_ref: "policy_demo_v1";
+  readonly classification: "protected";
+  readonly durability: "in_memory_demo_only";
+}
 
 export interface DemoTranscript {
-  readonly mode: "synthetic_local_demo";
+  readonly mode: "local_e2e";
+  readonly transport: {
+    readonly protocol: "mcp_streamable_http";
+    readonly binding: "127.0.0.1:ephemeral";
+    readonly client: "@modelcontextprotocol/client";
+    readonly server_process: "isolated_child";
+  };
   readonly discovery: { readonly tools: readonly string[] };
   readonly allowed: unknown;
   readonly denied: unknown;
-  readonly evidence_projection: readonly {
-    readonly evidence_ref: string;
-    readonly event_type: "authorization.enforcement_recorded.v1";
-    readonly effect: "allow" | "deny";
-    readonly basis: "explicit";
-    readonly subject_ref: "subject_demo";
-    readonly policy_ref: "policy_demo_v1";
-    readonly classification: "protected";
-    readonly durability: "in_memory_demo_only";
-  }[];
+  readonly evidence_projection: readonly DemoEvidence[];
+  readonly cleanup: {
+    readonly server_process: "stopped";
+    readonly fixture: "removed";
+  };
+}
+
+interface ReadyMessage {
+  readonly type: "ready";
+  readonly port: number;
+}
+
+interface EvidenceMessage {
+  readonly type: "evidence";
+  readonly evidence: DemoEvidence;
+}
+
+function serverEntrypoint(): string {
+  const javascript = fileURLToPath(new URL("./server-main.js", import.meta.url));
+  return existsSync(javascript)
+    ? javascript
+    : fileURLToPath(new URL("./server-main.ts", import.meta.url));
+}
+
+function validEvidence(value: unknown): value is DemoEvidence {
+  if (!value || typeof value !== "object") return false;
+  const evidence = value as Record<string, unknown>;
+  return (
+    Object.keys(evidence).length === 8 &&
+    typeof evidence.evidence_ref === "string" &&
+    /^evidence_demo_[1-9][0-9]*$/u.test(evidence.evidence_ref) &&
+    evidence.event_type === "authorization.enforcement_recorded.v1" &&
+    (evidence.effect === "allow" || evidence.effect === "deny") &&
+    evidence.basis === "explicit" &&
+    evidence.subject_ref === "subject_demo" &&
+    evidence.policy_ref === "policy_demo_v1" &&
+    evidence.classification === "protected" &&
+    evidence.durability === "in_memory_demo_only"
+  );
+}
+
+function parseServerMessage(line: string): ReadyMessage | EvidenceMessage | { type: "stopped" } {
+  if (Buffer.byteLength(line, "utf8") > 4_096) throw new Error("invalid demo server output");
+  const value: unknown = JSON.parse(line);
+  if (!value || typeof value !== "object") throw new Error("invalid demo server output");
+  const message = value as Record<string, unknown>;
+  if (
+    Object.keys(message).length === 2 &&
+    message.type === "ready" &&
+    Number.isInteger(message.port) &&
+    Number(message.port) >= 1 &&
+    Number(message.port) <= 65_535
+  )
+    return { type: "ready", port: Number(message.port) };
+  if (
+    Object.keys(message).length === 2 &&
+    message.type === "evidence" &&
+    validEvidence(message.evidence)
+  )
+    return { type: "evidence", evidence: message.evidence };
+  if (Object.keys(message).length === 1 && message.type === "stopped") return { type: "stopped" };
+  throw new Error("invalid demo server output");
+}
+
+function waitForExit(child: ChildProcess, timeoutMs: number): Promise<void> {
+  if (child.exitCode !== null)
+    return child.exitCode === 0
+      ? Promise.resolve()
+      : Promise.reject(new Error("demo server failed"));
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("demo server shutdown timed out"));
+    }, timeoutMs);
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      if (code === 0) resolve();
+      else reject(new Error("demo server failed"));
+    });
+  });
 }
 
 export async function runReadOnlyDemo(): Promise<DemoTranscript> {
   const root = await mkdtemp(join(tmpdir(), "yukh-demo-"));
+  let child: ChildProcess | undefined;
+  let client: Client | undefined;
+  const evidence: DemoEvidence[] = [];
+  let transcript: Omit<DemoTranscript, "cleanup"> | undefined;
   try {
     await writeFile(join(root, "status.txt"), "synthetic healthy fixture\n", "utf8");
-    const evidence: DemoTranscript["evidence_projection"][number][] = [];
-    const provider = await createLocalReadNodeProvider([{ ref: "node-demo", root }]);
-    let sequence = 0;
-    const capability = createNodeInspectCapability({
-      provider,
-      authorize: async (request) => {
-        const allowed = request.resource.ref === "node-demo";
-        const evidence_ref = `evidence_demo_${++sequence}`;
-        evidence.push({
-          evidence_ref,
-          event_type: "authorization.enforcement_recorded.v1",
-          effect: allowed ? "allow" : "deny",
-          basis: "explicit",
-          subject_ref: "subject_demo",
-          policy_ref: "policy_demo_v1",
-          classification: "protected",
-          durability: "in_memory_demo_only",
-        });
-        return { allowed, evidence_ref };
-      },
+    child = spawn(process.execPath, [...process.execArgv, serverEntrypoint(), root], {
+      stdio: ["ignore", "pipe", "pipe"],
     });
-
-    const createDemoServer = () => {
-      const server = new McpServer({ name: "yukh-mcp-demo", version: "0.0.0" });
-      server.registerTool(
-        "node.inspect",
-        {
-          title: "Inspect synthetic demo node",
-          description: "Read bounded metadata from the synthetic local demo fixture",
-          inputSchema,
-          annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
-        },
-        async ({ node_ref, path }) => {
-          const result = await capability.invoke({
-            request_version: 1,
-            request_id: `req_demo_${sequence + 1}`,
-            capability: { id: "node.inspect", version: "1.0.0" },
-            resource: { kind: "node", ref: node_ref },
-            environment: "demo",
-            input: { path },
-            idempotency_key: null,
-          });
-          return {
-            content: [{ type: "text", text: JSON.stringify(result) }],
-            structuredContent: { result },
-            isError: result.status !== "succeeded",
-          };
-        },
-      );
-      return server;
-    };
-
-    const runtime = createGatewayRuntime(
-      {
-        host: "127.0.0.1",
-        port: 0,
-        allowedHosts: ["127.0.0.1"],
-        allowedOrigins: [],
-        maxBodyBytes: 8_192,
-        shutdownTimeoutMs: 1_000,
-      },
-      createLogger({ sink: () => undefined }),
-      createDemoServer,
+    child.stderr?.resume();
+    const ready = new Promise<number>((resolve, reject) => {
+      let pending = "";
+      let resolved = false;
+      const timeout = setTimeout(() => reject(new Error("demo server startup timed out")), 5_000);
+      child?.once("error", reject);
+      child?.once("exit", (code) => {
+        if (!resolved) reject(new Error(`demo server exited before readiness (${String(code)})`));
+      });
+      child?.stdout?.setEncoding("utf8");
+      child?.stdout?.on("data", (chunk: string) => {
+        pending += chunk;
+        if (Buffer.byteLength(pending, "utf8") > 8_192) {
+          reject(new Error("invalid demo server output"));
+          return;
+        }
+        const lines = pending.split("\n");
+        pending = lines.pop() ?? "";
+        try {
+          for (const line of lines) {
+            if (line.length === 0) continue;
+            const message = parseServerMessage(line);
+            if (message.type === "ready") {
+              if (resolved) throw new Error("duplicate demo server readiness");
+              resolved = true;
+              clearTimeout(timeout);
+              resolve(message.port);
+            } else if (message.type === "evidence") {
+              evidence.push(message.evidence);
+            }
+          }
+        } catch (error) {
+          clearTimeout(timeout);
+          reject(error);
+        }
+      });
+    });
+    const port = await ready;
+    client = new Client({ name: "yukh-demo-client", version: "1.0.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)),
     );
-    const { port } = await runtime.listen();
-    const client = new Client({ name: "yukh-demo-client", version: "1.0.0" });
-    try {
-      await client.connect(
-        new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)),
-      );
-      const tools = (await client.listTools()).tools.map(({ name }) => name).sort();
-      const allowed = await client.callTool({
-        name: "node.inspect",
-        arguments: { node_ref: "node-demo", path: "status.txt" },
-      });
-      const denied = await client.callTool({
-        name: "node.inspect",
-        arguments: { node_ref: "node-denied", path: "status.txt" },
-      });
-      return {
-        mode: "synthetic_local_demo",
-        discovery: { tools },
-        allowed,
-        denied,
-        evidence_projection: evidence,
-      };
-    } finally {
-      await client.close();
-      await runtime.close();
-    }
+    const tools = (await client.listTools()).tools.map(({ name }) => name).sort();
+    const allowed = await client.callTool({
+      name: "node.inspect",
+      arguments: { node_ref: "node-demo", path: "status.txt" },
+    });
+    const denied = await client.callTool({
+      name: "node.inspect",
+      arguments: { node_ref: "node-denied", path: "status.txt" },
+    });
+    transcript = {
+      mode: "local_e2e",
+      transport: {
+        protocol: "mcp_streamable_http",
+        binding: "127.0.0.1:ephemeral",
+        client: "@modelcontextprotocol/client",
+        server_process: "isolated_child",
+      },
+      discovery: { tools },
+      allowed,
+      denied,
+      evidence_projection: evidence,
+    };
   } finally {
-    await rm(root, { recursive: true, force: true });
+    try {
+      try {
+        await client?.close();
+      } finally {
+        if (child && child.exitCode === null) child.kill("SIGTERM");
+        if (child) await waitForExit(child, 2_000);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   }
+  if (!transcript) throw new Error("demo did not complete");
+  return {
+    ...transcript,
+    evidence_projection: [...evidence],
+    cleanup: { server_process: "stopped", fixture: "removed" },
+  };
 }
