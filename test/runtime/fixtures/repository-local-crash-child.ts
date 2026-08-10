@@ -7,6 +7,7 @@ import {
   protectedGenesisEvent,
   recoveryFact,
 } from "../repository-local-test-fixtures.js";
+import { writeCrashProtocolEvent } from "./crash-protocol.js";
 
 const [, , mode, repositoryRoot, crashEvent, crashOccurrenceValue] = process.argv;
 if (
@@ -45,12 +46,21 @@ const profile = await openRepositoryLocalAuditProfileForQualification({
     onEvent: (event) => {
       if (armed && event === crashEvent) {
         occurrence += 1;
-        if (occurrence === crashOccurrence) process.exit(86);
+        if (occurrence === crashOccurrence) {
+          writeCrashProtocolEvent({
+            phase: "crash",
+            fixture: "repository-local",
+            boundary: event,
+            occurrence,
+          });
+          process.exit(86);
+        }
       }
     },
   },
 });
 armed = true;
+writeCrashProtocolEvent({ phase: "ready", fixture: "repository-local", mode });
 
 if (mode === "primary") {
   const event = protectedGenesisEvent();
