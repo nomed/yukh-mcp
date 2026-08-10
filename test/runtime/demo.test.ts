@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { spawn, type ChildProcess } from "node:child_process";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { runReadOnlyDemo } from "../../apps/demo/src/demo.js";
 
 interface ToolResult {
@@ -21,6 +23,66 @@ function toolResult(response: unknown): ToolResult {
   const result = (structuredContent as { result?: unknown }).result;
   assert.ok(result && typeof result === "object");
   return result as ToolResult;
+}
+
+function waitForReady(child: ChildProcess, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let pending = "";
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.stdout?.off("data", onData);
+      child.off("exit", onExit);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onData = (chunk: string) => {
+      pending += chunk;
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      try {
+        for (const line of lines) {
+          if (line.length === 0) continue;
+          const message: unknown = JSON.parse(line);
+          if (
+            message &&
+            typeof message === "object" &&
+            (message as { type?: unknown }).type === "ready"
+          ) {
+            finish();
+            return;
+          }
+        }
+      } catch {
+        finish(new Error("invalid isolated demo server output"));
+      }
+    };
+    const onExit = () => finish(new Error("isolated demo server exited before readiness"));
+    const timeout = setTimeout(
+      () => finish(new Error("isolated demo server readiness timed out")),
+      timeoutMs,
+    );
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", onData);
+    child.once("exit", onExit);
+  });
+}
+
+function waitForExit(child: ChildProcess, timeoutMs: number): Promise<number | null> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(child.exitCode);
+  return new Promise((resolve, reject) => {
+    const onExit = (code: number | null) => {
+      clearTimeout(timeout);
+      resolve(code);
+    };
+    const timeout = setTimeout(() => {
+      child.off("exit", onExit);
+      reject(new Error("isolated demo server exit timed out"));
+    }, timeoutMs);
+    child.once("exit", onExit);
+  });
 }
 
 test("local E2E correlates allow and deny results with policy evidence", async () => {
@@ -82,17 +144,26 @@ test("cleanup removes only the invocation fixture", async () => {
   }
 });
 
-test("IPC disconnect fails closed after stopping the child and removing its fixture", async () => {
-  let invocationFixture: string | undefined;
-  await assert.rejects(
-    runReadOnlyDemo({
-      onFixtureCreated: (root) => {
-        invocationFixture = root;
-      },
-      disconnectControlBeforeCleanup: true,
-    }),
-    /control channel/u,
+test("isolated child shuts itself down when its parent IPC channel disconnects", async () => {
+  const fixture = await mkdtemp(join(tmpdir(), "yukh-demo-"));
+  const serverEntrypoint = fileURLToPath(
+    new URL("../../apps/demo/src/server-main.ts", import.meta.url),
   );
-  assert.ok(invocationFixture);
-  await assert.rejects(access(invocationFixture), { code: "ENOENT" });
+  const child = spawn(process.execPath, [...process.execArgv, serverEntrypoint, fixture], {
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+  });
+  child.stderr?.resume();
+  try {
+    await writeFile(join(fixture, "status.txt"), "synthetic healthy fixture\n", "utf8");
+    await waitForReady(child, 5_000);
+    child.disconnect();
+    assert.equal(await waitForExit(child, 2_000), 0);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await waitForExit(child, 2_000);
+    }
+    await rm(fixture, { recursive: true, force: true });
+  }
+  await assert.rejects(access(fixture), { code: "ENOENT" });
 });
