@@ -27,8 +27,8 @@ without a code change, so no speculative fix was applied.
 ## Validation evidence
 
 - `npm run demo:e2e`: passed in 1.76 seconds;
-- targeted gateway, demo, and private Coordination tests: 7 passed;
-- `npm run test:runtime`: 220 passed;
+- targeted gateway, demo, and private Coordination tests: 8 passed;
+- `npm run test:runtime`: 221 passed;
 - `npm run typecheck -- --pretty false`: passed;
 - `npm run build`: passed, including the built demo E2E;
 - `npm run format:check`: passed.
