@@ -17,11 +17,12 @@ Requires Node.js 22 or newer:
 
 ```sh
 npm ci --ignore-scripts
-npm run demo
+npm run demo:e2e
 ```
 
-The command needs no credentials or configuration. It runs one allowed
-`node.inspect` request and one denial, then exits.
+The command needs no credentials or configuration. It uses a real MCP client
+over an ephemeral loopback HTTP port, runs one allowed `node.inspect` request
+and one denial, cleans up, then exits.
 
 [Run the demo](guides/read-only-demo.md){ .md-button .md-button--primary }
 [Understand the architecture](architecture/overview.md){ .md-button }
