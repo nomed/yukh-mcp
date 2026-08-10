@@ -89,7 +89,7 @@ const stop = async () => {
   } catch {
     process.exitCode = 1;
   } finally {
-    process.disconnect();
+    if (process.connected) process.disconnect();
   }
 };
 process.on("message", (message: unknown) => {
@@ -98,6 +98,11 @@ process.on("message", (message: unknown) => {
     typeof message === "object" &&
     Object.keys(message).length === 1 &&
     (message as { type?: unknown }).type === "stop"
-  )
-    void stop();
+  ) {
+    if (process.connected) {
+      process.send?.({ type: "stopping" });
+      setImmediate(() => void stop());
+    } else void stop();
+  }
 });
+process.once("disconnect", () => void stop());

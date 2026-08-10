@@ -81,3 +81,18 @@ test("cleanup removes only the invocation fixture", async () => {
     await rm(concurrentFixture, { recursive: true, force: true });
   }
 });
+
+test("IPC disconnect fails closed after stopping the child and removing its fixture", async () => {
+  let invocationFixture: string | undefined;
+  await assert.rejects(
+    runReadOnlyDemo({
+      onFixtureCreated: (root) => {
+        invocationFixture = root;
+      },
+      disconnectControlBeforeCleanup: true,
+    }),
+    /control channel/u,
+  );
+  assert.ok(invocationFixture);
+  await assert.rejects(access(invocationFixture), { code: "ENOENT" });
+});
