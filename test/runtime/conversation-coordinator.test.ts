@@ -1,0 +1,137 @@
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { ConversationCoordinator } from "../../packages/conversation-coordinator/src/coordinator.js";
+import { createAgentRunner } from "../../packages/conversation-coordinator/src/runner.js";
+import type { CoordinationLauncher } from "../../packages/coordination-preview/src/launcher.js";
+
+const questionId = "019fffc0-06d7-7bbf-8f28-a60641591e1f";
+const answerId = "019fffc0-ffef-7e44-b392-bf7a62f9b665";
+
+function replay(answered = false) {
+  return {
+    schema: 1 as const,
+    status: "ok" as const,
+    command: "events replay",
+    result: {
+      records: [
+        { event: { id: questionId, type: "question", data: { requested_from: ["agent:b"] } } },
+        ...(answered
+          ? [{ event: { id: answerId, type: "answer", data: { question_event_id: questionId } } }]
+          : []),
+      ],
+    },
+  };
+}
+
+test("coordinator wakes the addressed agent once and excludes answered work", async () => {
+  const prompts: string[] = [];
+  let output = replay();
+  const launcher: CoordinationLauncher = { invoke: async () => output };
+  const coordinator = new ConversationCoordinator({
+    launchers: { "agent-a": launcher, "agent-b": launcher },
+    runner: {
+      run: async (agent, prompt) => {
+        assert.equal(agent, "agent-b");
+        prompts.push(prompt);
+      },
+    },
+    maxTurns: 2,
+    lifetimeMs: 10_000,
+    now: () => 1_000,
+  });
+  assert.equal(await coordinator.tick(), "invoked");
+  assert.equal(await coordinator.tick(), "idle");
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0] ?? "", new RegExp(questionId));
+  output = replay(true);
+  assert.equal(await coordinator.tick(), "idle");
+});
+
+test("coordinator explicitly recovers replay authentication without retrying publications", async () => {
+  const commands: string[] = [];
+  const launcher: CoordinationLauncher = {
+    invoke: async (command) => {
+      commands.push(command);
+      if (commands.length === 1)
+        return { schema: 1, status: "error", command, code: "YKC-AUTH-001" };
+      if (command === "session bootstrap")
+        return { schema: 1, status: "ok", command, result: { outcome: "bootstrapped" } };
+      return replay(true);
+    },
+  };
+  const coordinator = new ConversationCoordinator({
+    launchers: { "agent-a": launcher, "agent-b": launcher },
+    runner: { run: async () => assert.fail("answered question must not wake an agent") },
+    maxTurns: 1,
+    lifetimeMs: 10_000,
+  });
+  assert.equal(await coordinator.tick(), "idle");
+  assert.deepEqual(commands, ["events replay", "session bootstrap", "events replay"]);
+});
+
+test("coordinator fails closed on malformed transcript and enforces lifetime", async () => {
+  const launcher: CoordinationLauncher = {
+    invoke: async () => ({
+      schema: 1,
+      status: "ok",
+      command: "events replay",
+      result: { records: [{}] },
+    }),
+  };
+  let now = 0;
+  const coordinator = new ConversationCoordinator({
+    launchers: { "agent-a": launcher, "agent-b": launcher },
+    runner: { run: async () => assert.fail() },
+    maxTurns: 1,
+    lifetimeMs: 1_000,
+    now: () => now,
+  });
+  await assert.rejects(coordinator.tick(), /coordination_protocol_error/u);
+  now = 1_000;
+  assert.equal(await coordinator.tick(), "complete");
+});
+
+test("agent runner uses fixed non-shell Codex and Copilot programmatic arguments", async () => {
+  const root = await mkdtemp(join(tmpdir(), "yukh-conversation-runner-"));
+  const log = join(root, "calls.jsonl");
+  const source = `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(1))+"\\n");
+`;
+  const codex = join(root, "codex-test");
+  const copilot = join(root, "copilot-test");
+  await writeFile(codex, source, { mode: 0o700 });
+  await writeFile(copilot, source, { mode: 0o700 });
+  try {
+    const runner = createAgentRunner({ codex, copilot, workspace: root, timeoutMs: 5_000 });
+    await runner.run("agent-a", "codex prompt");
+    await runner.run("agent-b", "copilot prompt");
+    const calls = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(calls[0], [
+      codex,
+      "exec",
+      "--ephemeral",
+      "--sandbox",
+      "workspace-write",
+      "--ask-for-approval",
+      "never",
+      "codex prompt",
+    ]);
+    assert.deepEqual(calls[1], [
+      copilot,
+      "-p",
+      "copilot prompt",
+      "-s",
+      "--no-ask-user",
+      "--allow-tool=yukh-coordination",
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

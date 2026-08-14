@@ -189,6 +189,21 @@ local issuance denial of service and availability loss. This accepted boundary
 grants no provider or protected-target authority and authorizes only the
 local-preview implementation and qualification in RFC-0013.
 
+## Accepted bounded local conversation coordinator — 2026-08-14
+
+- Governing issue: #113
+- Accepted architecture: RFC-0014
+- Scope: local wake-up of fixed Codex and Copilot CLI adapters
+
+The coordinator treats transcript bodies as untrusted data and passes adapters
+only a server-owned instruction plus a validated event ID. Fixed absolute
+executables, no shell, a trusted workspace, one in-flight turn, deduplication,
+timeouts, run lifetime and turn ceilings constrain execution. Authentication
+recovery may repeat replay only; publications are never retried. Closed logs
+exclude prompts, model output, credentials and arbitrary errors. Residual risk
+is bounded local workspace mutation or availability loss; no provider or
+protected-target authority is granted.
+
 ## Capability contract implementation review — 2026-08-03
 
 - Governing issue: #5
