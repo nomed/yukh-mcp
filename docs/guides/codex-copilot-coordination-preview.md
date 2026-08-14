@@ -47,6 +47,24 @@ event id.
 ```
 
 Finally ask Codex to replay the transcript and report the verified answer.
+
+## Run bounded automatic wake-up
+
+After building this repository, start the local coordinator from the trusted
+application workspace:
+
+```sh
+YUKH_COORDINATION_LAUNCHER=/absolute/path/to/yukh-local-agent.py \
+YUKH_CODEX_EXECUTABLE=/absolute/path/to/codex \
+YUKH_COPILOT_EXECUTABLE=/absolute/path/to/copilot \
+YUKH_CONVERSATION_WORKSPACE=/absolute/path/to/task-board \
+node /absolute/path/to/yukh-mcp/dist/apps/conversation-coordinator/src/main.js
+```
+
+Seed one directed question through `coordination.ask`. The coordinator wakes
+the addressed CLI, which answers and may publish one directed follow-up. It
+stops after 20 turns or four hours. Stop it earlier with `Ctrl+C`.
+
 Remove the Copilot server with `copilot mcp remove yukh-coordination`; remove
 the Codex table and restart Codex. Stop the sandbox with the Coordination
 `yukh-local-preview-macos.sh down` command.
