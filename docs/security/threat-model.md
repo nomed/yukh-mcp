@@ -159,6 +159,20 @@ RFCs are superseded rather than edited.
 Until those records are accepted, this model establishes constraints and stop
 conditions; it does not authorize operational capabilities or production use.
 
+## Accepted local Coordination conversation preview — 2026-08-14
+
+- Governing issue: #109
+- Accepted architecture: RFC-0012
+- Scope: isolated STDIO tools for local Codex–Copilot question and answer tests
+- New trust boundary: MCP model tool call to a fixed native Coordination client
+
+The accepted preview keeps the ordinary gateway inert and grants no provider or
+protected-target authority. Fixed commands, closed schemas, no shell, bounded
+I/O, sanitized failures and native receipt verification constrain the local
+preview. Transcript content remains untrusted data. Implementation requires
+negative tests for command, profile, credential and output-boundary
+substitution.
+
 ## Capability contract implementation review — 2026-08-03
 
 - Governing issue: #5
