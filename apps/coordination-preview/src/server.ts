@@ -57,6 +57,17 @@ export function createCoordinationPreviewServer(options: {
   );
 
   server.registerTool(
+    "coordination.bootstrap",
+    {
+      title: "Bootstrap the local Coordination session",
+      description: `Explicitly create or replace an expired session for the fixed ${label} preview identity`,
+      inputSchema: z.object({}).strict(),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    () => invoke(options.launcher, "session bootstrap"),
+  );
+
+  server.registerTool(
     "coordination.join",
     {
       title: "Join the local Coordination preview",

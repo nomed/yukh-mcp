@@ -173,10 +173,10 @@ preview. Transcript content remains untrusted data. Implementation requires
 negative tests for command, profile, credential and output-boundary
 substitution.
 
-## Proposed explicit local Coordination bootstrap — 2026-08-14
+## Accepted explicit local Coordination bootstrap — 2026-08-14
 
 - Governing issue: #111
-- Proposed architecture: RFC-0013
+- Accepted architecture: RFC-0013
 - Scope: one no-input, preview-only MCP action for explicit session bootstrap
 - Changed trust boundary: model-selected call reaches native credential custody
 
@@ -185,9 +185,9 @@ profile or credential. The native client refuses replacement of a live session
 and uses exact-revision CAS for an expired session. Bootstrap is never invoked
 implicitly and never retries a failed Coordination operation. Credential and
 key material remain outside MCP input, output and logs. Residual risks are
-local issuance denial of service and availability loss. This proposal grants
-no provider or protected-target authority and authorizes no implementation
-until RFC-0013 is explicitly accepted.
+local issuance denial of service and availability loss. This accepted boundary
+grants no provider or protected-target authority and authorizes only the
+local-preview implementation and qualification in RFC-0013.
 
 ## Capability contract implementation review — 2026-08-03
 

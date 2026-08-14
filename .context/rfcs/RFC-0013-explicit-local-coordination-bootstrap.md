@@ -1,8 +1,10 @@
 # RFC-0013 — Explicit local Coordination bootstrap
 
-- Status: Proposed
+- Status: Accepted
 - Authors: Codex
 - Created: 2026-08-14
+- Accepted: 2026-08-14
+- Decider: project owner
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/111
 - Depends on: RFC-0012, https://github.com/nomed/yukh-coordination/issues/222
 - Amends: RFC-0012
@@ -83,5 +85,6 @@ than fixing recovery.
 
 ## Acceptance
 
-Implementation is forbidden until the project owner explicitly accepts this
-RFC and the threat-model impact.
+The project owner explicitly accepted this RFC and its threat-model impact on
+2026-08-14. Acceptance authorizes only the local-preview implementation and
+qualification described here.
