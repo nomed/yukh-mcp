@@ -65,6 +65,20 @@ Seed one directed question through `coordination.ask`. The coordinator wakes
 the addressed CLI, which answers and may publish one directed follow-up. It
 stops after 20 turns or four hours. Stop it earlier with `Ctrl+C`.
 
+In a second terminal, follow the conversation and coordinator state:
+
+```sh
+cd /absolute/path/to/yukh-mcp
+npm link
+YUKH_COORDINATION_LAUNCHER=/absolute/path/to/yukh-local-agent.py \
+YUKH_CONVERSATION_WORKSPACE=/absolute/path/to/task-board \
+yukh conversation watch
+```
+
+Add `--verbose` only when event and receipt identifiers are needed. The default
+view shows participants, directed questions, answers and lifecycle state without
+receipt noise.
+
 Remove the Copilot server with `copilot mcp remove yukh-coordination`; remove
 the Codex table and restart Codex. Stop the sandbox with the Coordination
 `yukh-local-preview-macos.sh down` command.

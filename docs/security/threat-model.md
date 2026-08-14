@@ -204,6 +204,19 @@ exclude prompts, model output, credentials and arbitrary errors. Residual risk
 is bounded local workspace mutation or availability loss; no provider or
 protected-target authority is granted.
 
+## Accepted local conversation observer — 2026-08-14
+
+- Governing issue: #115
+- Accepted architecture: RFC-0015
+- Scope: read-only local transcript display and closed coordinator lifecycle
+
+The observer intentionally displays verified conversation bodies to the local
+operator terminal. It has no remote listener or mutation command. Credentials,
+private reasoning, raw stderr and unknown fields remain excluded. Receipt
+identifiers require an explicit verbose flag. Malformed transcript data fails
+closed. Coordinator lifecycle logs contain identifiers and states only, not
+message bodies.
+
 ## Capability contract implementation review — 2026-08-03
 
 - Governing issue: #5
