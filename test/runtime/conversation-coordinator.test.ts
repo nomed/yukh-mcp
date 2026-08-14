@@ -28,6 +28,7 @@ function replay(answered = false) {
 
 test("coordinator wakes the addressed agent once and excludes answered work", async () => {
   const prompts: string[] = [];
+  const lifecycle: string[] = [];
   let output = replay();
   const launcher: CoordinationLauncher = { invoke: async () => output };
   const coordinator = new ConversationCoordinator({
@@ -36,18 +37,19 @@ test("coordinator wakes the addressed agent once and excludes answered work", as
       run: async (agent, prompt) => {
         assert.equal(agent, "agent-b");
         prompts.push(prompt);
+        output = replay(true);
       },
     },
     maxTurns: 2,
     lifetimeMs: 10_000,
     now: () => 1_000,
+    observe: (event) => lifecycle.push(event.event),
   });
-  assert.equal(await coordinator.tick(), "invoked");
+  assert.equal(await coordinator.tick(), "handled");
   assert.equal(await coordinator.tick(), "idle");
   assert.equal(prompts.length, 1);
   assert.match(prompts[0] ?? "", new RegExp(questionId));
-  output = replay(true);
-  assert.equal(await coordinator.tick(), "idle");
+  assert.deepEqual(lifecycle, ["agent_started", "answer_verified"]);
 });
 
 test("coordinator explicitly recovers replay authentication without retrying publications", async () => {
@@ -92,6 +94,20 @@ test("coordinator fails closed on malformed transcript and enforces lifetime", a
   await assert.rejects(coordinator.tick(), /coordination_protocol_error/u);
   now = 1_000;
   assert.equal(await coordinator.tick(), "complete");
+});
+
+test("coordinator reports adapter success without a verified answer", async () => {
+  const lifecycle: string[] = [];
+  const launcher: CoordinationLauncher = { invoke: async () => replay(false) };
+  const coordinator = new ConversationCoordinator({
+    launchers: { "agent-a": launcher, "agent-b": launcher },
+    runner: { run: async () => undefined },
+    maxTurns: 1,
+    lifetimeMs: 10_000,
+    observe: (event) => lifecycle.push(event.event),
+  });
+  assert.equal(await coordinator.tick(), "handled");
+  assert.deepEqual(lifecycle, ["agent_started", "agent_completed_without_answer"]);
 });
 
 test("agent runner uses fixed non-shell Codex and Copilot programmatic arguments", async () => {

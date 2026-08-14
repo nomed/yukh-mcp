@@ -16,6 +16,16 @@ export interface CoordinatorOptions {
   readonly maxTurns: number;
   readonly lifetimeMs: number;
   readonly now?: () => number;
+  readonly observe?: (event: CoordinatorEvent) => void;
+}
+
+export interface CoordinatorEvent {
+  readonly schema: 1;
+  readonly event:
+    "agent_started" | "answer_verified" | "agent_completed_without_answer" | "agent_failed";
+  readonly agent: PreviewAgent;
+  readonly question_event_id: string;
+  readonly turn: number;
 }
 
 type RecordValue = { readonly event?: unknown };
@@ -72,7 +82,7 @@ export class ConversationCoordinator {
     this.#started = (options.now ?? Date.now)();
   }
 
-  async tick(): Promise<"idle" | "invoked" | "complete"> {
+  async tick(): Promise<"idle" | "handled" | "complete"> {
     const now = (this.#options.now ?? Date.now)();
     if (this.#turns >= this.#options.maxTurns || now - this.#started >= this.#options.lifetimeMs)
       return "complete";
@@ -93,11 +103,36 @@ export class ConversationCoordinator {
     if (!agent) return "idle";
     this.#attempted.add(question.id);
     this.#turns++;
-    await this.#options.runner.run(
-      agent,
-      `Use only yukh-coordination. Bootstrap if required, join, replay, find question event ${question.id}, and answer it preserving work_uri, correlation_id and question_event_id. If the work needs another peer action, publish one directed follow-up question with the same work_uri.`,
+    this.#observe("agent_started", agent, question.id);
+    try {
+      await this.#options.runner.run(
+        agent,
+        `Use only yukh-coordination. Bootstrap if required, join, replay, find question event ${question.id}, and answer it preserving work_uri, correlation_id and question_event_id. If the work needs another peer action, publish one directed follow-up question with the same work_uri.`,
+      );
+    } catch {
+      this.#observe("agent_failed", agent, question.id);
+      return "handled";
+    }
+    const after = events(await this.#replay(agent));
+    const verified = after.some(
+      (event) => event.type === "answer" && event.data.question_event_id === question.id,
     );
-    return "invoked";
+    this.#observe(
+      verified ? "answer_verified" : "agent_completed_without_answer",
+      agent,
+      question.id,
+    );
+    return "handled";
+  }
+
+  #observe(event: CoordinatorEvent["event"], agent: PreviewAgent, questionEventID: string) {
+    this.#options.observe?.({
+      schema: 1,
+      event,
+      agent,
+      question_event_id: questionEventID,
+      turn: this.#turns,
+    });
   }
 
   async #replay(agent: PreviewAgent): Promise<CoordinationOutput> {
