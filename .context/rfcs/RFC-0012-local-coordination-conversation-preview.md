@@ -1,13 +1,16 @@
 # RFC-0012 — Local Coordination conversation preview
 
-- Status: Proposed
+- Status: Accepted
 - Authors: Codex
 - Created: 2026-08-14
+- Accepted: 2026-08-14
+- Decider: project owner
 - Governing issue: https://github.com/nomed/yukh-mcp/issues/109
 - Depends on: RFC-0001, RFC-0002, RFC-0004
 
-This proposal authorizes no implementation until explicitly accepted by the
-project owner.
+The project owner explicitly accepted this RFC on 2026-08-14. Acceptance
+authorizes only the local preview implementation and qualification described
+here; it grants no production, remote MCP or provider authority.
 
 ## Summary
 
