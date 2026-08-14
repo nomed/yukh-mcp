@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 
 const maximumOutputBytes = 1 << 20;
 const commandNames = new Set([
+  "session bootstrap",
   "session join",
   "question ask",
   "question answer",

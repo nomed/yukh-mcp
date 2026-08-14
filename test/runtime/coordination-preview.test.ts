@@ -50,10 +50,15 @@ process.stdout.write(JSON.stringify({schema:1,status:"ok",command,result})+"\\n"
     assert.deepEqual((await client.listTools()).tools.map(({ name }) => name).sort(), [
       "coordination.answer",
       "coordination.ask",
+      "coordination.bootstrap",
       "coordination.join",
       "coordination.leave",
       "coordination.replay",
     ]);
+    assert.equal(
+      (await client.callTool({ name: "coordination.bootstrap", arguments: {} })).isError,
+      false,
+    );
     assert.equal(
       (await client.callTool({ name: "coordination.join", arguments: {} })).isError,
       false,
@@ -84,6 +89,15 @@ process.stdout.write(JSON.stringify({schema:1,status:"ok",command,result})+"\\n"
       ).isError,
       true,
     );
+    assert.equal(
+      (
+        await client.callTool({
+          name: "coordination.bootstrap",
+          arguments: { profile: "agent-b", credential: "substituted" },
+        })
+      ).isError,
+      true,
+    );
     const calls = (await readFile(log, "utf8"))
       .trim()
       .split("\n")
@@ -91,12 +105,14 @@ process.stdout.write(JSON.stringify({schema:1,status:"ok",command,result})+"\\n"
     assert.deepEqual(
       calls.map(({ args }) => args),
       [
+        ["agent-a", "session", "bootstrap"],
         ["agent-a", "session", "join"],
         ["agent-a", "question", "ask"],
         ["agent-a", "events", "replay"],
       ],
     );
-    assert.deepEqual(calls[1]?.input?.requested_from, ["agent:b"]);
+    assert.equal(calls[0]?.input, null);
+    assert.deepEqual(calls[2]?.input?.requested_from, ["agent:b"]);
   } finally {
     await client.close();
     await rm(root, { recursive: true, force: true });

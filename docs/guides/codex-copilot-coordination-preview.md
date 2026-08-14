@@ -1,12 +1,7 @@
 # Connect Codex and Copilot locally
 
 This preview uses the Yukh Coordination Compose sandbox already running on the
-Mac. Bootstrap both identities first:
-
-```sh
-.github/scripts/yukh-local-agent.py agent-a session bootstrap
-.github/scripts/yukh-local-agent.py agent-b session bootstrap
-```
+Mac. Each agent bootstraps its own short-lived session through MCP.
 
 Build Yukh MCP from its repository:
 
@@ -22,7 +17,7 @@ Use absolute paths below. Configure Codex as `agent-a`:
 command = "node"
 args = ["/path/to/yukh-mcp/dist/apps/coordination-preview/src/main.js"]
 env = { YUKH_COORDINATION_AGENT = "agent-a", YUKH_COORDINATION_LAUNCHER = "/path/to/yukh-coordination/.github/scripts/yukh-local-agent.py" }
-enabled_tools = ["coordination.join", "coordination.ask", "coordination.answer", "coordination.replay", "coordination.leave"]
+enabled_tools = ["coordination.bootstrap", "coordination.join", "coordination.ask", "coordination.answer", "coordination.replay", "coordination.leave"]
 default_tools_approval_mode = "writes"
 ```
 
@@ -38,7 +33,7 @@ copilot mcp add yukh-coordination \
 Ask Codex:
 
 ```text
-Use yukh_coordination. Join, then ask Copilot on
+Use yukh_coordination. Bootstrap, join, then ask Copilot on
 https://preview.local/work/codex-copilot-first-contact:
 "Reply with the Coordination event id you received and confirm this came through Yukh."
 ```
@@ -46,7 +41,7 @@ https://preview.local/work/codex-copilot-first-contact:
 Ask Copilot:
 
 ```text
-Use yukh-coordination. Join, replay the transcript, and answer the newest
+Use yukh-coordination. Bootstrap, join, replay the transcript, and answer the newest
 question addressed to you. Preserve its work URI, correlation id and question
 event id.
 ```
