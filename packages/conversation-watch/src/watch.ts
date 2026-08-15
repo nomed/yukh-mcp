@@ -1,4 +1,5 @@
 import type { CoordinationOutput } from "../../coordination-preview/src/launcher.js";
+import type { AgentRecord, TeamRecord } from "../../team-control/src/store.js";
 
 export interface WatchRecord {
   readonly sequence: number;
@@ -19,6 +20,11 @@ export interface LifecycleRecord {
   readonly question_event_id?: string;
   readonly turn?: number;
   readonly failure_code?: string;
+}
+
+export interface TeamSnapshot {
+  readonly team: TeamRecord;
+  readonly agents: readonly AgentRecord[];
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -133,4 +139,36 @@ export function renderLifecycle(record: LifecycleRecord): string {
   const label = record.event.replaceAll("_", " ").toUpperCase();
   const failure = record.failure_code ? ` failure=${record.failure_code}` : "";
   return `COORDINATOR  ${record.agent ?? "agent"}  ${label}  turn=${record.turn ?? "?"} question=${record.question_event_id ?? "?"}${failure}`;
+}
+
+export function renderTeamChanges(
+  snapshots: readonly TeamSnapshot[],
+  previous: Map<string, string>,
+): string[] {
+  const lines: string[] = [];
+  for (const snapshot of snapshots) {
+    const teamKey = `team:${snapshot.team.team_id}`;
+    const teamValue = `${snapshot.team.state}:${snapshot.agents.length}`;
+    if (previous.get(teamKey) !== teamValue) {
+      previous.set(teamKey, teamValue);
+      lines.push(
+        `TEAM  ${snapshot.team.team_id}  ${snapshot.team.state.toUpperCase()}  agents=${snapshot.agents.length}\n      manager=${snapshot.team.manager_runtime} goal=${compact(snapshot.team.goal, 160)}`,
+      );
+    }
+    for (const agent of snapshot.agents) {
+      const key = `agent:${agent.agent_id}`;
+      const value = `${agent.state}:${agent.task}`;
+      if (previous.get(key) === value) continue;
+      previous.set(key, value);
+      lines.push(
+        `WORKER  ${agent.role}  ${agent.state.toUpperCase()}  runtime=${agent.runtime}\n        task=${compact(agent.task, 180)}\n        id=${agent.agent_id} parent=${agent.parent_agent_id ?? "manager"}`,
+      );
+    }
+  }
+  return lines;
+}
+
+function compact(value: string, limit: number): string {
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized;
 }

@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createCoordinationLauncher } from "../../../packages/coordination-preview/src/launcher.js";
+import { TeamStore } from "../../../packages/team-control/src/store.js";
 import {
   lifecycleRecords,
   recordIsVisible,
   renderLifecycle,
   renderRecord,
+  renderTeamChanges,
   watchRecords,
 } from "../../../packages/conversation-watch/src/watch.js";
 
@@ -25,6 +27,8 @@ const lifecyclePath = workspace
   ? join(workspace, ".yukh", "conversation-lifecycle.jsonl")
   : undefined;
 const present = new Set<string>();
+const teamView = new Map<string, string>();
+const teamStore = workspace ? new TeamStore(workspace) : undefined;
 let unavailable = false;
 
 process.stdout.write(
@@ -71,6 +75,10 @@ for (;;) {
     const records = lifecycleRecords(raw, lifecycleOffset);
     for (const record of records) process.stdout.write(`${renderLifecycle(record)}\n\n`);
     lifecycleOffset += records.length;
+  }
+  if (teamStore) {
+    for (const line of renderTeamChanges(teamStore.teams(), teamView))
+      process.stdout.write(`${line}\n\n`);
   }
   await new Promise((resolve) => setTimeout(resolve, 1_000));
 }
