@@ -45,6 +45,20 @@ test("watch renders verified conversation once with optional evidence", () => {
   );
 });
 
+test("watch accepts bounded dynamic team identities", () => {
+  const dynamic = structuredClone(output);
+  dynamic.result.records[0]!.event.participant.id = "agent:frontend-developer-a1b2c3d4";
+  assert.equal(
+    watchRecords(dynamic, 0)[0]?.event.participant.id,
+    "agent:frontend-developer-a1b2c3d4",
+  );
+  const lifecycle = lifecycleRecords(
+    `${JSON.stringify({ schema: 1, event: "agent_started", agent: "agent-frontend-developer-a1b2c3d4", question_event_id: eventID, turn: 1 })}\n`,
+    0,
+  );
+  assert.equal(lifecycle[0]?.agent, "agent-frontend-developer-a1b2c3d4");
+});
+
 test("watch compacts long messages and can render their full body", () => {
   const record = structuredClone(watchRecords(output, 0)[0]!);
   const body = `Frontend implementation request:\n${"Create accessible components. ".repeat(12)}`;

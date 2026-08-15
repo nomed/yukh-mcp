@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
+import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
 
 const id = z.string().regex(/^team-[0-9a-f-]{36}$/u);
 
@@ -11,7 +12,19 @@ function result(value: unknown) {
   };
 }
 
-export function createTeamControlServer(store: TeamStore): McpServer {
+export interface TeamControlOptions {
+  readonly caller?: { readonly team_id: string; readonly agent_id: string };
+}
+
+export function createTeamControlServer(
+  store: TeamStore,
+  supervisor: TeamSupervisor,
+  options: TeamControlOptions = {},
+): McpServer {
+  const authorizeTeam = (teamId: string): void => {
+    if (options.caller && teamId !== options.caller.team_id)
+      throw new Error("agent_delegation_denied");
+  };
   const server = new McpServer(
     { name: "yukh-team-control", version: "0.1.0-preview" },
     {
@@ -36,8 +49,10 @@ export function createTeamControlServer(store: TeamStore): McpServer {
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    ({ goal, manager_runtime, max_agents, max_depth }) =>
-      result(store.create(goal, manager_runtime, max_agents, max_depth)),
+    ({ goal, manager_runtime, max_agents, max_depth }) => {
+      if (options.caller) throw new Error("agent_delegation_denied");
+      return result(store.create(goal, manager_runtime, max_agents, max_depth));
+    },
   );
 
   server.registerTool(
@@ -48,7 +63,91 @@ export function createTeamControlServer(store: TeamStore): McpServer {
       inputSchema: z.object({ team_id: id }).strict(),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
-    ({ team_id }) => result(store.status(team_id)),
+    ({ team_id }) => {
+      authorizeTeam(team_id);
+      return result(store.status(team_id));
+    },
+  );
+
+  server.registerTool(
+    "agent.spawn",
+    {
+      title: "Spawn a local team worker",
+      description:
+        "Create a bounded worker identity and start its detached Codex or Copilot process",
+      inputSchema: z
+        .object({
+          team_id: id,
+          parent_agent_id: z
+            .string()
+            .regex(/^worker-[0-9a-f-]{36}$/u)
+            .optional(),
+          runtime: z.enum(["codex", "copilot"]),
+          role: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/u),
+          task: z.string().min(1).max(4_096),
+          can_spawn: z.boolean().default(false),
+        })
+        .strict(),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    (input) => {
+      if (
+        options.caller &&
+        (input.team_id !== options.caller.team_id ||
+          (input.parent_agent_id !== undefined &&
+            input.parent_agent_id !== options.caller.agent_id))
+      )
+        throw new Error("agent_delegation_denied");
+      const agent = store.spawn(input.team_id, {
+        ...(options.caller
+          ? { parent_agent_id: options.caller.agent_id }
+          : input.parent_agent_id
+            ? { parent_agent_id: input.parent_agent_id }
+            : {}),
+        runtime: input.runtime,
+        role: input.role,
+        task: input.task,
+        can_spawn: input.can_spawn,
+      });
+      const runtime = supervisor.launch(agent);
+      return result({ agent, ...runtime });
+    },
+  );
+
+  server.registerTool(
+    "agent.status",
+    {
+      title: "Inspect a local team worker",
+      description: "Read one persistent worker record",
+      inputSchema: z
+        .object({ team_id: id, agent_id: z.string().regex(/^worker-[0-9a-f-]{36}$/u) })
+        .strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    ({ team_id, agent_id }) => {
+      authorizeTeam(team_id);
+      return result(store.agent(team_id, agent_id));
+    },
+  );
+
+  server.registerTool(
+    "task.assign",
+    {
+      title: "Assign a worker task",
+      description: "Replace the bounded task of a worker that has not completed",
+      inputSchema: z
+        .object({
+          team_id: id,
+          agent_id: z.string().regex(/^worker-[0-9a-f-]{36}$/u),
+          task: z.string().min(1).max(4_096),
+        })
+        .strict(),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    ({ team_id, agent_id, task }) => {
+      authorizeTeam(team_id);
+      return result(store.assign(team_id, agent_id, task));
+    },
   );
 
   server.registerTool(
@@ -59,7 +158,10 @@ export function createTeamControlServer(store: TeamStore): McpServer {
       inputSchema: z.object({ team_id: id }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    ({ team_id }) => result(store.stop(team_id)),
+    ({ team_id }) => {
+      if (options.caller) throw new Error("agent_delegation_denied");
+      return result(store.stop(team_id));
+    },
   );
   return server;
 }

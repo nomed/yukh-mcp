@@ -22,6 +22,8 @@ export interface LifecycleRecord {
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const participant = /^agent:[a-z][a-z0-9-]{0,47}$/u;
+const lifecycleAgent = /^agent-[a-z][a-z0-9-]{0,47}$/u;
 
 export function watchRecords(output: CoordinationOutput, after: number): WatchRecord[] {
   if (output.status !== "ok" || !output.result || typeof output.result !== "object")
@@ -46,7 +48,7 @@ function validate(item: unknown): WatchRecord {
     !["join", "leave", "question", "answer"].includes(event.type) ||
     typeof event.time !== "string" ||
     !event.participant ||
-    !["agent:a", "agent:b"].includes(event.participant.id) ||
+    !participant.test(event.participant.id) ||
     !event.data ||
     typeof event.data !== "object" ||
     !record.receipt ||
@@ -110,7 +112,7 @@ export function lifecycleRecords(raw: string, after: number): LifecycleRecord[] 
     if (
       record.schema !== 1 ||
       !allowed.includes(record.event) ||
-      (record.agent !== undefined && !["agent-a", "agent-b"].includes(record.agent)) ||
+      (record.agent !== undefined && !lifecycleAgent.test(record.agent)) ||
       (record.question_event_id !== undefined && !uuid.test(record.question_event_id)) ||
       (record.turn !== undefined && (!Number.isSafeInteger(record.turn) || record.turn < 1)) ||
       (record.failure_code !== undefined &&
