@@ -25,17 +25,36 @@ const lifecyclePath = workspace
   ? join(workspace, ".yukh", "conversation-lifecycle.jsonl")
   : undefined;
 const present = new Set<string>();
+let unavailable = false;
 
 process.stdout.write(
   "Yukh conversation — watching verified transcript\nPress Ctrl+C to stop. Use --full for complete message bodies.\n\n",
 );
 
 for (;;) {
-  let output = await launcher.invoke("events replay");
-  if (output.status === "error" && output.code === "YKC-AUTH-001") {
-    const bootstrap = await launcher.invoke("session bootstrap");
-    if (bootstrap.status !== "ok") throw new Error("coordination_unavailable");
+  let output;
+  try {
     output = await launcher.invoke("events replay");
+    if (output.status === "error" && output.code === "YKC-AUTH-001") {
+      const bootstrap = await launcher.invoke("session bootstrap");
+      if (bootstrap.status !== "ok") throw new Error("coordination_unavailable");
+      output = await launcher.invoke("events replay");
+    }
+    if (output.status === "error" && output.code === "YKC-UNAVAILABLE-001")
+      throw new Error("coordination_unavailable");
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== "coordination_unavailable") throw error;
+    if (!unavailable)
+      process.stdout.write("WATCHER  COORDINATION TEMPORARILY UNAVAILABLE — RETRYING\n\n");
+    unavailable = true;
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    continue;
+  }
+  if (unavailable) process.stdout.write("WATCHER  COORDINATION RECOVERED\n\n");
+  unavailable = false;
+  if (!output) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    continue;
   }
   for (const record of watchRecords(output, sequence)) {
     sequence = record.sequence;

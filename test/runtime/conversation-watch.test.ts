@@ -98,4 +98,12 @@ test("watch renders closed coordinator lifecycle without message content", () =>
     0,
   );
   assert.match(renderLifecycle(failure[0]!), /failure=agent_exit_nonzero$/u);
+  assert.equal(
+    renderLifecycle(lifecycleRecords('{"schema":1,"event":"coordinator_unavailable"}\n', 0)[0]!),
+    "COORDINATOR  COORDINATION TEMPORARILY UNAVAILABLE — RETRYING",
+  );
+  assert.equal(
+    renderLifecycle(lifecycleRecords('{"schema":1,"event":"coordinator_recovered"}\n', 0)[0]!),
+    "COORDINATOR  COORDINATION RECOVERED",
+  );
 });

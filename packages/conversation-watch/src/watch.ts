@@ -103,6 +103,8 @@ export function lifecycleRecords(raw: string, after: number): LifecycleRecord[] 
       "answer_verified",
       "agent_completed_without_answer",
       "agent_failed",
+      "coordinator_unavailable",
+      "coordinator_recovered",
       "conversation_complete",
     ];
     if (
@@ -123,6 +125,9 @@ export function lifecycleRecords(raw: string, after: number): LifecycleRecord[] 
 
 export function renderLifecycle(record: LifecycleRecord): string {
   if (record.event === "conversation_complete") return "COORDINATOR  CONVERSATION COMPLETE";
+  if (record.event === "coordinator_unavailable")
+    return "COORDINATOR  COORDINATION TEMPORARILY UNAVAILABLE — RETRYING";
+  if (record.event === "coordinator_recovered") return "COORDINATOR  COORDINATION RECOVERED";
   const label = record.event.replaceAll("_", " ").toUpperCase();
   const failure = record.failure_code ? ` failure=${record.failure_code}` : "";
   return `COORDINATOR  ${record.agent ?? "agent"}  ${label}  turn=${record.turn ?? "?"} question=${record.question_event_id ?? "?"}${failure}`;
