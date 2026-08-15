@@ -26,6 +26,8 @@ export interface CoordinatorEvent {
   readonly agent: PreviewAgent;
   readonly question_event_id: string;
   readonly turn: number;
+  readonly failure_code?:
+    "agent_spawn_failed" | "agent_timed_out" | "agent_exit_nonzero" | "agent_error";
 }
 
 type RecordValue = { readonly event?: unknown };
@@ -109,8 +111,13 @@ export class ConversationCoordinator {
         agent,
         `Use only yukh-coordination. Bootstrap if required, join, replay, find question event ${question.id}, and answer it preserving work_uri, correlation_id and question_event_id. If the work needs another peer action, publish one directed follow-up question with the same work_uri.`,
       );
-    } catch {
-      this.#observe("agent_failed", agent, question.id);
+    } catch (error) {
+      const known = ["agent_spawn_failed", "agent_timed_out", "agent_exit_nonzero"];
+      const failure =
+        error instanceof Error && known.includes(error.message)
+          ? (error.message as CoordinatorEvent["failure_code"])
+          : "agent_error";
+      this.#observe("agent_failed", agent, question.id, failure);
       return "handled";
     }
     const after = events(await this.#replay(agent));
@@ -125,13 +132,19 @@ export class ConversationCoordinator {
     return "handled";
   }
 
-  #observe(event: CoordinatorEvent["event"], agent: PreviewAgent, questionEventID: string) {
+  #observe(
+    event: CoordinatorEvent["event"],
+    agent: PreviewAgent,
+    questionEventID: string,
+    failureCode?: CoordinatorEvent["failure_code"],
+  ) {
     this.#options.observe?.({
       schema: 1,
       event,
       agent,
       question_event_id: questionEventID,
       turn: this.#turns,
+      ...(failureCode ? { failure_code: failureCode } : {}),
     });
   }
 

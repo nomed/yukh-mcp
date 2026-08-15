@@ -130,6 +130,27 @@ test("coordinator reports adapter success without a verified answer", async () =
   assert.deepEqual(lifecycle, ["agent_started", "agent_completed_without_answer"]);
 });
 
+test("coordinator reports a stable agent failure code", async () => {
+  const lifecycle: Array<{ event: string; failure_code?: string }> = [];
+  const launcher: CoordinationLauncher = { invoke: async () => replay(false) };
+  const coordinator = new ConversationCoordinator({
+    launchers: { "agent-a": launcher, "agent-b": launcher },
+    runner: { run: async () => Promise.reject(new Error("agent_exit_nonzero")) },
+    maxTurns: 1,
+    lifetimeMs: 10_000,
+    observe: (event) => lifecycle.push(event),
+  });
+  assert.equal(await coordinator.tick(), "handled");
+  assert.deepEqual(lifecycle.at(-1), {
+    schema: 1,
+    event: "agent_failed",
+    agent: "agent-b",
+    question_event_id: questionId,
+    turn: 1,
+    failure_code: "agent_exit_nonzero",
+  });
+});
+
 test("agent runner uses fixed non-shell Codex and Copilot programmatic arguments", async () => {
   const root = await mkdtemp(join(tmpdir(), "yukh-conversation-runner-"));
   const log = join(root, "calls.jsonl");
@@ -165,7 +186,6 @@ appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(1))+"\\
       "copilot prompt",
       "-s",
       "--no-ask-user",
-      "--allow-tool=read",
       "--allow-tool=write",
       "--allow-tool=yukh-coordination",
     ]);

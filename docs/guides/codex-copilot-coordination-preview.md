@@ -79,10 +79,10 @@ The default view keeps long messages compact and hides repeated joins. Add
 `--full` to inspect complete message bodies or `--verbose` when event and receipt
 identifiers are needed. Answers show the question they belong to.
 
-The coordinator lets Copilot read and write files only inside the selected
-workspace and use the fixed `yukh-coordination` server. It does not grant shell
-or network access; dependency installation and test execution remain operator
-steps.
+Copilot keeps its default read access inside the selected workspace. The
+coordinator explicitly allows workspace writes and the fixed
+`yukh-coordination` server. It does not grant shell or network access;
+dependency installation and test execution remain operator steps.
 
 Remove the Copilot server with `copilot mcp remove yukh-coordination`; remove
 the Codex table and restart Codex. Stop the sandbox with the Coordination
