@@ -93,4 +93,9 @@ test("watch renders closed coordinator lifecycle without message content", () =>
     `COORDINATOR  agent-b  AGENT STARTED  turn=1 question=${eventID}`,
   );
   assert.throws(() => lifecycleRecords('{"schema":1,"event":"unknown"}\n', 0));
+  const failure = lifecycleRecords(
+    `${JSON.stringify({ schema: 1, event: "agent_failed", agent: "agent-b", question_event_id: eventID, turn: 2, failure_code: "agent_exit_nonzero" })}\n`,
+    0,
+  );
+  assert.match(renderLifecycle(failure[0]!), /failure=agent_exit_nonzero$/u);
 });

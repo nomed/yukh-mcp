@@ -18,6 +18,7 @@ export interface LifecycleRecord {
   readonly agent?: string;
   readonly question_event_id?: string;
   readonly turn?: number;
+  readonly failure_code?: string;
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -109,7 +110,11 @@ export function lifecycleRecords(raw: string, after: number): LifecycleRecord[] 
       !allowed.includes(record.event) ||
       (record.agent !== undefined && !["agent-a", "agent-b"].includes(record.agent)) ||
       (record.question_event_id !== undefined && !uuid.test(record.question_event_id)) ||
-      (record.turn !== undefined && (!Number.isSafeInteger(record.turn) || record.turn < 1))
+      (record.turn !== undefined && (!Number.isSafeInteger(record.turn) || record.turn < 1)) ||
+      (record.failure_code !== undefined &&
+        !["agent_spawn_failed", "agent_timed_out", "agent_exit_nonzero", "agent_error"].includes(
+          record.failure_code,
+        ))
     )
       throw new Error("coordination_protocol_error");
     return record;
@@ -119,5 +124,6 @@ export function lifecycleRecords(raw: string, after: number): LifecycleRecord[] 
 export function renderLifecycle(record: LifecycleRecord): string {
   if (record.event === "conversation_complete") return "COORDINATOR  CONVERSATION COMPLETE";
   const label = record.event.replaceAll("_", " ").toUpperCase();
-  return `COORDINATOR  ${record.agent ?? "agent"}  ${label}  turn=${record.turn ?? "?"} question=${record.question_event_id ?? "?"}`;
+  const failure = record.failure_code ? ` failure=${record.failure_code}` : "";
+  return `COORDINATOR  ${record.agent ?? "agent"}  ${label}  turn=${record.turn ?? "?"} question=${record.question_event_id ?? "?"}${failure}`;
 }

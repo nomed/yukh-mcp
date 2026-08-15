@@ -58,7 +58,6 @@ export function createAgentRunner(options: {
               prompt,
               "-s",
               "--no-ask-user",
-              "--allow-tool=read",
               "--allow-tool=write",
               "--allow-tool=yukh-coordination",
             ];
@@ -70,20 +69,20 @@ export function createAgentRunner(options: {
           env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
         });
         let settled = false;
-        const fail = () => {
+        const fail = (reason: "agent_spawn_failed" | "agent_timed_out") => {
           if (settled) return;
           settled = true;
           child.kill("SIGKILL");
-          reject(new Error("agent_unavailable"));
+          reject(new Error(reason));
         };
-        const timer = setTimeout(fail, timeoutMs);
-        child.once("error", fail);
+        const timer = setTimeout(() => fail("agent_timed_out"), timeoutMs);
+        child.once("error", () => fail("agent_spawn_failed"));
         child.once("close", (code) => {
           clearTimeout(timer);
           if (settled) return;
           settled = true;
           if (code === 0) resolve();
-          else reject(new Error("agent_unavailable"));
+          else reject(new Error("agent_exit_nonzero"));
         });
       });
     },

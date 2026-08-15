@@ -20,11 +20,11 @@ the complete bounded body, while `--verbose` adds event and receipt identifiers.
 Repeated joins for the same participant are hidden. Answers show the question
 identifier they bind.
 
-The Copilot programmatic adapter receives only `read`, `write`, and the fixed
-`yukh-coordination` MCP server. Its current working directory remains the exact
-validated workspace. Shell, URL, unrestricted path and allow-all permissions
-remain denied. Dependency installation and tests remain operator or future
-fixed-verifier responsibilities.
+Copilot uses its default read access inside the exact validated workspace. The
+programmatic adapter explicitly allows only `write` and the fixed
+`yukh-coordination` MCP server. Shell, URL, unrestricted path and allow-all
+permissions remain denied. Dependency installation and tests remain operator or
+future fixed-verifier responsibilities.
 
 ## Security impact
 
@@ -40,5 +40,5 @@ argument rejection, and the exact fixed Copilot permission arguments.
 
 ## Rollback
 
-Remove the read/write flags and restore full default rendering. Existing files
+Remove the write flag and restore full default rendering. Existing files
 and transcript records need no migration.
