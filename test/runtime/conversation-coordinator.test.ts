@@ -1,14 +1,34 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ConversationCoordinator } from "../../packages/conversation-coordinator/src/coordinator.js";
+import { createLifecycleRecorder } from "../../packages/conversation-coordinator/src/lifecycle.js";
 import { createAgentRunner } from "../../packages/conversation-coordinator/src/runner.js";
 import type { CoordinationLauncher } from "../../packages/coordination-preview/src/launcher.js";
 
 const questionId = "019fffc0-06d7-7bbf-8f28-a60641591e1f";
 const answerId = "019fffc0-ffef-7e44-b392-bf7a62f9b665";
+
+test("coordinator reuses lifecycle state without truncating it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "yukh-conversation-lifecycle-"));
+  const directory = join(root, ".yukh");
+  const path = join(directory, "conversation-lifecycle.jsonl");
+  await mkdir(directory);
+  await writeFile(path, '{"schema":1,"event":"existing"}\n');
+  try {
+    const lifecycle = createLifecycleRecorder(root);
+    lifecycle.record({ schema: 1, event: "new" });
+    lifecycle.close();
+    assert.equal(
+      await readFile(path, "utf8"),
+      '{"schema":1,"event":"existing"}\n{"schema":1,"event":"new"}\n',
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 function replay(answered = false) {
   return {
