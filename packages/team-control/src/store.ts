@@ -14,12 +14,22 @@ export type AgentRuntime = "codex" | "copilot";
 export type TeamState = "active" | "stopped";
 export type AgentState = "defined" | "running" | "completed" | "failed" | "stopped";
 
+export interface ComposedAgentProfile {
+  readonly schema: 1;
+  readonly mission: string;
+  readonly model: string;
+  readonly skills: readonly string[];
+  readonly instructions: string;
+}
+
 export interface TeamRecord {
   readonly schema: 1;
   readonly team_id: string;
   readonly goal: string;
   readonly workspace: string;
   readonly manager_runtime: AgentRuntime;
+  readonly manager_role?: string;
+  readonly manager_mission?: string;
   readonly max_agents: number;
   readonly max_depth: number;
   readonly state: TeamState;
@@ -33,6 +43,7 @@ export interface AgentRecord {
   readonly parent_agent_id?: string;
   readonly runtime: AgentRuntime;
   readonly role: string;
+  readonly profile?: ComposedAgentProfile;
   readonly task: string;
   readonly depth: number;
   readonly can_spawn: boolean;
@@ -61,7 +72,13 @@ export class TeamStore {
     if (lstatSync(this.#root).isSymbolicLink()) throw new TypeError("invalid team state path");
   }
 
-  create(goal: string, managerRuntime: AgentRuntime, maxAgents = 16, maxDepth = 3): TeamRecord {
+  create(
+    goal: string,
+    managerRuntime: AgentRuntime,
+    maxAgents = 16,
+    maxDepth = 3,
+    manager?: { readonly role: string; readonly mission: string },
+  ): TeamRecord {
     if (
       goal.trim() !== goal ||
       goal.length < 1 ||
@@ -75,12 +92,21 @@ export class TeamStore {
       maxDepth > 5
     )
       throw new TypeError("invalid team definition");
+    if (
+      manager &&
+      (!roleName.test(manager.role) ||
+        manager.mission.trim() !== manager.mission ||
+        manager.mission.length < 1 ||
+        manager.mission.length > 1_024)
+    )
+      throw new TypeError("invalid manager profile");
     const record: TeamRecord = {
       schema: 1,
       team_id: `team-${randomUUID()}`,
       goal,
       workspace: this.#workspace,
       manager_runtime: managerRuntime,
+      ...(manager ? { manager_role: manager.role, manager_mission: manager.mission } : {}),
       max_agents: maxAgents,
       max_depth: maxDepth,
       state: "active",
@@ -97,6 +123,7 @@ export class TeamStore {
       readonly parent_agent_id?: string;
       readonly runtime: AgentRuntime;
       readonly role: string;
+      readonly profile?: ComposedAgentProfile;
       readonly task: string;
       readonly can_spawn?: boolean;
     },
@@ -111,6 +138,7 @@ export class TeamStore {
       input.task.length > 4_096
     )
       throw new TypeError("invalid agent definition");
+    if (input.profile) this.#validateProfile(input.profile);
     const agents = this.#readAgents(id);
     if (agents.length >= team.max_agents) throw new Error("team_agent_limit");
     const parent = input.parent_agent_id
@@ -130,6 +158,7 @@ export class TeamStore {
       ...(parent ? { parent_agent_id: parent.agent_id } : {}),
       runtime: input.runtime,
       role: input.role,
+      ...(input.profile ? { profile: input.profile } : {}),
       task: input.task,
       depth,
       can_spawn: input.can_spawn ?? false,
@@ -160,7 +189,7 @@ export class TeamStore {
   transition(id: string, worker: string, state: AgentState): AgentRecord {
     const current = this.#readAgent(id, worker);
     const allowed: Readonly<Record<AgentState, readonly AgentState[]>> = {
-      defined: ["running", "stopped"],
+      defined: ["running", "failed", "stopped"],
       running: ["completed", "failed", "stopped"],
       completed: [],
       failed: [],
@@ -191,6 +220,25 @@ export class TeamStore {
   #teamDirectory(id: string): string {
     if (!teamID.test(id)) throw new TypeError("invalid team id");
     return join(this.#root, id);
+  }
+
+  #validateProfile(profile: ComposedAgentProfile): void {
+    const token = /^[a-z0-9][a-z0-9._:-]{0,63}$/u;
+    if (
+      profile.schema !== 1 ||
+      profile.mission.trim() !== profile.mission ||
+      profile.mission.length < 1 ||
+      profile.mission.length > 1_024 ||
+      !token.test(profile.model) ||
+      !Array.isArray(profile.skills) ||
+      profile.skills.length > 16 ||
+      new Set(profile.skills).size !== profile.skills.length ||
+      profile.skills.some((skill) => !token.test(skill)) ||
+      profile.instructions.trim() !== profile.instructions ||
+      profile.instructions.length < 1 ||
+      profile.instructions.length > 4_096
+    )
+      throw new TypeError("invalid agent profile");
   }
 
   #readTeam(id: string): TeamRecord {

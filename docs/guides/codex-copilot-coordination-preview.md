@@ -62,6 +62,16 @@ enabled_tools = ["team.create", "team.status", "agent.spawn", "agent.status", "t
 default_tools_approval_mode = "writes"
 ```
 
+Add comma-separated local allowlists when using composed profiles:
+
+```toml
+env = { YUKH_CODEX_MODELS = "default,approved-codex-model", YUKH_COPILOT_MODELS = "default,approved-copilot-model", YUKH_CODEX_SKILLS = "api-design,testing,review", YUKH_COPILOT_SKILLS = "frontend,testing,product" }
+```
+
+The manager uses `agent.engage` to compose any bounded professional role. Model
+and skill values outside these allowlists fail before process launch. The
+worker must bootstrap and join Coordination before its agent CLI starts.
+
 For Copilot, use the equivalent MCP server values in `copilot mcp add`. Then ask
 the manager:
 

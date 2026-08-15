@@ -14,6 +14,20 @@ function result(value: unknown) {
 
 export interface TeamControlOptions {
   readonly caller?: { readonly team_id: string; readonly agent_id: string };
+  readonly models?: Readonly<Record<"codex" | "copilot", ReadonlySet<string>>>;
+  readonly skills?: Readonly<Record<"codex" | "copilot", ReadonlySet<string>>>;
+}
+
+export function assertProfileAvailable(
+  options: TeamControlOptions,
+  runtime: "codex" | "copilot",
+  model: string,
+  skills: readonly string[],
+): void {
+  if (!options.models?.[runtime].has(model)) throw new Error("agent_model_unavailable");
+  const availableSkills = options.skills?.[runtime] ?? new Set<string>();
+  if (skills.some((skill) => !availableSkills.has(skill)))
+    throw new Error("agent_skill_unavailable");
 }
 
 export function createTeamControlServer(
@@ -43,15 +57,25 @@ export function createTeamControlServer(
         .object({
           goal: z.string().min(1).max(4_096),
           manager_runtime: z.enum(["codex", "copilot"]),
+          manager_role: z
+            .string()
+            .regex(/^[a-z][a-z0-9-]{0,31}$/u)
+            .optional(),
+          manager_mission: z.string().min(1).max(1_024).optional(),
           max_agents: z.number().int().min(1).max(32).default(16),
           max_depth: z.number().int().min(1).max(5).default(3),
         })
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    ({ goal, manager_runtime, max_agents, max_depth }) => {
+    ({ goal, manager_runtime, manager_role, manager_mission, max_agents, max_depth }) => {
       if (options.caller) throw new Error("agent_delegation_denied");
-      return result(store.create(goal, manager_runtime, max_agents, max_depth));
+      return result(
+        store.create(goal, manager_runtime, max_agents, max_depth, {
+          role: manager_role ?? "delivery-manager",
+          mission: manager_mission ?? goal,
+        }),
+      );
     },
   );
 
@@ -66,6 +90,63 @@ export function createTeamControlServer(
     ({ team_id }) => {
       authorizeTeam(team_id);
       return result(store.status(team_id));
+    },
+  );
+
+  server.registerTool(
+    "agent.engage",
+    {
+      title: "Compose and engage a specialist agent",
+      description:
+        "Validate a manager-composed role, model, skills and instructions, then start the worker",
+      inputSchema: z
+        .object({
+          team_id: id,
+          parent_agent_id: z
+            .string()
+            .regex(/^worker-[0-9a-f-]{36}$/u)
+            .optional(),
+          runtime: z.enum(["codex", "copilot"]),
+          role: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/u),
+          mission: z.string().min(1).max(1_024),
+          model: z.string().regex(/^[a-z0-9][a-z0-9._:-]{0,63}$/u),
+          skills: z.array(z.string().regex(/^[a-z0-9][a-z0-9._:-]{0,63}$/u)).max(16),
+          instructions: z.string().min(1).max(4_096),
+          task: z.string().min(1).max(4_096),
+          can_spawn: z.boolean().default(false),
+        })
+        .strict(),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    (input) => {
+      assertProfileAvailable(options, input.runtime, input.model, input.skills);
+      if (
+        options.caller &&
+        (input.team_id !== options.caller.team_id ||
+          (input.parent_agent_id !== undefined &&
+            input.parent_agent_id !== options.caller.agent_id))
+      )
+        throw new Error("agent_delegation_denied");
+      const agent = store.spawn(input.team_id, {
+        ...(options.caller
+          ? { parent_agent_id: options.caller.agent_id }
+          : input.parent_agent_id
+            ? { parent_agent_id: input.parent_agent_id }
+            : {}),
+        runtime: input.runtime,
+        role: input.role,
+        profile: {
+          schema: 1,
+          mission: input.mission,
+          model: input.model,
+          skills: input.skills,
+          instructions: input.instructions,
+        },
+        task: input.task,
+        can_spawn: input.can_spawn,
+      });
+      const runtime = supervisor.launch(agent);
+      return result({ agent, ...runtime });
     },
   );
 

@@ -13,7 +13,6 @@ if (!teamID || !agentID) throw new TypeError("invalid team worker arguments");
 const workspace = required("YUKH_TEAM_WORKSPACE");
 const store = new TeamStore(workspace);
 const agent = store.agent(teamID, agentID);
-if (agent.state === "defined") store.transition(teamID, agentID, "running");
 
 const node = process.execPath;
 const launcher = required("YUKH_COORDINATION_LAUNCHER");
@@ -23,7 +22,8 @@ const mcpEnv = {
   YUKH_COORDINATION_AGENT: agent.coordination_agent,
   YUKH_COORDINATION_LAUNCHER: launcher,
 };
-const prompt = `You are ${agent.role}, worker ${agent.agent_id} in team ${agent.team_id}. Complete this task: ${agent.task}\nUse yukh-coordination to bootstrap if required, join with your role, replay messages, and communicate blockers or completion. You may create a bounded child team only when explicitly delegated.`;
+const profile = agent.profile;
+const prompt = `You are ${agent.role}, worker ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nYour Coordination session is already bootstrapped and joined. Use yukh-coordination to replay messages and communicate decisions, questions, blockers and completion. You may create a bounded child only when explicitly delegated.`;
 const teamControlEnv = {
   YUKH_TEAM_WORKSPACE: workspace,
   YUKH_COORDINATION_LAUNCHER: launcher,
@@ -31,6 +31,11 @@ const teamControlEnv = {
   YUKH_COPILOT_EXECUTABLE: required("YUKH_COPILOT_EXECUTABLE"),
   YUKH_CALLER_TEAM_ID: agent.team_id,
   YUKH_CALLER_AGENT_ID: agent.agent_id,
+  ...Object.fromEntries(
+    ["YUKH_CODEX_MODELS", "YUKH_COPILOT_MODELS", "YUKH_CODEX_SKILLS", "YUKH_COPILOT_SKILLS"]
+      .filter((name) => process.env[name] !== undefined)
+      .map((name) => [name, process.env[name]!] as const),
+  ),
 };
 
 const command =
@@ -43,6 +48,7 @@ const args =
         "exec",
         "--ephemeral",
         "--dangerously-bypass-approvals-and-sandbox",
+        ...(profile && profile.model !== "default" ? ["--model", profile.model] : []),
         "-c",
         `mcp_servers.yukh-coordination.command=${JSON.stringify(node)}`,
         "-c",
@@ -67,6 +73,7 @@ const args =
         "-s",
         "--no-ask-user",
         "--allow-all",
+        ...(profile && profile.model !== "default" ? ["--model", profile.model] : []),
         `--additional-mcp-config=${JSON.stringify({
           mcpServers: {
             "yukh-coordination": {
@@ -87,34 +94,82 @@ const args =
         })}`,
       ];
 
-const outcome = await new Promise<{ readonly exitCode: number; readonly stopped: boolean }>(
-  (resolve) => {
-    const child = spawn(command, args, {
+async function coordination(commandArgs: readonly string[], input?: object): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    const child = spawn(launcher, [agent.coordination_agent, ...commandArgs], {
       cwd: workspace,
       shell: false,
-      stdio: ["ignore", "inherit", "inherit"],
+      stdio: ["pipe", "pipe", "inherit"],
       env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
     });
-    let stopped = false;
-    let killTimer: NodeJS.Timeout | undefined;
-    const monitor = setInterval(() => {
-      if (stopped || store.status(teamID).team.state !== "stopped") return;
-      stopped = true;
-      child.kill("SIGTERM");
-      killTimer = setTimeout(() => child.kill("SIGKILL"), 5_000);
-    }, 500);
-    const finish = (exitCode: number): void => {
-      clearInterval(monitor);
-      if (killTimer) clearTimeout(killTimer);
-      resolve({ exitCode, stopped });
-    };
-    child.once("error", () => finish(1));
-    child.once("close", (code) => finish(code ?? 1));
-  },
-);
-store.transition(
-  teamID,
-  agentID,
-  outcome.stopped ? "stopped" : outcome.exitCode === 0 ? "completed" : "failed",
-);
+    const chunks: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    if (input) child.stdin.end(`${JSON.stringify(input)}\n`);
+    else child.stdin.end();
+    const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
+    child.once("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      try {
+        const output = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+          status?: unknown;
+        };
+        resolve(code === 0 && output.status === "ok");
+      } catch {
+        resolve(false);
+      }
+    });
+  });
+}
+
+const bootstrapped = await coordination(["session", "bootstrap"]);
+const joined =
+  bootstrapped &&
+  (await coordination(["session", "join"], {
+    capabilities: ["publish", "replay"],
+    session_label: agent.role,
+    status: "available",
+  }));
+if (!joined) {
+  process.stderr.write("yukh-team-worker: coordination bootstrap or join failed\n");
+  store.transition(teamID, agentID, "failed");
+  process.exitCode = 1;
+} else {
+  store.transition(teamID, agentID, "running");
+}
+
+const outcome = !joined
+  ? { exitCode: 1, stopped: false }
+  : await new Promise<{ readonly exitCode: number; readonly stopped: boolean }>((resolve) => {
+      const child = spawn(command, args, {
+        cwd: workspace,
+        shell: false,
+        stdio: ["ignore", "inherit", "inherit"],
+        env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
+      });
+      let stopped = false;
+      let killTimer: NodeJS.Timeout | undefined;
+      const monitor = setInterval(() => {
+        if (stopped || store.status(teamID).team.state !== "stopped") return;
+        stopped = true;
+        child.kill("SIGTERM");
+        killTimer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+      }, 500);
+      const finish = (exitCode: number): void => {
+        clearInterval(monitor);
+        if (killTimer) clearTimeout(killTimer);
+        resolve({ exitCode, stopped });
+      };
+      child.once("error", () => finish(1));
+      child.once("close", (code) => finish(code ?? 1));
+    });
+if (joined)
+  store.transition(
+    teamID,
+    agentID,
+    outcome.stopped ? "stopped" : outcome.exitCode === 0 ? "completed" : "failed",
+  );
 process.exitCode = outcome.stopped ? 0 : outcome.exitCode;

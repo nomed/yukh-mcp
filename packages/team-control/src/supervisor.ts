@@ -33,6 +33,7 @@ export class TeamSupervisor {
   readonly #codex: string;
   readonly #copilot: string;
   readonly #workspace: string;
+  readonly #profileEnvironment: Readonly<Record<string, string>>;
 
   constructor(options: {
     readonly node: string;
@@ -43,6 +44,7 @@ export class TeamSupervisor {
     readonly codex: string;
     readonly copilot: string;
     readonly workspace: string;
+    readonly profileEnvironment?: Readonly<Record<string, string>>;
   }) {
     this.#node = executable(options.node);
     this.#worker = file(options.worker);
@@ -52,6 +54,7 @@ export class TeamSupervisor {
     this.#codex = executable(options.codex);
     this.#copilot = executable(options.copilot);
     this.#workspace = realpathSync(options.workspace);
+    this.#profileEnvironment = options.profileEnvironment ?? {};
     if (!lstatSync(this.#workspace).isDirectory()) throw new TypeError("invalid team workspace");
   }
 
@@ -79,6 +82,7 @@ export class TeamSupervisor {
         YUKH_TEAM_CONTROL_MCP_MAIN: this.#teamControlMcp,
         YUKH_CODEX_EXECUTABLE: this.#codex,
         YUKH_COPILOT_EXECUTABLE: this.#copilot,
+        ...this.#profileEnvironment,
       },
     });
     closeSync(output);
