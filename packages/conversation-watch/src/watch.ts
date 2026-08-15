@@ -55,7 +55,18 @@ function validate(item: unknown): WatchRecord {
   return record;
 }
 
-export function renderRecord(record: WatchRecord, verbose: boolean): string {
+export function recordIsVisible(record: WatchRecord, present: Set<string>): boolean {
+  const actor = record.event.participant.id;
+  if (record.event.type === "join") {
+    if (present.has(actor)) return false;
+    present.add(actor);
+  } else if (record.event.type === "leave") {
+    present.delete(actor);
+  }
+  return true;
+}
+
+export function renderRecord(record: WatchRecord, verbose: boolean, full = false): string {
   const time = new Date(record.event.time);
   if (Number.isNaN(time.valueOf())) throw new Error("coordination_protocol_error");
   const actor = record.event.participant.id;
@@ -65,8 +76,16 @@ export function renderRecord(record: WatchRecord, verbose: boolean): string {
   const heading = `${time.toISOString().slice(11, 19)}  ${actor}${peer}  ${record.event.type.toUpperCase()}`;
   const body = record.event.data.body;
   const lines = [heading];
-  if (typeof body === "string" && body.length > 0 && body.length <= 4_096)
-    lines.push(...body.split("\n").map((line) => `         ${line}`));
+  if (record.event.type === "answer" && typeof record.event.data.question_event_id === "string")
+    lines.push(`         ↳ question=${record.event.data.question_event_id}`);
+  if (typeof body === "string" && body.length > 0 && body.length <= 4_096) {
+    if (full) {
+      lines.push(...body.split("\n").map((line) => `         ${line}`));
+    } else {
+      const compact = body.replace(/\s+/gu, " ").trim();
+      lines.push(`         ${compact.length > 240 ? `${compact.slice(0, 239)}…` : compact}`);
+    }
+  }
   if (verbose) lines.push(`         event=${record.event.id} receipt=${record.receipt.receipt_id}`);
   return lines.join("\n");
 }

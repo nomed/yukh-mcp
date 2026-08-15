@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   lifecycleRecords,
+  recordIsVisible,
   renderLifecycle,
   renderRecord,
   watchRecords,
@@ -42,6 +43,33 @@ test("watch renders verified conversation once with optional evidence", () => {
     renderRecord(records[0]!, true),
     new RegExp(`event=${eventID} receipt=${receiptID}`),
   );
+});
+
+test("watch compacts long messages and can render their full body", () => {
+  const record = structuredClone(watchRecords(output, 0)[0]!);
+  const body = `Frontend implementation request:\n${"Create accessible components. ".repeat(12)}`;
+  (record.event.data as { body: string }).body = body;
+  const compact = renderRecord(record, false);
+  assert.equal(compact.includes("\n         Create accessible"), false);
+  assert.match(compact, /…$/u);
+  assert.match(renderRecord(record, false, true), /\n         Create accessible components\./u);
+});
+
+test("watch links answers to questions and hides repeated joins", () => {
+  const answer = structuredClone(watchRecords(output, 0)[0]!);
+  (answer.event as { type: string }).type = "answer";
+  (answer.event.data as Record<string, unknown>).question_event_id = eventID;
+  assert.match(renderRecord(answer, false), new RegExp(`↳ question=${eventID}`));
+
+  const join = structuredClone(answer);
+  (join.event as { type: string }).type = "join";
+  const present = new Set<string>();
+  assert.equal(recordIsVisible(join, present), true);
+  assert.equal(recordIsVisible(join, present), false);
+  (join.event as { type: string }).type = "leave";
+  assert.equal(recordIsVisible(join, present), true);
+  (join.event as { type: string }).type = "join";
+  assert.equal(recordIsVisible(join, present), true);
 });
 
 test("watch rejects malformed or unverified transcript records", () => {

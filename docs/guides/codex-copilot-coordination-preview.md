@@ -75,9 +75,14 @@ YUKH_CONVERSATION_WORKSPACE=/absolute/path/to/task-board \
 yukh conversation watch
 ```
 
-Add `--verbose` only when event and receipt identifiers are needed. The default
-view shows participants, directed questions, answers and lifecycle state without
-receipt noise.
+The default view keeps long messages compact and hides repeated joins. Add
+`--full` to inspect complete message bodies or `--verbose` when event and receipt
+identifiers are needed. Answers show the question they belong to.
+
+The coordinator lets Copilot read and write files only inside the selected
+workspace and use the fixed `yukh-coordination` server. It does not grant shell
+or network access; dependency installation and test execution remain operator
+steps.
 
 Remove the Copilot server with `copilot mcp remove yukh-coordination`; remove
 the Codex table and restart Codex. Stop the sandbox with the Coordination
