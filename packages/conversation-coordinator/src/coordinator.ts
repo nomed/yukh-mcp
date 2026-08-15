@@ -149,11 +149,13 @@ export class ConversationCoordinator {
   }
 
   async #replay(agent: PreviewAgent): Promise<CoordinationOutput> {
-    let output = await this.#options.launchers[agent].invoke("events replay");
+    const launcher = this.#options.launchers[agent];
+    if (!launcher) throw new Error("coordination_protocol_error");
+    let output = await launcher.invoke("events replay");
     if (output.status === "error" && output.code === "YKC-AUTH-001") {
-      const bootstrap = await this.#options.launchers[agent].invoke("session bootstrap");
+      const bootstrap = await launcher.invoke("session bootstrap");
       if (bootstrap.status !== "ok") return bootstrap;
-      output = await this.#options.launchers[agent].invoke("events replay");
+      output = await launcher.invoke("events replay");
     }
     return output;
   }

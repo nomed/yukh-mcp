@@ -12,7 +12,7 @@ const commandNames = new Set([
   "session leave",
 ]);
 
-export type PreviewAgent = "agent-a" | "agent-b";
+export type PreviewAgent = `agent-${string}`;
 
 export interface CoordinationOutput {
   readonly schema: 1;
@@ -33,8 +33,9 @@ export function validateLauncher(path: string): string {
 }
 
 export function validateAgent(value: string): PreviewAgent {
-  if (value !== "agent-a" && value !== "agent-b") throw new TypeError("invalid Coordination agent");
-  return value;
+  if (value.length > 48 || !/^agent-[a-z](?:[a-z0-9-]{0,40}[a-z0-9])?$/u.test(value))
+    throw new TypeError("invalid Coordination agent");
+  return value as PreviewAgent;
 }
 
 function closedOutput(raw: Buffer, command: string): CoordinationOutput {

@@ -741,3 +741,14 @@ OIDC, assertion authorities, bridge trust, materializer, Coordination, audit,
 verifier, workflow, target, credentials, endpoints, network, gateway
 activation, live synthetic apply, teardown, deployment, and operational
 readiness each require later explicit review.
+# Accepted dynamic local team control plane — 2026-08-15
+
+- Governing issue: #127
+- Accepted architecture: RFC-0017
+
+The persistent local supervisor accepts only structured MCP/CLI control
+requests. Server-generated identities, fixed executable paths, bounded team
+size/depth/lifetime and inherited workspace constraints prevent transcript text
+from directly spawning unbounded processes. Parent-child relationships are
+auditable but do not grant authority. The temporarily unrestricted Copilot
+profile remains explicitly local, high trust and non-production.

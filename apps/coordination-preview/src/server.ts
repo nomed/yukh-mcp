@@ -10,6 +10,10 @@ const uri = z.string().url().max(2_048);
 const uuid = z
   .string()
   .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+const participant = z
+  .string()
+  .regex(/^agent:[a-z](?:[a-z0-9-]{0,40}[a-z0-9])?$/u)
+  .max(48);
 
 function toolResult(output: CoordinationOutput) {
   return {
@@ -45,8 +49,9 @@ export function createCoordinationPreviewServer(options: {
   readonly agent: PreviewAgent;
   readonly launcher: CoordinationLauncher;
 }): McpServer {
-  const label = options.agent === "agent-a" ? "codex" : "copilot";
-  const peer = options.agent === "agent-a" ? "agent:b" : "agent:a";
+  const label = options.agent.slice("agent-".length);
+  const defaultPeer =
+    options.agent === "agent-a" ? "agent:b" : options.agent === "agent-b" ? "agent:a" : undefined;
   const server = new McpServer(
     { name: `yukh-coordination-${label}-preview`, version: "0.1.0-preview" },
     {
@@ -87,17 +92,26 @@ export function createCoordinationPreviewServer(options: {
     "coordination.ask",
     {
       title: "Ask the peer agent",
-      description: `Publish a question addressed to ${peer}`,
-      inputSchema: z.object({ work_uri: uri, body: z.string().min(1).max(4_096) }).strict(),
+      description: "Publish a question addressed to one or more explicit agent identities",
+      inputSchema: z
+        .object({
+          work_uri: uri,
+          body: z.string().min(1).max(4_096),
+          requested_from: z.array(participant).min(1).max(8).optional(),
+        })
+        .strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    ({ work_uri, body }) =>
-      invoke(options.launcher, "question ask", {
+    ({ work_uri, body, requested_from }) => {
+      const recipients = requested_from ?? (defaultPeer ? [defaultPeer] : undefined);
+      if (!recipients) return unavailable();
+      return invoke(options.launcher, "question ask", {
         work_uri,
         body,
-        requested_from: [peer],
+        requested_from: recipients,
         response_required: true,
-      }),
+      });
+    },
   );
 
   server.registerTool(
