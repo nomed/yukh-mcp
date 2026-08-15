@@ -15,7 +15,7 @@ const server = fileURLToPath(
   new URL("../../apps/coordination-preview/src/main.ts", import.meta.url),
 );
 
-test("local Coordination preview exposes only fixed bounded tools", async () => {
+test("local Coordination preview exposes bounded tools with explicit dynamic peers", async () => {
   const root = await mkdtemp(join(tmpdir(), "yukh-coordination-mcp-"));
   const launcher = join(root, "launcher");
   const log = join(root, "invocations.jsonl");
@@ -67,7 +67,11 @@ process.stdout.write(JSON.stringify({schema:1,status:"ok",command,result})+"\\n"
       (
         await client.callTool({
           name: "coordination.ask",
-          arguments: { work_uri: "https://preview.local/work/first-contact", body: "hello" },
+          arguments: {
+            work_uri: "https://preview.local/work/first-contact",
+            body: "hello",
+            requested_from: ["agent:frontend-developer"],
+          },
         })
       ).isError,
       false,
@@ -112,14 +116,16 @@ process.stdout.write(JSON.stringify({schema:1,status:"ok",command,result})+"\\n"
       ],
     );
     assert.equal(calls[0]?.input, null);
-    assert.deepEqual(calls[2]?.input?.requested_from, ["agent:b"]);
+    assert.deepEqual(calls[2]?.input?.requested_from, ["agent:frontend-developer"]);
   } finally {
     await client.close();
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("preview configuration rejects substituted identities and launchers", async () => {
-  assert.throws(() => validateAgent("agent-c"));
+test("preview configuration accepts bounded dynamic identities and rejects substitutions", async () => {
+  assert.equal(validateAgent("agent-frontend-developer"), "agent-frontend-developer");
+  assert.throws(() => validateAgent("agent-C"));
+  assert.throws(() => validateAgent("agent-a/../b"));
   assert.throws(() => validateLauncher("relative-launcher"));
 });
