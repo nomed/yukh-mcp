@@ -48,6 +48,38 @@ event id.
 
 Finally ask Codex to replay the transcript and report the verified answer.
 
+## Create a team from Codex or Copilot
+
+Add `yukh-team-control` to the manager session. Its environment uses absolute
+paths to the project workspace, Coordination launcher and both agent CLIs:
+
+```toml
+[mcp_servers.yukh_team_control]
+command = "node"
+args = ["/path/to/yukh-mcp/dist/apps/team-control/src/main.js"]
+env = { YUKH_TEAM_WORKSPACE = "/path/to/project", YUKH_COORDINATION_LAUNCHER = "/path/to/yukh-local-agent.py", YUKH_CODEX_EXECUTABLE = "/absolute/path/to/codex", YUKH_COPILOT_EXECUTABLE = "/absolute/path/to/copilot" }
+enabled_tools = ["team.create", "team.status", "agent.spawn", "agent.status", "task.assign", "team.stop"]
+default_tools_approval_mode = "writes"
+```
+
+For Copilot, use the equivalent MCP server values in `copilot mcp add`. Then ask
+the manager:
+
+```text
+Use yukh-team-control. Create a team for this workspace with one Codex backend
+developer and one Copilot frontend developer. Start both, let them coordinate
+through Yukh, and report their states and log paths.
+```
+
+`agent.spawn` starts a real detached CLI and returns its PID and log path. A
+worker with `can_spawn=true` receives the same team-control MCP but can create
+only bounded children inside its team. It cannot create another root team,
+cross team boundaries or stop the team.
+
+Use `yukh conversation watch --full` to observe verified messages. Follow the
+returned agent log when command-level detail is needed. `team.status` shows the
+persistent team and worker states.
+
 ## Run bounded automatic wake-up
 
 After building this repository, start the local coordinator from the trusted

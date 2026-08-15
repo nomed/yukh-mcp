@@ -85,12 +85,14 @@ test("team supervisor starts a detached bounded worker wrapper", async () => {
     const worker = join(root, "worker.mjs");
     const executable = join(root, "agent-cli");
     const mcp = join(root, "coordination.mjs");
+    const teamControlMcp = join(root, "team-control.mjs");
     await writeFile(
       worker,
       `import {writeFileSync} from "node:fs"; writeFileSync(${JSON.stringify(marker)}, process.argv.slice(2).join(" "));`,
     );
     await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
     await writeFile(mcp, "", { mode: 0o600 });
+    await writeFile(teamControlMcp, "", { mode: 0o600 });
     const store = new TeamStore(root);
     const team = store.create("Launch worker", "codex");
     const agent = store.spawn(team.team_id, {
@@ -103,11 +105,17 @@ test("team supervisor starts a detached bounded worker wrapper", async () => {
       worker,
       launcher: executable,
       coordinationMcp: mcp,
+      teamControlMcp,
       codex: executable,
       copilot: executable,
       workspace: root,
     });
-    assert.ok(supervisor.launch(agent) > 0);
+    const launchedRuntime = supervisor.launch(agent);
+    assert.ok(launchedRuntime.pid > 0);
+    assert.equal(
+      launchedRuntime.log,
+      join(root, ".yukh", "teams", team.team_id, "agents", `${agent.agent_id}.log`),
+    );
     let launched = "";
     for (let attempt = 0; attempt < 50 && !launched; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 20));

@@ -12,7 +12,19 @@ function result(value: unknown) {
   };
 }
 
-export function createTeamControlServer(store: TeamStore, supervisor: TeamSupervisor): McpServer {
+export interface TeamControlOptions {
+  readonly caller?: { readonly team_id: string; readonly agent_id: string };
+}
+
+export function createTeamControlServer(
+  store: TeamStore,
+  supervisor: TeamSupervisor,
+  options: TeamControlOptions = {},
+): McpServer {
+  const authorizeTeam = (teamId: string): void => {
+    if (options.caller && teamId !== options.caller.team_id)
+      throw new Error("agent_delegation_denied");
+  };
   const server = new McpServer(
     { name: "yukh-team-control", version: "0.1.0-preview" },
     {
@@ -37,8 +49,10 @@ export function createTeamControlServer(store: TeamStore, supervisor: TeamSuperv
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    ({ goal, manager_runtime, max_agents, max_depth }) =>
-      result(store.create(goal, manager_runtime, max_agents, max_depth)),
+    ({ goal, manager_runtime, max_agents, max_depth }) => {
+      if (options.caller) throw new Error("agent_delegation_denied");
+      return result(store.create(goal, manager_runtime, max_agents, max_depth));
+    },
   );
 
   server.registerTool(
@@ -49,7 +63,10 @@ export function createTeamControlServer(store: TeamStore, supervisor: TeamSuperv
       inputSchema: z.object({ team_id: id }).strict(),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
-    ({ team_id }) => result(store.status(team_id)),
+    ({ team_id }) => {
+      authorizeTeam(team_id);
+      return result(store.status(team_id));
+    },
   );
 
   server.registerTool(
@@ -74,15 +91,26 @@ export function createTeamControlServer(store: TeamStore, supervisor: TeamSuperv
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     (input) => {
+      if (
+        options.caller &&
+        (input.team_id !== options.caller.team_id ||
+          (input.parent_agent_id !== undefined &&
+            input.parent_agent_id !== options.caller.agent_id))
+      )
+        throw new Error("agent_delegation_denied");
       const agent = store.spawn(input.team_id, {
-        ...(input.parent_agent_id ? { parent_agent_id: input.parent_agent_id } : {}),
+        ...(options.caller
+          ? { parent_agent_id: options.caller.agent_id }
+          : input.parent_agent_id
+            ? { parent_agent_id: input.parent_agent_id }
+            : {}),
         runtime: input.runtime,
         role: input.role,
         task: input.task,
         can_spawn: input.can_spawn,
       });
-      const pid = supervisor.launch(agent);
-      return result({ agent, pid });
+      const runtime = supervisor.launch(agent);
+      return result({ agent, ...runtime });
     },
   );
 
@@ -96,7 +124,10 @@ export function createTeamControlServer(store: TeamStore, supervisor: TeamSuperv
         .strict(),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     },
-    ({ team_id, agent_id }) => result(store.agent(team_id, agent_id)),
+    ({ team_id, agent_id }) => {
+      authorizeTeam(team_id);
+      return result(store.agent(team_id, agent_id));
+    },
   );
 
   server.registerTool(
@@ -113,7 +144,10 @@ export function createTeamControlServer(store: TeamStore, supervisor: TeamSuperv
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    ({ team_id, agent_id, task }) => result(store.assign(team_id, agent_id, task)),
+    ({ team_id, agent_id, task }) => {
+      authorizeTeam(team_id);
+      return result(store.assign(team_id, agent_id, task));
+    },
   );
 
   server.registerTool(
@@ -124,7 +158,10 @@ export function createTeamControlServer(store: TeamStore, supervisor: TeamSuperv
       inputSchema: z.object({ team_id: id }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    ({ team_id }) => result(store.stop(team_id)),
+    ({ team_id }) => {
+      if (options.caller) throw new Error("agent_delegation_denied");
+      return result(store.stop(team_id));
+    },
   );
   return server;
 }
