@@ -259,3 +259,63 @@ test("worker fails closed before agent launch when Coordination cannot join", as
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("worker retries bounded transient Coordination unavailability before launch", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-coordination-retry-")));
+  try {
+    const marker = join(root, "agent-started");
+    const counter = join(root, "attempts");
+    const executable = join(root, "agent-cli");
+    const launcher = join(root, "launcher");
+    const support = join(root, "support.mjs");
+    await writeFile(executable, `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o700 });
+    await writeFile(
+      launcher,
+      `#!/bin/sh
+cat >/dev/null
+count=0
+test ! -f ${counter} || count="$(cat ${counter})"
+count=$((count + 1))
+printf '%s' "$count" >${counter}
+if test "$count" -lt 3; then
+  printf '{"schema":1,"status":"error","code":"YKC-UNAVAILABLE-001"}\\n'
+  exit 7
+fi
+printf '{"schema":1,"status":"ok","command":"test"}\\n'
+`,
+      { mode: 0o700 },
+    );
+    await writeFile(support, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const team = store.create("Retry Coordination", "codex");
+    const agent = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "delivery-lead",
+      task: "Start after Coordination recovers",
+    });
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxLoader, workerMain, team.team_id, agent.agent_id],
+      {
+        cwd: root,
+        stdio: "ignore",
+        env: {
+          HOME: process.env.HOME ?? "",
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          YUKH_TEAM_WORKSPACE: root,
+          YUKH_COORDINATION_LAUNCHER: launcher,
+          YUKH_COORDINATION_MCP_MAIN: support,
+          YUKH_TEAM_CONTROL_MCP_MAIN: support,
+          YUKH_CODEX_EXECUTABLE: executable,
+          YUKH_COPILOT_EXECUTABLE: executable,
+        },
+      },
+    );
+    assert.equal(await new Promise<number | null>((resolve) => child.once("close", resolve)), 0);
+    assert.equal(await readFile(counter, "utf8"), "4");
+    assert.equal(store.agent(team.team_id, agent.agent_id).state, "completed");
+    assert.equal((await readFile(marker)).length, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -94,8 +94,16 @@ const args =
         })}`,
       ];
 
-async function coordination(commandArgs: readonly string[], input?: object): Promise<boolean> {
-  return await new Promise<boolean>((resolve) => {
+interface CoordinationAttempt {
+  readonly ok: boolean;
+  readonly code?: string;
+}
+
+async function coordination(
+  commandArgs: readonly string[],
+  input?: object,
+): Promise<CoordinationAttempt> {
+  return await new Promise<CoordinationAttempt>((resolve) => {
     const child = spawn(launcher, [agent.coordination_agent, ...commandArgs], {
       cwd: workspace,
       shell: false,
@@ -109,30 +117,42 @@ async function coordination(commandArgs: readonly string[], input?: object): Pro
     const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
     child.once("error", () => {
       clearTimeout(timer);
-      resolve(false);
+      resolve({ ok: false });
     });
     child.once("close", (code) => {
       clearTimeout(timer);
       try {
         const output = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
           status?: unknown;
+          code?: unknown;
         };
-        resolve(code === 0 && output.status === "ok");
+        resolve({
+          ok: code === 0 && output.status === "ok",
+          ...(typeof output.code === "string" ? { code: output.code } : {}),
+        });
       } catch {
-        resolve(false);
+        resolve({ ok: false });
       }
     });
   });
 }
 
-const bootstrapped = await coordination(["session", "bootstrap"]);
+let bootstrap: CoordinationAttempt = { ok: false };
+for (let attempt = 1; attempt <= 3; attempt++) {
+  bootstrap = await coordination(["session", "bootstrap"]);
+  if (bootstrap.ok || bootstrap.code !== "YKC-UNAVAILABLE-001") break;
+  process.stderr.write(`yukh-team-worker: coordination bootstrap unavailable attempt=${attempt}\n`);
+  await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+}
 const joined =
-  bootstrapped &&
-  (await coordination(["session", "join"], {
-    capabilities: ["publish", "replay"],
-    session_label: agent.role,
-    status: "available",
-  }));
+  bootstrap.ok &&
+  (
+    await coordination(["session", "join"], {
+      capabilities: ["publish", "replay"],
+      session_label: agent.role,
+      status: "available",
+    })
+  ).ok;
 if (!joined) {
   process.stderr.write("yukh-team-worker: coordination bootstrap or join failed\n");
   store.transition(teamID, agentID, "failed");
