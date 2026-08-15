@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { createCoordinationLauncher } from "../../../packages/coordination-preview/src/launcher.js";
 import {
   lifecycleRecords,
+  recordIsVisible,
   renderLifecycle,
   renderRecord,
   watchRecords,
@@ -10,9 +11,12 @@ import {
 
 const launcherPath = process.env.YUKH_COORDINATION_LAUNCHER;
 if (!launcherPath) throw new TypeError("invalid watcher configuration");
-const unknown = process.argv.slice(2).filter((value) => value !== "--verbose");
+const unknown = process.argv
+  .slice(2)
+  .filter((value) => value !== "--verbose" && value !== "--full");
 if (unknown.length > 0) throw new TypeError("invalid watcher arguments");
 const verbose = process.argv.includes("--verbose");
+const full = process.argv.includes("--full");
 const launcher = createCoordinationLauncher({ path: launcherPath, agent: "agent-a" });
 let sequence = 0;
 let lifecycleOffset = 0;
@@ -20,6 +24,11 @@ const workspace = process.env.YUKH_CONVERSATION_WORKSPACE;
 const lifecyclePath = workspace
   ? join(workspace, ".yukh", "conversation-lifecycle.jsonl")
   : undefined;
+const present = new Set<string>();
+
+process.stdout.write(
+  "Yukh conversation — watching verified transcript\nPress Ctrl+C to stop. Use --full for complete message bodies.\n\n",
+);
 
 for (;;) {
   let output = await launcher.invoke("events replay");
@@ -29,8 +38,9 @@ for (;;) {
     output = await launcher.invoke("events replay");
   }
   for (const record of watchRecords(output, sequence)) {
-    process.stdout.write(`${renderRecord(record, verbose)}\n\n`);
     sequence = record.sequence;
+    if (!recordIsVisible(record, present)) continue;
+    process.stdout.write(`${renderRecord(record, verbose, full)}\n\n`);
   }
   if (lifecyclePath) {
     let raw = "";

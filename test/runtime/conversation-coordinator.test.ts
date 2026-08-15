@@ -145,6 +145,8 @@ appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(1))+"\\
       "copilot prompt",
       "-s",
       "--no-ask-user",
+      "--allow-tool=read",
+      "--allow-tool=write",
       "--allow-tool=yukh-coordination",
     ]);
   } finally {
