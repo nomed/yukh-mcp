@@ -143,6 +143,25 @@ export class TeamStore {
     return { team: this.#readTeam(id), agents: this.#readAgents(id) };
   }
 
+  agent(id: string, worker: string): AgentRecord {
+    return this.#readAgent(id, worker);
+  }
+
+  transition(id: string, worker: string, state: AgentState): AgentRecord {
+    const current = this.#readAgent(id, worker);
+    const allowed: Readonly<Record<AgentState, readonly AgentState[]>> = {
+      defined: ["running", "stopped"],
+      running: ["completed", "failed", "stopped"],
+      completed: [],
+      failed: [],
+      stopped: [],
+    };
+    if (!allowed[current.state].includes(state)) throw new Error("invalid_agent_transition");
+    const updated: AgentRecord = { ...current, state };
+    this.#write(join(this.#teamDirectory(id), "agents", `${worker}.json`), updated, false);
+    return updated;
+  }
+
   assign(id: string, worker: string, task: string): AgentRecord {
     if (task.length < 1 || task.length > 4_096) throw new TypeError("invalid task");
     const current = this.#readAgent(id, worker);
