@@ -78,7 +78,8 @@ cross team boundaries or stop the team.
 
 Use `yukh conversation watch --full` to observe verified messages. Follow the
 returned agent log when command-level detail is needed. `team.status` shows the
-persistent team and worker states.
+persistent team and worker states. `team.stop` marks the team stopped; each
+worker wrapper observes that state and terminates its own agent CLI.
 
 ## Run bounded automatic wake-up
 

@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { TeamStore } from "../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
+
+const workerMain = fileURLToPath(new URL("../../apps/team-worker/src/main.ts", import.meta.url));
+const tsxLoader = fileURLToPath(import.meta.resolve("tsx"));
 
 test("team store creates dynamic workers and bounded delegated children", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-control-")));
@@ -124,6 +129,52 @@ test("team supervisor starts a detached bounded worker wrapper", async () => {
       } catch {}
     }
     assert.equal(launched, `${team.team_id} ${agent.agent_id}`);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("stopping a team makes its wrapper terminate the owned agent CLI", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-stop-")));
+  try {
+    const executable = join(root, "agent-cli");
+    const support = join(root, "support.mjs");
+    await writeFile(executable, "#!/bin/sh\nsleep 30\n", { mode: 0o700 });
+    await writeFile(support, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const team = store.create("Stop worker", "codex");
+    const agent = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "backend-developer",
+      task: "Wait",
+    });
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxLoader, workerMain, team.team_id, agent.agent_id],
+      {
+        cwd: root,
+        stdio: "ignore",
+        env: {
+          HOME: process.env.HOME ?? "",
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          YUKH_TEAM_WORKSPACE: root,
+          YUKH_COORDINATION_LAUNCHER: executable,
+          YUKH_COORDINATION_MCP_MAIN: support,
+          YUKH_TEAM_CONTROL_MCP_MAIN: support,
+          YUKH_CODEX_EXECUTABLE: executable,
+          YUKH_COPILOT_EXECUTABLE: executable,
+        },
+      },
+    );
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (store.agent(team.team_id, agent.agent_id).state === "running") break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(store.agent(team.team_id, agent.agent_id).state, "running");
+    store.stop(team.team_id);
+    const exitCode = await new Promise<number | null>((resolve) => child.once("close", resolve));
+    assert.equal(exitCode, 0);
+    assert.equal(store.agent(team.team_id, agent.agent_id).state, "stopped");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

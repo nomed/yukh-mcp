@@ -154,7 +154,7 @@ export function createTeamControlServer(
     "team.stop",
     {
       title: "Stop a local team",
-      description: "Mark a team stopped; worker process termination is added with the supervisor",
+      description: "Stop the team and signal its worker wrappers to terminate their agent CLIs",
       inputSchema: z.object({ team_id: id }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },

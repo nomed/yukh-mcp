@@ -87,15 +87,34 @@ const args =
         })}`,
       ];
 
-const exitCode = await new Promise<number>((resolve) => {
-  const child = spawn(command, args, {
-    cwd: workspace,
-    shell: false,
-    stdio: ["ignore", "inherit", "inherit"],
-    env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
-  });
-  child.once("error", () => resolve(1));
-  child.once("close", (code) => resolve(code ?? 1));
-});
-store.transition(teamID, agentID, exitCode === 0 ? "completed" : "failed");
-process.exitCode = exitCode;
+const outcome = await new Promise<{ readonly exitCode: number; readonly stopped: boolean }>(
+  (resolve) => {
+    const child = spawn(command, args, {
+      cwd: workspace,
+      shell: false,
+      stdio: ["ignore", "inherit", "inherit"],
+      env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
+    });
+    let stopped = false;
+    let killTimer: NodeJS.Timeout | undefined;
+    const monitor = setInterval(() => {
+      if (stopped || store.status(teamID).team.state !== "stopped") return;
+      stopped = true;
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+    }, 500);
+    const finish = (exitCode: number): void => {
+      clearInterval(monitor);
+      if (killTimer) clearTimeout(killTimer);
+      resolve({ exitCode, stopped });
+    };
+    child.once("error", () => finish(1));
+    child.once("close", (code) => finish(code ?? 1));
+  },
+);
+store.transition(
+  teamID,
+  agentID,
+  outcome.stopped ? "stopped" : outcome.exitCode === 0 ? "completed" : "failed",
+);
+process.exitCode = outcome.stopped ? 0 : outcome.exitCode;
