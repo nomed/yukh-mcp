@@ -143,6 +143,16 @@ export class TeamStore {
     return { team: this.#readTeam(id), agents: this.#readAgents(id) };
   }
 
+  teams(): readonly {
+    readonly team: TeamRecord;
+    readonly agents: readonly AgentRecord[];
+  }[] {
+    return readdirSync(this.#root)
+      .filter((name) => teamID.test(name))
+      .sort()
+      .map((name) => this.status(name));
+  }
+
   agent(id: string, worker: string): AgentRecord {
     return this.#readAgent(id, worker);
   }

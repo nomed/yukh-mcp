@@ -5,6 +5,7 @@ import {
   recordIsVisible,
   renderLifecycle,
   renderRecord,
+  renderTeamChanges,
   watchRecords,
 } from "../../packages/conversation-watch/src/watch.js";
 
@@ -43,6 +44,43 @@ test("watch renders verified conversation once with optional evidence", () => {
     renderRecord(records[0]!, true),
     new RegExp(`event=${eventID} receipt=${receiptID}`),
   );
+});
+
+test("watch explains team and worker activity in work-oriented language", () => {
+  const changes = renderTeamChanges(
+    [
+      {
+        team: {
+          schema: 1,
+          team_id: "team-0eae0789-0d76-493a-9d89-2f44c9f819cd",
+          goal: "Build a task board",
+          workspace: "/tmp/project",
+          manager_runtime: "codex",
+          max_agents: 3,
+          max_depth: 2,
+          state: "active",
+        },
+        agents: [
+          {
+            schema: 1,
+            agent_id: "worker-9776aa63-2b13-4d98-ab2b-5b0c8b0354aa",
+            coordination_agent: "agent-backend-lead-61e1f378",
+            team_id: "team-0eae0789-0d76-493a-9d89-2f44c9f819cd",
+            runtime: "codex",
+            role: "backend-lead",
+            task: "Define and implement the API",
+            depth: 1,
+            can_spawn: true,
+            state: "running",
+          },
+        ],
+      },
+    ],
+    new Map(),
+  );
+  assert.match(changes.join("\n"), /manager=codex goal=Build a task board/u);
+  assert.match(changes.join("\n"), /WORKER  backend-lead  RUNNING/u);
+  assert.match(changes.join("\n"), /task=Define and implement the API/u);
 });
 
 test("watch accepts bounded dynamic team identities", () => {

@@ -741,6 +741,7 @@ OIDC, assertion authorities, bridge trust, materializer, Coordination, audit,
 verifier, workflow, target, credentials, endpoints, network, gateway
 activation, live synthetic apply, teardown, deployment, and operational
 readiness each require later explicit review.
+
 # Accepted dynamic local team control plane — 2026-08-15
 
 - Governing issue: #127
@@ -768,3 +769,8 @@ retained for review; prompt text and logs exclude credentials and private
 reasoning. Residual risk remains that a locally configured model or skill is
 unsuitable or compromised, and the unrestricted qualification profile is still
 non-production.
+
+RFC-0019 supersedes RFC-0018's fixed catalog. Manager-composed professions are
+data, not new authority: runtime-specific model and skill allowlists, team
+bounds and parent delegation remain server-owned. Team lifecycle facts expose
+control actions and outcomes without claiming access to private reasoning.
