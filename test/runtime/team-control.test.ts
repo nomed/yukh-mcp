@@ -7,9 +7,28 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { TeamStore } from "../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
+import { assertProfileAvailable } from "../../apps/team-control/src/server.js";
 
 const workerMain = fileURLToPath(new URL("../../apps/team-worker/src/main.ts", import.meta.url));
 const tsxLoader = fileURLToPath(import.meta.resolve("tsx"));
+
+test("composed profiles require allowlisted runtime models and skills", () => {
+  const options = {
+    models: { codex: new Set(["deep-model"]), copilot: new Set(["fast-model"]) },
+    skills: { codex: new Set(["api-design", "testing"]), copilot: new Set(["frontend"]) },
+  };
+  assert.doesNotThrow(() =>
+    assertProfileAvailable(options, "codex", "deep-model", ["api-design", "testing"]),
+  );
+  assert.throws(
+    () => assertProfileAvailable(options, "codex", "fast-model", []),
+    /agent_model_unavailable/u,
+  );
+  assert.throws(
+    () => assertProfileAvailable(options, "copilot", "fast-model", ["api-design"]),
+    /agent_skill_unavailable/u,
+  );
+});
 
 test("team store creates dynamic workers and bounded delegated children", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-control-")));
@@ -19,6 +38,13 @@ test("team store creates dynamic workers and bounded delegated children", async 
     const backend = store.spawn(team.team_id, {
       runtime: "codex",
       role: "backend-developer",
+      profile: {
+        schema: 1,
+        mission: "Own the backend delivery",
+        model: "reasoning-model",
+        skills: ["api-design", "testing"],
+        instructions: "Inspect, implement, test and communicate the API contract.",
+      },
       task: "Implement the API",
       can_spawn: true,
     });
@@ -29,6 +55,7 @@ test("team store creates dynamic workers and bounded delegated children", async 
       task: "Test the API",
     });
     assert.equal(testWorker.parent_agent_id, backend.agent_id);
+    assert.deepEqual(backend.profile?.skills, ["api-design", "testing"]);
     assert.equal(testWorker.depth, 2);
     assert.notEqual(testWorker.coordination_agent, backend.coordination_agent);
     assert.equal(store.status(team.team_id).agents.length, 2);
@@ -138,8 +165,14 @@ test("stopping a team makes its wrapper terminate the owned agent CLI", async ()
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-stop-")));
   try {
     const executable = join(root, "agent-cli");
+    const launcher = join(root, "launcher");
     const support = join(root, "support.mjs");
     await writeFile(executable, "#!/bin/sh\nsleep 30\n", { mode: 0o700 });
+    await writeFile(
+      launcher,
+      '#!/bin/sh\ncat >/dev/null\nprintf \'{"schema":1,"status":"ok","command":"test"}\\n\'\n',
+      { mode: 0o700 },
+    );
     await writeFile(support, "", { mode: 0o600 });
     const store = new TeamStore(root);
     const team = store.create("Stop worker", "codex");
@@ -158,7 +191,7 @@ test("stopping a team makes its wrapper terminate the owned agent CLI", async ()
           HOME: process.env.HOME ?? "",
           PATH: process.env.PATH ?? "/usr/bin:/bin",
           YUKH_TEAM_WORKSPACE: root,
-          YUKH_COORDINATION_LAUNCHER: executable,
+          YUKH_COORDINATION_LAUNCHER: launcher,
           YUKH_COORDINATION_MCP_MAIN: support,
           YUKH_TEAM_CONTROL_MCP_MAIN: support,
           YUKH_CODEX_EXECUTABLE: executable,
@@ -175,6 +208,53 @@ test("stopping a team makes its wrapper terminate the owned agent CLI", async ()
     const exitCode = await new Promise<number | null>((resolve) => child.once("close", resolve));
     assert.equal(exitCode, 0);
     assert.equal(store.agent(team.team_id, agent.agent_id).state, "stopped");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("worker fails closed before agent launch when Coordination cannot join", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-coordination-deny-")));
+  try {
+    const marker = join(root, "agent-started");
+    const executable = join(root, "agent-cli");
+    const launcher = join(root, "launcher");
+    const support = join(root, "support.mjs");
+    await writeFile(executable, `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o700 });
+    await writeFile(
+      launcher,
+      '#!/bin/sh\ncat >/dev/null\nprintf \'{"schema":1,"status":"error","code":"YKC-AUTH-001"}\\n\'\n',
+      { mode: 0o700 },
+    );
+    await writeFile(support, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const team = store.create("Require Coordination", "codex");
+    const agent = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "delivery-lead",
+      task: "Do not start without Coordination",
+    });
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxLoader, workerMain, team.team_id, agent.agent_id],
+      {
+        cwd: root,
+        stdio: "ignore",
+        env: {
+          HOME: process.env.HOME ?? "",
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          YUKH_TEAM_WORKSPACE: root,
+          YUKH_COORDINATION_LAUNCHER: launcher,
+          YUKH_COORDINATION_MCP_MAIN: support,
+          YUKH_TEAM_CONTROL_MCP_MAIN: support,
+          YUKH_CODEX_EXECUTABLE: executable,
+          YUKH_COPILOT_EXECUTABLE: executable,
+        },
+      },
+    );
+    assert.equal(await new Promise<number | null>((resolve) => child.once("close", resolve)), 1);
+    assert.equal(store.agent(team.team_id, agent.agent_id).state, "failed");
+    await assert.rejects(readFile(marker), /ENOENT/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

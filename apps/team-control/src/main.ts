@@ -26,11 +26,28 @@ const supervisor = new TeamSupervisor({
   codex,
   copilot,
   workspace,
+  profileEnvironment: Object.fromEntries(
+    ["YUKH_CODEX_MODELS", "YUKH_COPILOT_MODELS", "YUKH_CODEX_SKILLS", "YUKH_COPILOT_SKILLS"]
+      .filter((name) => process.env[name] !== undefined)
+      .map((name) => [name, process.env[name]!] as const),
+  ),
 });
+const allowlist = (name: string, fallback: readonly string[] = []): ReadonlySet<string> => {
+  const raw = process.env[name];
+  return new Set(raw ? raw.split(",").filter(Boolean) : fallback);
+};
 
 serveStdio(
   () =>
     createTeamControlServer(store, supervisor, {
+      models: {
+        codex: allowlist("YUKH_CODEX_MODELS", ["default"]),
+        copilot: allowlist("YUKH_COPILOT_MODELS", ["default"]),
+      },
+      skills: {
+        codex: allowlist("YUKH_CODEX_SKILLS"),
+        copilot: allowlist("YUKH_COPILOT_SKILLS"),
+      },
       ...(callerTeamId && callerAgentId
         ? { caller: { team_id: callerTeamId, agent_id: callerAgentId } }
         : {}),

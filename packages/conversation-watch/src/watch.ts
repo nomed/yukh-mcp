@@ -152,7 +152,7 @@ export function renderTeamChanges(
     if (previous.get(teamKey) !== teamValue) {
       previous.set(teamKey, teamValue);
       lines.push(
-        `TEAM  ${snapshot.team.team_id}  ${snapshot.team.state.toUpperCase()}  agents=${snapshot.agents.length}\n      manager=${snapshot.team.manager_runtime} goal=${compact(snapshot.team.goal, 160)}`,
+        `TEAM  ${snapshot.team.team_id}  ${snapshot.team.state.toUpperCase()}  agents=${snapshot.agents.length}\n      manager=${snapshot.team.manager_role ?? "manager"} runtime=${snapshot.team.manager_runtime} goal=${compact(snapshot.team.goal, 160)}${snapshot.team.manager_mission ? `\n      mission=${compact(snapshot.team.manager_mission, 160)}` : ""}`,
       );
     }
     for (const agent of snapshot.agents) {
@@ -161,7 +161,7 @@ export function renderTeamChanges(
       if (previous.get(key) === value) continue;
       previous.set(key, value);
       lines.push(
-        `WORKER  ${agent.role}  ${agent.state.toUpperCase()}  runtime=${agent.runtime}\n        task=${compact(agent.task, 180)}\n        id=${agent.agent_id} parent=${agent.parent_agent_id ?? "manager"}`,
+        `WORKER  ${agent.role}  ${agent.state.toUpperCase()}  runtime=${agent.runtime}${agent.profile ? ` model=${agent.profile.model}` : ""}\n        task=${compact(agent.task, 180)}${agent.profile ? `\n        mission=${compact(agent.profile.mission, 160)} skills=${agent.profile.skills.join(",") || "none"}` : ""}\n        id=${agent.agent_id} parent=${agent.parent_agent_id ?? "manager"}`,
       );
     }
   }
