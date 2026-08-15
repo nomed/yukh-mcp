@@ -79,10 +79,11 @@ The default view keeps long messages compact and hides repeated joins. Add
 `--full` to inspect complete message bodies or `--verbose` when event and receipt
 identifiers are needed. Answers show the question they belong to.
 
-Copilot keeps its default read access inside the selected workspace. The
-coordinator explicitly allows workspace writes and the fixed
-`yukh-coordination` server. It does not grant shell or network access;
-dependency installation and test execution remain operator steps.
+The temporary local qualification profile starts Copilot with `--allow-all`, so
+it can use every tool, path and URL required to complete the exercise. Start it
+only on a trusted machine with a trusted transcript; this is not a production
+security profile. Coordination carries messages and handoffs while local tools
+perform the actual work.
 
 Remove the Copilot server with `copilot mcp remove yukh-coordination`; remove
 the Codex table and restart Codex. Stop the sandbox with the Coordination

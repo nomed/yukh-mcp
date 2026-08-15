@@ -53,14 +53,7 @@ export function createAgentRunner(options: {
               "never",
               prompt,
             ]
-          : [
-              "-p",
-              prompt,
-              "-s",
-              "--no-ask-user",
-              "--allow-tool=write",
-              "--allow-tool=yukh-coordination",
-            ];
+          : ["-p", prompt, "-s", "--no-ask-user", "--allow-all"];
       return new Promise((resolve, reject) => {
         const child = spawn(command, args, {
           cwd,

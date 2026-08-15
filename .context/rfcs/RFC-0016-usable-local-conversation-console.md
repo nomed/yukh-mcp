@@ -20,18 +20,19 @@ the complete bounded body, while `--verbose` adds event and receipt identifiers.
 Repeated joins for the same participant are hidden. Answers show the question
 identifier they bind.
 
-Copilot uses its default read access inside the exact validated workspace. The
-programmatic adapter explicitly allows only `write` and the fixed
-`yukh-coordination` MCP server. Shell, URL, unrestricted path and allow-all
-permissions remain denied. Dependency installation and tests remain operator or
-future fixed-verifier responsibilities.
+For the owner-approved temporary local development profile, Copilot runs with
+`--allow-all`: all tools, filesystem paths and URLs are available. This is an
+explicitly accepted high-trust qualification profile, not a production default.
+Coordination is the communication and handoff plane, not the only tool the agent
+may use.
 
 ## Security impact
 
-Read and write access lets Copilot inspect and modify files inside the trusted
-workspace. It cannot execute repository-authored scripts, fetch URLs or address
-another MCP server. The operator reviews diffs before integration. Transcript
-content remains untrusted and grants no additional authority.
+This profile lets Copilot execute arbitrary commands, access arbitrary paths and
+URLs, and use every configured tool. It is suitable only for the owner's
+explicitly trusted local qualification session. The operator reviews all
+changes before integration. Transcript content can drive privileged activity
+under this temporary profile and must be treated accordingly.
 
 ## Qualification
 
@@ -40,5 +41,5 @@ argument rejection, and the exact fixed Copilot permission arguments.
 
 ## Rollback
 
-Remove the write flag and restore full default rendering. Existing files
+Restore the restricted tool flags and full default rendering. Existing files
 and transcript records need no migration.
