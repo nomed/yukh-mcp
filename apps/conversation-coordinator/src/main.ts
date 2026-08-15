@@ -29,9 +29,27 @@ const coordinator = new ConversationCoordinator({
     process.stdout.write(`${JSON.stringify(event)}\n`);
   },
 });
+let unavailable = false;
+
+const availability = (event: "coordinator_unavailable" | "coordinator_recovered") => {
+  const record = { schema: 1, event };
+  lifecycle.record(record);
+  process.stdout.write(`${JSON.stringify(record)}\n`);
+};
 
 for (;;) {
-  const outcome = await coordinator.tick();
+  let outcome;
+  try {
+    outcome = await coordinator.tick();
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== "coordination_unavailable") throw error;
+    if (!unavailable) availability("coordinator_unavailable");
+    unavailable = true;
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    continue;
+  }
+  if (unavailable) availability("coordinator_recovered");
+  unavailable = false;
   if (outcome === "complete") {
     const event = { schema: 1, event: "conversation_complete" };
     lifecycle.record(event);
