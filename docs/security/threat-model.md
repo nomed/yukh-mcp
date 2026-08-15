@@ -752,3 +752,19 @@ size/depth/lifetime and inherited workspace constraints prevent transcript text
 from directly spawning unbounded processes. Parent-child relationships are
 auditable but do not grant authority. The temporarily unrestricted Copilot
 profile remains explicitly local, high trust and non-production.
+
+## Accepted role-profile routing — 2026-08-15
+
+- Governing issue: #131
+- Accepted architecture: RFC-0018
+
+Role and model selection is explicit structured control state, not authority
+inferred from transcript prose. Versioned profiles bind an allowlisted runtime,
+stable model class, skill bundle, instructions and delegation default. Concrete
+model identifiers come from local operator configuration and cannot be widened
+by a worker. Unknown profiles, missing model mappings and unavailable skills
+deny launch. Effective profile, model class, skills and instruction digest are
+retained for review; prompt text and logs exclude credentials and private
+reasoning. Residual risk remains that a locally configured model or skill is
+unsuitable or compromised, and the unrestricted qualification profile is still
+non-production.
