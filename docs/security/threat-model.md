@@ -223,12 +223,12 @@ message bodies.
 - Accepted architecture: RFC-0016
 - Scope: concise observer output and fixed-workspace Copilot read/write access
 
-Copilot retains default read access inside the validated trusted workspace. The
-adapter explicitly allows only write and the fixed Coordination MCP server.
-Shell, URL, unrestricted path and allow-all permissions remain denied.
-Agent-authored files are untrusted until reviewed; the adapter cannot execute
-repository-authored scripts. Compact rendering is a display policy only and
-does not alter the verified transcript.
+In the owner-approved temporary local qualification profile, Copilot runs with
+`--allow-all`, including arbitrary tools, shell commands, filesystem paths and
+URLs. This is explicitly not a production-safe boundary. The host, configured
+tools, repository content and transcript are all trusted for this session;
+agent-authored changes require operator review. Compact rendering is a display
+policy only and does not alter the verified transcript.
 
 ## Capability contract implementation review — 2026-08-03
 

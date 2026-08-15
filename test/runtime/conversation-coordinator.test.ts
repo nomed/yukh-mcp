@@ -69,6 +69,7 @@ test("coordinator wakes the addressed agent once and excludes answered work", as
   assert.equal(await coordinator.tick(), "idle");
   assert.equal(prompts.length, 1);
   assert.match(prompts[0] ?? "", new RegExp(questionId));
+  assert.match(prompts[0] ?? "", /Complete the requested work/u);
   assert.deepEqual(lifecycle, ["agent_started", "answer_verified"]);
 });
 
@@ -151,7 +152,7 @@ test("coordinator reports a stable agent failure code", async () => {
   });
 });
 
-test("agent runner uses fixed non-shell Codex and Copilot programmatic arguments", async () => {
+test("agent runner uses fixed workspace Codex and autonomous Copilot arguments", async () => {
   const root = await mkdtemp(join(tmpdir(), "yukh-conversation-runner-"));
   const log = join(root, "calls.jsonl");
   const source = `#!/usr/bin/env node
@@ -186,8 +187,7 @@ appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(1))+"\\
       "copilot prompt",
       "-s",
       "--no-ask-user",
-      "--allow-tool=write",
-      "--allow-tool=yukh-coordination",
+      "--allow-all",
     ]);
   } finally {
     await rm(root, { recursive: true, force: true });

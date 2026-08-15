@@ -109,7 +109,7 @@ export class ConversationCoordinator {
     try {
       await this.#options.runner.run(
         agent,
-        `Use only yukh-coordination. Bootstrap if required, join, replay, find question event ${question.id}, and answer it preserving work_uri, correlation_id and question_event_id. If the work needs another peer action, publish one directed follow-up question with the same work_uri.`,
+        `Use yukh-coordination for communication. Bootstrap if required, join, replay, and find question event ${question.id}. Complete the requested work with the available local tools inside the current workspace, including files, shell, dependencies, and tests. Then answer through yukh-coordination preserving work_uri, correlation_id, and question_event_id. If another peer action is required, publish one directed follow-up question with the same work_uri.`,
       );
     } catch (error) {
       const known = ["agent_spawn_failed", "agent_timed_out", "agent_exit_nonzero"];
