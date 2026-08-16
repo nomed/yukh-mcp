@@ -1209,6 +1209,7 @@ test("stopping a team makes its wrapper terminate the owned agent CLI", async ()
           YUKH_TEAM_CONTROL_MCP_MAIN: support,
           YUKH_CODEX_EXECUTABLE: executable,
           YUKH_COPILOT_EXECUTABLE: executable,
+          YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS: "1",
         },
       },
     );
@@ -1263,6 +1264,7 @@ test("worker fails closed before agent launch when Coordination cannot join", as
           YUKH_TEAM_CONTROL_MCP_MAIN: support,
           YUKH_CODEX_EXECUTABLE: executable,
           YUKH_COPILOT_EXECUTABLE: executable,
+          YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS: "1",
         },
       },
     );
@@ -1331,6 +1333,7 @@ printf '{"schema":1,"status":"ok","command":"test"}\\n'
           YUKH_TEAM_CONTROL_MCP_MAIN: support,
           YUKH_CODEX_EXECUTABLE: executable,
           YUKH_COPILOT_EXECUTABLE: executable,
+          YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS: "1",
         },
       },
     );
@@ -1455,6 +1458,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
           YUKH_TEAM_CONTROL_MCP_MAIN: support,
           YUKH_CODEX_EXECUTABLE: executable,
           YUKH_COPILOT_EXECUTABLE: executable,
+          YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS: "1",
         },
       },
     );
@@ -1468,6 +1472,10 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
     assert.match(
       runtimeArguments,
       /mcp_servers\.yukh-team-control\.enabled_tools=\["team\.status"\]/u,
+    );
+    assert.match(
+      runtimeArguments,
+      /mcp_servers\.yukh-team-control\.env\.YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS="1"/u,
     );
     assert.doesNotMatch(runtimeArguments, /mcp_servers\.yukh-coordination\.command/u);
   } finally {
