@@ -196,7 +196,7 @@ test("role profile policy maps specialists to allowlisted runtime models skills 
       runtime: "codex",
       model: "default",
       skills: ["testing"],
-      token_budget: 30_000,
+      token_budget: 50_000,
       tool_mode: "none",
       max_commands: 4,
       runtime_timeout_ms: 120_000,
