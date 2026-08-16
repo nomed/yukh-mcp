@@ -65,6 +65,7 @@ test("watch explains team and worker activity in work-oriented language", () => 
           {
             schema: 1,
             agent_id: "worker-9776aa63-2b13-4d98-ab2b-5b0c8b0354aa",
+            kind: "worker",
             coordination_agent: "agent-backend-lead-61e1f378",
             coordination_participant: "agent:backend-lead-61e1f378",
             team_id: "team-0eae0789-0d76-493a-9d89-2f44c9f819cd",
@@ -74,9 +75,11 @@ test("watch explains team and worker activity in work-oriented language", () => 
             depth: 1,
             can_spawn: true,
             token_budget: 50_000,
+            required_actions: [],
             state: "running",
           },
         ],
+        receipts: [],
         tokens: {
           budget: 200_000,
           allocated: 50_000,
@@ -93,6 +96,83 @@ test("watch explains team and worker activity in work-oriented language", () => 
   assert.match(changes.join("\n"), /manager=manager runtime=codex goal=Build a task board/u);
   assert.match(changes.join("\n"), /WORKER  backend-lead  RUNNING/u);
   assert.match(changes.join("\n"), /task=Define and implement the API/u);
+});
+
+test("watch exposes manager accounting and receipt-backed actions", () => {
+  const teamID = "team-0eae0789-0d76-493a-9d89-2f44c9f819cd";
+  const managerID = "worker-9776aa63-2b13-4d98-ab2b-5b0c8b0354aa";
+  const changes = renderTeamChanges(
+    [
+      {
+        team: {
+          schema: 1,
+          team_id: teamID,
+          goal: "Improve Yukh",
+          workspace: "/tmp/project",
+          manager_runtime: "codex",
+          manager_role: "delivery-manager",
+          manager_mission: "Deliver one verified increment",
+          max_agents: 3,
+          max_depth: 2,
+          token_budget: 60_000,
+          state: "active",
+        },
+        agents: [
+          {
+            schema: 1,
+            agent_id: managerID,
+            kind: "manager",
+            coordination_agent: "agent-delivery-manager-61e1f378",
+            coordination_participant: "agent:delivery-manager-61e1f378",
+            team_id: teamID,
+            runtime: "codex",
+            role: "delivery-manager",
+            task: "Inspect and report",
+            depth: 0,
+            can_spawn: true,
+            token_budget: 20_000,
+            required_actions: ["team.status"],
+            usage: {
+              schema: 1,
+              source: "codex-json-v1",
+              input_tokens: 5_000,
+              cached_input_tokens: 3_000,
+              output_tokens: 500,
+              reasoning_output_tokens: 100,
+              total_tokens: 5_500,
+              budget_outcome: "within",
+            },
+            completion: { schema: 1, outcome: "succeeded", summary: "Verified" },
+            state: "completed",
+          },
+        ],
+        receipts: [
+          {
+            schema: 1,
+            receipt_id: "receipt-9776aa63-2b13-4d98-ab2b-5b0c8b0354aa",
+            team_id: teamID,
+            action: "team.status",
+            actor_agent_id: managerID,
+            subject_agent_id: managerID,
+            outcome: "succeeded",
+          },
+        ],
+        tokens: {
+          budget: 60_000,
+          allocated: 20_000,
+          observed: 5_500,
+          remaining: 54_500,
+          pending_agents: 0,
+          unaccounted_agents: 0,
+          exceeded_agents: 0,
+        },
+      },
+    ],
+    new Map(),
+  ).join("\n");
+  assert.match(changes, /MANAGER  delivery-manager  COMPLETED/u);
+  assert.match(changes, /input=5000 cached=3000 output=500 reasoning=100/u);
+  assert.match(changes, /required=team.status receipts=team.status/u);
 });
 
 test("watch accepts bounded dynamic team identities", () => {

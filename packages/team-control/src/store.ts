@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 
 export type AgentRuntime = "codex" | "copilot";
+export type AgentKind = "manager" | "worker";
 export type TeamState = "active" | "stopped";
 export type AgentState = "defined" | "running" | "completed" | "failed" | "stopped";
 
@@ -31,6 +32,7 @@ export interface AgentCompletion {
     | "succeeded"
     | "agent_exit_nonzero"
     | "completion_missing"
+    | "required_action_missing"
     | "token_accounting_unavailable"
     | "token_budget_exceeded";
   readonly summary: string;
@@ -61,6 +63,7 @@ export interface TeamRecord {
 export interface AgentRecord {
   readonly schema: 1;
   readonly agent_id: string;
+  readonly kind: AgentKind;
   readonly coordination_agent: `agent-${string}`;
   readonly coordination_participant: `agent:${string}`;
   readonly team_id: string;
@@ -72,9 +75,22 @@ export interface AgentRecord {
   readonly depth: number;
   readonly can_spawn: boolean;
   readonly token_budget: number;
+  readonly required_actions: readonly TeamAction[];
   readonly usage?: AgentUsage;
   readonly completion?: AgentCompletion;
   readonly state: AgentState;
+}
+
+export type TeamAction = "manager.start" | "team.status" | "agent.engage" | "agent.await";
+
+export interface TeamActionReceipt {
+  readonly schema: 1;
+  readonly receipt_id: string;
+  readonly team_id: string;
+  readonly action: TeamAction;
+  readonly actor_agent_id?: string;
+  readonly subject_agent_id?: string;
+  readonly outcome: "succeeded";
 }
 
 const teamID = /^team-[0-9a-f-]{36}$/u;
@@ -149,6 +165,67 @@ export class TeamStore {
     return record;
   }
 
+  createManaged(
+    goal: string,
+    managerRuntime: AgentRuntime,
+    maxAgents: number,
+    maxDepth: number,
+    tokenBudget: number,
+    manager: {
+      readonly role: string;
+      readonly profile: ComposedAgentProfile;
+      readonly task: string;
+      readonly token_budget: number;
+      readonly required_actions: readonly TeamAction[];
+    },
+  ): {
+    readonly team: TeamRecord;
+    readonly manager: AgentRecord;
+  } {
+    if (
+      !Number.isSafeInteger(manager.token_budget) ||
+      manager.token_budget < 1_000 ||
+      manager.token_budget > 2_000_000 ||
+      manager.token_budget > tokenBudget ||
+      manager.required_actions.length > 3 ||
+      new Set(manager.required_actions).size !== manager.required_actions.length ||
+      manager.required_actions.some(
+        (action) => !["team.status", "agent.engage", "agent.await"].includes(action),
+      )
+    )
+      throw new TypeError("invalid manager definition");
+    this.#validateProfile(manager.profile);
+    const team = this.create(goal, managerRuntime, maxAgents, maxDepth, tokenBudget, {
+      role: manager.role,
+      mission: manager.profile.mission,
+    });
+    const suffix = randomUUID().replaceAll("-", "").slice(0, 8);
+    const coordination = `agent-${manager.role.slice(0, 32)}-${suffix}` as const;
+    const record: AgentRecord = {
+      schema: 1,
+      agent_id: `worker-${randomUUID()}`,
+      kind: "manager",
+      coordination_agent: coordination,
+      coordination_participant: `agent:${coordination.slice("agent-".length)}`,
+      team_id: team.team_id,
+      runtime: managerRuntime,
+      role: manager.role,
+      profile: manager.profile,
+      task: manager.task,
+      depth: 0,
+      can_spawn: true,
+      token_budget: manager.token_budget,
+      required_actions: manager.required_actions,
+      state: "defined",
+    };
+    this.#write(
+      join(this.#teamDirectory(team.team_id), "agents", `${record.agent_id}.json`),
+      record,
+      true,
+    );
+    return { team, manager: record };
+  }
+
   spawn(
     id: string,
     input: {
@@ -197,6 +274,7 @@ export class TeamStore {
     const record: AgentRecord = {
       schema: 1,
       agent_id: `worker-${randomUUID()}`,
+      kind: "worker",
       coordination_agent: coordination,
       coordination_participant: `agent:${coordination.slice("agent-".length)}`,
       team_id: id,
@@ -208,6 +286,7 @@ export class TeamStore {
       depth,
       can_spawn: input.can_spawn ?? false,
       token_budget: input.token_budget,
+      required_actions: [],
       state: "defined",
     };
     this.#write(join(this.#teamDirectory(id), "agents", `${record.agent_id}.json`), record, true);
@@ -217,6 +296,7 @@ export class TeamStore {
   status(id: string): {
     readonly team: TeamRecord;
     readonly agents: readonly AgentRecord[];
+    readonly receipts: readonly TeamActionReceipt[];
     readonly tokens: {
       readonly budget: number;
       readonly allocated: number;
@@ -229,11 +309,13 @@ export class TeamStore {
   } {
     const team = this.#readTeam(id);
     const agents = this.#readAgents(id);
+    const receipts = this.#readReceipts(id);
     const allocated = agents.reduce((total, agent) => total + agent.token_budget, 0);
     const observed = agents.reduce((total, agent) => total + (agent.usage?.total_tokens ?? 0), 0);
     return {
       team,
       agents,
+      receipts,
       tokens: {
         budget: team.token_budget,
         allocated,
@@ -281,11 +363,50 @@ export class TeamStore {
     const current = this.#readAgent(id, worker);
     if (current.state !== "running") throw new Error("invalid_agent_transition");
     this.#validateCompletion(completion);
+    if (completion.outcome === "succeeded" && this.missingRequiredActions(id, worker).length > 0)
+      throw new Error("required_action_missing");
     if (usage) this.#validateUsage(current, usage);
     const state: AgentState = completion.outcome === "succeeded" ? "completed" : "failed";
     const updated: AgentRecord = { ...current, state, completion, ...(usage ? { usage } : {}) };
     this.#write(join(this.#teamDirectory(id), "agents", `${worker}.json`), updated, false);
     return updated;
+  }
+
+  missingRequiredActions(id: string, worker: string): readonly TeamAction[] {
+    const agent = this.#readAgent(id, worker);
+    const completed = new Set(
+      this.#readReceipts(id)
+        .filter((receipt) => receipt.actor_agent_id === worker)
+        .map((receipt) => receipt.action),
+    );
+    return agent.required_actions.filter((action) => !completed.has(action));
+  }
+
+  receipt(
+    id: string,
+    action: TeamAction,
+    actorAgentId?: string,
+    subjectAgentId?: string,
+  ): TeamActionReceipt {
+    this.#readTeam(id);
+    if (!["manager.start", "team.status", "agent.engage", "agent.await"].includes(action))
+      throw new TypeError("invalid team action");
+    if (actorAgentId) this.#readAgent(id, actorAgentId);
+    if (subjectAgentId) this.#readAgent(id, subjectAgentId);
+    const receipt: TeamActionReceipt = {
+      schema: 1,
+      receipt_id: `receipt-${randomUUID()}`,
+      team_id: id,
+      action,
+      ...(actorAgentId ? { actor_agent_id: actorAgentId } : {}),
+      ...(subjectAgentId ? { subject_agent_id: subjectAgentId } : {}),
+      outcome: "succeeded",
+    };
+    const directory = join(this.#teamDirectory(id), "receipts");
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    if (this.#readReceipts(id).length >= 256) throw new Error("team_receipt_limit");
+    this.#write(join(directory, `${receipt.receipt_id}.json`), receipt, true);
+    return receipt;
   }
 
   assign(id: string, worker: string, task: string): AgentRecord {
@@ -335,6 +456,7 @@ export class TeamStore {
         "succeeded",
         "agent_exit_nonzero",
         "completion_missing",
+        "required_action_missing",
         "token_accounting_unavailable",
         "token_budget_exceeded",
       ].includes(completion.outcome) ||
@@ -378,6 +500,8 @@ export class TeamStore {
       `agent:${value.coordination_agent.slice("agent-".length)}` as const;
     return {
       ...value,
+      kind: value.kind ?? "worker",
+      required_actions: Array.isArray(value.required_actions) ? value.required_actions : [],
       ...(Number.isSafeInteger(value.token_budget) ? {} : { token_budget: 0 }),
       ...(value.coordination_participant
         ? {}
@@ -391,6 +515,19 @@ export class TeamStore {
       .filter((name) => /^worker-[0-9a-f-]{36}\.json$/u.test(name))
       .sort()
       .map((name) => this.#readAgent(id, name.slice(0, -".json".length)));
+  }
+
+  #readReceipts(id: string): readonly TeamActionReceipt[] {
+    const directory = join(this.#teamDirectory(id), "receipts");
+    try {
+      return readdirSync(directory)
+        .filter((name) => /^receipt-[0-9a-f-]{36}\.json$/u.test(name))
+        .sort()
+        .map((name) => this.#read(join(directory, name)) as TeamActionReceipt);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+      throw error;
+    }
   }
 
   #read(path: string): unknown {

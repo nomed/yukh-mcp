@@ -58,7 +58,7 @@ paths to the project workspace, Coordination launcher and both agent CLIs:
 command = "node"
 args = ["/path/to/yukh-mcp/dist/apps/team-control/src/main.js"]
 env = { YUKH_TEAM_WORKSPACE = "/path/to/project", YUKH_COORDINATION_LAUNCHER = "/path/to/yukh-local-agent.py", YUKH_CODEX_EXECUTABLE = "/absolute/path/to/codex", YUKH_COPILOT_EXECUTABLE = "/absolute/path/to/copilot" }
-enabled_tools = ["team.create", "team.status", "agent.engage", "agent.await", "agent.status", "task.assign", "team.stop"]
+enabled_tools = ["manager.start", "team.status", "agent.await", "agent.status", "team.stop"]
 default_tools_approval_mode = "writes"
 ```
 
@@ -68,13 +68,18 @@ Add comma-separated local allowlists when using composed profiles:
 env = { YUKH_CODEX_MODELS = "default,approved-codex-model", YUKH_COPILOT_MODELS = "default,approved-copilot-model", YUKH_CODEX_SKILLS = "api-design,testing,review", YUKH_COPILOT_SKILLS = "frontend,testing,product" }
 ```
 
-The manager uses `agent.engage` to compose any bounded professional role. Model
+Start work with `manager.start`, not `team.create`. It creates the team and a
+depth-zero manager runtime together, reserves the manager budget and returns a
+server receipt plus the manager agent ID. Use `agent.await` from the controlling
+session to retrieve its terminal completion. The manager uses `agent.engage`
+from inside its accounted runtime to compose bounded professional roles. Model
 and skill values outside these allowlists fail before process launch. The
 worker must bootstrap and join Coordination before its agent CLI starts. Set an
-explicit team `token_budget` in `team.create` and a smaller `token_budget` for
-every `agent.engage`. Allocations above the team budget are rejected.
-Teams created by an older preview remain readable with budget zero but cannot
-engage more workers; stop and recreate them with an explicit budget.
+explicit `team_token_budget` and `manager_token_budget` in `manager.start`, then
+a smaller `token_budget` for every `agent.engage`. Manager and worker
+allocations above the team budget are rejected. Teams created by an older
+preview remain readable but an external unaccounted session cannot engage
+workers. Stop and recreate them with `manager.start`.
 
 After engaging a child, use the returned `coordination_participant` exactly and
 call `agent.await`. A successful terminal record contains the child's bounded
@@ -88,10 +93,12 @@ For Copilot, use the equivalent MCP server values in `copilot mcp add`. Then ask
 the manager:
 
 ```text
-Use yukh-team-control. Create a 120000-token team for this workspace. Engage one
-Codex backend developer with a 50000-token budget. Wait for its completion,
-inspect its summary and usage, then report the result. Do not engage a runtime
-that cannot provide token accounting.
+Use yukh-team-control. Call manager.start with a 120000-token team budget and a
+30000-token Codex manager budget. Require agent.engage and agent.await receipts.
+Ask the manager to engage one Codex backend developer with a 50000-token budget,
+wait for its completion, inspect its summary and usage, then report the result.
+Do not use team.create and do not engage a runtime that cannot provide token
+accounting.
 ```
 
 `agent.spawn` starts a real detached CLI and returns its PID and log path. A

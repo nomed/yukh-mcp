@@ -230,6 +230,25 @@ tools, repository content and transcript are all trusted for this session;
 agent-authored changes require operator review. Compact rendering is a display
 policy only and does not alter the verified transcript.
 
+## Accepted budgeted root manager and action receipts — 2026-08-16
+
+- Governing issue: #139
+- Accepted architecture: RFC-0021
+- Scope: local root-manager launch, token reservation and receipt-backed team actions
+
+An external model session is not trusted to report its own token use or prove
+that it invoked a required tool. `manager.start` creates the team and an
+accounted depth-zero manager together; its budget is reserved before child
+allocation. Unaccounted external callers cannot engage or spawn workers.
+
+Successful `team.status`, `agent.engage` and `agent.await` calls produce closed
+server-authored receipts. A manager completion without every declared receipt
+fails as `required_action_missing`; prose is not accepted as action evidence.
+Receipts exclude prompts, reasoning and tool payloads and are capped per team.
+The observer exposes exact runtime token categories. Residual risk remains
+post-turn budget detection because the agent CLI does not provide a trusted
+preemptive token-control boundary.
+
 ## Capability contract implementation review — 2026-08-03
 
 - Governing issue: #5

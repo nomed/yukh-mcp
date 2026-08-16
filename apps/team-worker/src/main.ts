@@ -25,7 +25,8 @@ const mcpEnv = {
   YUKH_COORDINATION_LAUNCHER: launcher,
 };
 const profile = agent.profile;
-const prompt = `You are ${agent.role}, worker ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nToken budget: ${agent.token_budget} total input plus output tokens. Keep inspection and tool output bounded. The team already exists: do not call team.create. When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. Your Coordination session is already bootstrapped and joined. Use yukh-coordination to replay messages and communicate decisions and blockers. End with one concise public-safe completion summary of at most 4096 UTF-8 bytes; the wrapper persists that final response for the manager. You may create a bounded child only when explicitly delegated.`;
+const requiredActions = agent.required_actions.join(", ") || "none";
+const prompt = `You are ${agent.role}, ${agent.kind} ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nToken budget: ${agent.token_budget} total input plus output tokens. Keep inspection and tool output bounded. The team already exists: do not call team.create. Required receipt-backed actions before success: ${requiredActions}. A textual claim is not evidence; invoke each required yukh-team-control tool successfully. When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. Your Coordination session is already bootstrapped and joined. Use yukh-coordination to replay messages and communicate decisions and blockers. End with one concise public-safe completion summary of at most 4096 UTF-8 bytes; the wrapper persists that final response. You may create a bounded child only when explicitly delegated.`;
 const teamControlEnv = {
   YUKH_TEAM_WORKSPACE: workspace,
   YUKH_COORDINATION_LAUNCHER: launcher,
@@ -209,6 +210,7 @@ if (joined && "output" in outcome) {
   } else {
     const summary = outcome.output.summary();
     const usage = outcome.output.usage(agent.token_budget);
+    const missingActions = store.missingRequiredActions(teamID, agentID);
     const completion =
       outcome.exitCode !== 0
         ? { schema: 1 as const, outcome: "agent_exit_nonzero" as const, summary }
@@ -216,9 +218,15 @@ if (joined && "output" in outcome) {
           ? { schema: 1 as const, outcome: "token_accounting_unavailable" as const, summary }
           : usage.budget_outcome === "exceeded"
             ? { schema: 1 as const, outcome: "token_budget_exceeded" as const, summary }
-            : !summary
-              ? { schema: 1 as const, outcome: "completion_missing" as const, summary: "" }
-              : { schema: 1 as const, outcome: "succeeded" as const, summary };
+            : missingActions.length > 0
+              ? {
+                  schema: 1 as const,
+                  outcome: "required_action_missing" as const,
+                  summary: `Missing required action receipts: ${missingActions.join(", ")}`,
+                }
+              : !summary
+                ? { schema: 1 as const, outcome: "completion_missing" as const, summary: "" }
+                : { schema: 1 as const, outcome: "succeeded" as const, summary };
     store.finish(teamID, agentID, completion, usage);
     if (completion.outcome !== "succeeded") wrapperExitCode = 1;
   }

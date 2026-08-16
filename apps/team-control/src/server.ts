@@ -74,7 +74,86 @@ export function createTeamControlServer(
     {
       capabilities: { tools: { listChanged: false } },
       instructions:
-        "Create bounded local teams with explicit token budgets. The team already exists for delegated workers: they must not call team.create. Engage children with smaller budgets, use returned coordination_participant identifiers exactly, wait with agent.await, and consume every successful completion before synthesis. Team state is persistent; creating a team does not start workers.",
+        "Start a budgeted root manager with manager.start. Direct team.create is a legacy logical-team operation and cannot engage workers from an unaccounted external manager. A launched manager or delegated worker uses returned identifiers exactly, waits with agent.await, and must satisfy every declared required action with server-issued receipts before successful completion.",
+    },
+  );
+
+  server.registerTool(
+    "manager.start",
+    {
+      title: "Start a budgeted root team manager",
+      description: "Create a team, reserve the manager budget, then start its accounted runtime",
+      inputSchema: z
+        .object({
+          goal: z.string().min(1).max(4_096),
+          runtime: z.enum(["codex", "copilot"]),
+          role: z
+            .string()
+            .regex(/^[a-z][a-z0-9-]{0,31}$/u)
+            .default("delivery-manager"),
+          mission: z.string().min(1).max(1_024),
+          model: z.string().regex(/^[a-z0-9][a-z0-9._:-]{0,63}$/u),
+          skills: z.array(z.string().regex(/^[a-z0-9][a-z0-9._:-]{0,63}$/u)).max(16),
+          instructions: z.string().min(1).max(4_096),
+          task: z.string().min(1).max(4_096),
+          required_actions: z
+            .array(z.enum(["team.status", "agent.engage", "agent.await"]))
+            .max(3)
+            .default([]),
+          max_agents: z.number().int().min(1).max(32).default(16),
+          max_depth: z.number().int().min(1).max(5).default(3),
+          team_token_budget: z.number().int().min(1_000).max(10_000_000),
+          manager_token_budget: z.number().int().min(1_000).max(2_000_000),
+        })
+        .strict(),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    (input) => {
+      if (options.caller) throw new Error("agent_delegation_denied");
+      let managed: ReturnType<TeamStore["createManaged"]> | undefined;
+      try {
+        assertProfileAvailable(options, input.runtime, input.model, input.skills);
+        managed = store.createManaged(
+          input.goal,
+          input.runtime,
+          input.max_agents,
+          input.max_depth,
+          input.team_token_budget,
+          {
+            role: input.role,
+            profile: {
+              schema: 1,
+              mission: input.mission,
+              model: input.model,
+              skills: input.skills,
+              instructions: input.instructions,
+            },
+            task: input.task,
+            token_budget: input.manager_token_budget,
+            required_actions: input.required_actions,
+          },
+        );
+        const runtime = supervisor.launch(managed.manager);
+        const receipt = store.receipt(
+          managed.team.team_id,
+          "manager.start",
+          undefined,
+          managed.manager.agent_id,
+        );
+        return result({ ...managed, receipt, runtime });
+      } catch (error) {
+        if (managed) {
+          try {
+            store.transition(managed.team.team_id, managed.manager.agent_id, "failed");
+            store.stop(managed.team.team_id);
+          } catch {}
+        }
+        return stableFailure(
+          error,
+          new Set(["agent_model_unavailable", "agent_skill_unavailable", "agent_spawn_failed"]),
+          "manager_start_failed",
+        );
+      }
     },
   );
 
@@ -128,7 +207,10 @@ export function createTeamControlServer(
     },
     ({ team_id }) => {
       authorizeTeam(team_id);
-      return result(store.status(team_id));
+      const status = store.status(team_id);
+      if (options.caller)
+        store.receipt(team_id, "team.status", options.caller.agent_id, options.caller.agent_id);
+      return result(status);
     },
   );
 
@@ -159,6 +241,7 @@ export function createTeamControlServer(
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     (input) => {
+      if (!options.caller) return failure("manager_runtime_required");
       try {
         assertProfileAvailable(options, input.runtime, input.model, input.skills);
       } catch (error) {
@@ -196,7 +279,13 @@ export function createTeamControlServer(
           token_budget: input.token_budget,
         });
         const runtime = supervisor.launch(agent);
-        return result({ agent, ...runtime });
+        const receipt = store.receipt(
+          input.team_id,
+          "agent.engage",
+          options.caller.agent_id,
+          agent.agent_id,
+        );
+        return result({ agent, receipt, ...runtime });
       } catch (error) {
         return stableFailure(
           error,
@@ -238,6 +327,7 @@ export function createTeamControlServer(
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     (input) => {
+      if (!options.caller) return failure("manager_runtime_required");
       if (
         options.caller &&
         (input.team_id !== options.caller.team_id ||
@@ -296,7 +386,11 @@ export function createTeamControlServer(
     async ({ team_id, agent_id, timeout_ms }) => {
       authorizeTeam(team_id);
       const agent = await awaitAgent(store, team_id, agent_id, timeout_ms);
-      return agent ? result(agent) : failure("agent_wait_timeout");
+      if (!agent) return failure("agent_wait_timeout");
+      const receipt = options.caller
+        ? store.receipt(team_id, "agent.await", options.caller.agent_id, agent_id)
+        : undefined;
+      return result({ agent, ...(receipt ? { receipt } : {}) });
     },
   );
 
