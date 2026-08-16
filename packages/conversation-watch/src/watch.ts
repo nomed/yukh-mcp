@@ -1,5 +1,5 @@
 import type { CoordinationOutput } from "../../coordination-preview/src/launcher.js";
-import type { AgentRecord, TeamRecord } from "../../team-control/src/store.js";
+import type { AgentRecord, TeamActionReceipt, TeamRecord } from "../../team-control/src/store.js";
 
 export interface WatchRecord {
   readonly sequence: number;
@@ -25,6 +25,7 @@ export interface LifecycleRecord {
 export interface TeamSnapshot {
   readonly team: TeamRecord;
   readonly agents: readonly AgentRecord[];
+  readonly receipts: readonly TeamActionReceipt[];
   readonly tokens: {
     readonly budget: number;
     readonly allocated: number;
@@ -157,11 +158,11 @@ export function renderTeamChanges(
   const lines: string[] = [];
   for (const snapshot of snapshots) {
     const teamKey = `team:${snapshot.team.team_id}`;
-    const teamValue = `${snapshot.team.state}:${snapshot.agents.length}:${snapshot.tokens.allocated}:${snapshot.tokens.observed}:${snapshot.tokens.pending_agents}:${snapshot.tokens.unaccounted_agents}:${snapshot.tokens.exceeded_agents}`;
+    const teamValue = `${snapshot.team.state}:${snapshot.agents.length}:${snapshot.receipts.length}:${snapshot.tokens.allocated}:${snapshot.tokens.observed}:${snapshot.tokens.pending_agents}:${snapshot.tokens.unaccounted_agents}:${snapshot.tokens.exceeded_agents}`;
     if (previous.get(teamKey) !== teamValue) {
       previous.set(teamKey, teamValue);
       lines.push(
-        `TEAM  ${snapshot.team.team_id}  ${snapshot.team.state.toUpperCase()}  agents=${snapshot.agents.length}\n      manager=${snapshot.team.manager_role ?? "manager"} runtime=${snapshot.team.manager_runtime} goal=${compact(snapshot.team.goal, 160)}${snapshot.team.manager_mission ? `\n      mission=${compact(snapshot.team.manager_mission, 160)}` : ""}\n      tokens=${snapshot.tokens.observed}/${snapshot.tokens.budget} allocated=${snapshot.tokens.allocated} pending=${snapshot.tokens.pending_agents} unaccounted=${snapshot.tokens.unaccounted_agents} exceeded=${snapshot.tokens.exceeded_agents}`,
+        `TEAM  ${snapshot.team.team_id}  ${snapshot.team.state.toUpperCase()}  agents=${snapshot.agents.length}\n      manager=${snapshot.team.manager_role ?? "manager"} runtime=${snapshot.team.manager_runtime} goal=${compact(snapshot.team.goal, 160)}${snapshot.team.manager_mission ? `\n      mission=${compact(snapshot.team.manager_mission, 160)}` : ""}\n      tokens=${snapshot.tokens.observed}/${snapshot.tokens.budget} allocated=${snapshot.tokens.allocated} pending=${snapshot.tokens.pending_agents} unaccounted=${snapshot.tokens.unaccounted_agents} exceeded=${snapshot.tokens.exceeded_agents} receipts=${snapshot.receipts.length}`,
       );
     }
     for (const agent of snapshot.agents) {
@@ -170,7 +171,12 @@ export function renderTeamChanges(
       if (previous.get(key) === value) continue;
       previous.set(key, value);
       lines.push(
-        `WORKER  ${agent.role}  ${agent.state.toUpperCase()}  runtime=${agent.runtime}${agent.profile ? ` model=${agent.profile.model}` : ""}\n        task=${compact(agent.task, 180)}${agent.profile ? `\n        mission=${compact(agent.profile.mission, 160)} skills=${agent.profile.skills.join(",") || "none"}` : ""}\n        tokens=${agent.usage?.total_tokens ?? "pending"}/${agent.token_budget} accounting=${agent.usage?.source ?? "pending"} completion=${agent.completion?.outcome ?? "pending"}\n        coordination=${agent.coordination_participant} id=${agent.agent_id} parent=${agent.parent_agent_id ?? "manager"}`,
+        `${agent.kind === "manager" ? "MANAGER" : "WORKER"}  ${agent.role}  ${agent.state.toUpperCase()}  runtime=${agent.runtime}${agent.profile ? ` model=${agent.profile.model}` : ""}\n        task=${compact(agent.task, 180)}${agent.profile ? `\n        mission=${compact(agent.profile.mission, 160)} skills=${agent.profile.skills.join(",") || "none"}` : ""}\n        tokens=${agent.usage?.total_tokens ?? "pending"}/${agent.token_budget} input=${agent.usage?.input_tokens ?? "pending"} cached=${agent.usage?.cached_input_tokens ?? "pending"} output=${agent.usage?.output_tokens ?? "pending"} reasoning=${agent.usage?.reasoning_output_tokens ?? "pending"} accounting=${agent.usage?.source ?? "pending"} completion=${agent.completion?.outcome ?? "pending"}\n        required=${agent.required_actions.join(",") || "none"} receipts=${
+          snapshot.receipts
+            .filter((receipt) => receipt.actor_agent_id === agent.agent_id)
+            .map((receipt) => receipt.action)
+            .join(",") || "none"
+        }\n        coordination=${agent.coordination_participant} id=${agent.agent_id} parent=${agent.parent_agent_id ?? (agent.kind === "manager" ? "root" : "manager")}`,
       );
     }
   }

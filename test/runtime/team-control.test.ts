@@ -163,6 +163,117 @@ test("team store reserves budgets and persists bounded completion usage", async 
   }
 });
 
+test("managed teams reserve root usage and require server-issued action receipts", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-root-manager-budget-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Improve the suite", "codex", 3, 2, 60_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Plan and verify one bounded increment",
+        model: "default",
+        skills: ["product", "testing"],
+        instructions: "Use receipts as evidence and keep output bounded.",
+      },
+      task: "Engage one reviewer and wait for its completion",
+      token_budget: 20_000,
+      required_actions: ["agent.engage", "agent.await"],
+    });
+    assert.equal(managed.manager.kind, "manager");
+    assert.equal(managed.manager.depth, 0);
+    const started = store.receipt(
+      managed.team.team_id,
+      "manager.start",
+      undefined,
+      managed.manager.agent_id,
+    );
+    assert.equal(started.action, "manager.start");
+    assert.equal(store.status(managed.team.team_id).tokens.allocated, 20_000);
+    assert.throws(
+      () =>
+        store.spawn(managed.team.team_id, {
+          parent_agent_id: managed.manager.agent_id,
+          runtime: "codex",
+          role: "oversized-worker",
+          task: "Cannot consume beyond the team reservation",
+          token_budget: 50_000,
+        }),
+      /team_token_budget_exceeded/u,
+    );
+    const worker = store.spawn(managed.team.team_id, {
+      parent_agent_id: managed.manager.agent_id,
+      runtime: "codex",
+      role: "bounded-reviewer",
+      task: "Review the proposal",
+      token_budget: 20_000,
+    });
+    store.receipt(managed.team.team_id, "agent.engage", managed.manager.agent_id, worker.agent_id);
+    store.transition(managed.team.team_id, managed.manager.agent_id, "running");
+    const usage = {
+      schema: 1 as const,
+      source: "codex-json-v1" as const,
+      input_tokens: 5_000,
+      cached_input_tokens: 3_000,
+      output_tokens: 500,
+      reasoning_output_tokens: 100,
+      total_tokens: 5_500,
+      budget_outcome: "within" as const,
+    };
+    assert.throws(
+      () =>
+        store.finish(
+          managed.team.team_id,
+          managed.manager.agent_id,
+          { schema: 1, outcome: "succeeded", summary: "Plausible but unverified plan" },
+          usage,
+        ),
+      /required_action_missing/u,
+    );
+    store.receipt(managed.team.team_id, "agent.await", managed.manager.agent_id, worker.agent_id);
+    const completed = store.finish(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      { schema: 1, outcome: "succeeded", summary: "Verified manager result" },
+      usage,
+    );
+    assert.equal(completed.state, "completed");
+    assert.equal(store.status(managed.team.team_id).tokens.observed, 5_500);
+    assert.deepEqual(
+      store.missingRequiredActions(managed.team.team_id, managed.manager.agent_id),
+      [],
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("managed team rejects a manager budget above the team budget", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-root-manager-overrun-")));
+  try {
+    const store = new TeamStore(root);
+    assert.throws(
+      () =>
+        store.createManaged("Reject invalid reservation", "codex", 2, 1, 10_000, {
+          role: "delivery-manager",
+          profile: {
+            schema: 1,
+            mission: "Stay bounded",
+            model: "default",
+            skills: [],
+            instructions: "Do not exceed the team budget.",
+          },
+          task: "Plan",
+          token_budget: 11_000,
+          required_actions: [],
+        }),
+      /invalid manager definition/u,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("runtime output extracts Codex completion and refuses invented Copilot token usage", () => {
   const codex = new RuntimeOutput("codex");
   codex.line(
@@ -578,6 +689,68 @@ printf '%s\n' '{"type":"result","exitCode":0,"usage":{"premiumRequests":1,"sessi
     assert.equal(failed.completion?.outcome, "token_accounting_unavailable");
     assert.equal(failed.usage, undefined);
     assert.equal(store.status(team.team_id).tokens.unaccounted_agents, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("root manager fails closed when a required action has no receipt", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-manager-receipt-deny-")));
+  try {
+    const executable = join(root, "agent-cli");
+    const launcher = join(root, "launcher");
+    const support = join(root, "support.mjs");
+    await writeFile(
+      executable,
+      `#!/bin/sh
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"I claim the team was inspected"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20,"reasoning_output_tokens":5}}'
+`,
+      { mode: 0o700 },
+    );
+    await writeFile(
+      launcher,
+      '#!/bin/sh\ncat >/dev/null\nprintf \'{"schema":1,"status":"ok","command":"test"}\\n\'\n',
+      { mode: 0o700 },
+    );
+    await writeFile(support, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Require action evidence", "codex", 2, 1, 10_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Inspect the team through its bounded tool",
+        model: "default",
+        skills: [],
+        instructions: "Do not substitute prose for a receipt.",
+      },
+      task: "Call team.status and summarize",
+      token_budget: 5_000,
+      required_actions: ["team.status"],
+    });
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxLoader, workerMain, managed.team.team_id, managed.manager.agent_id],
+      {
+        cwd: root,
+        stdio: "ignore",
+        env: {
+          HOME: process.env.HOME ?? "",
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          YUKH_TEAM_WORKSPACE: root,
+          YUKH_COORDINATION_LAUNCHER: launcher,
+          YUKH_COORDINATION_MCP_MAIN: support,
+          YUKH_TEAM_CONTROL_MCP_MAIN: support,
+          YUKH_CODEX_EXECUTABLE: executable,
+          YUKH_COPILOT_EXECUTABLE: executable,
+        },
+      },
+    );
+    assert.equal(await new Promise<number | null>((resolve) => child.once("close", resolve)), 1);
+    const failed = store.agent(managed.team.team_id, managed.manager.agent_id);
+    assert.equal(failed.state, "failed");
+    assert.equal(failed.completion?.outcome, "required_action_missing");
+    assert.equal(failed.usage?.total_tokens, 120);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
