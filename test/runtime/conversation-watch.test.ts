@@ -96,7 +96,7 @@ test("watch explains team and worker activity in work-oriented language", () => 
     new Map(),
   );
   assert.match(changes.join("\n"), /manager=manager runtime=codex goal=Build a task board/u);
-  assert.match(changes.join("\n"), /WORKER  backend-lead  RUNNING/u);
+  assert.match(changes.join("\n"), /WORKER  backend-lead  RUNNING  runtime=codex model=default/u);
   assert.match(changes.join("\n"), /task=Define and implement the API/u);
   assert.match(changes.join("\n"), /bounds=commands:6 timeout_ms:120000 tools=default/u);
 });

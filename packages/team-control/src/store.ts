@@ -148,6 +148,8 @@ export interface TeamExecutionPlanRecord {
 export interface TeamTokenBudgetPreflightAllocation {
   readonly role: string;
   readonly kind: "existing" | "worker" | "synthesis";
+  readonly runtime: AgentRuntime;
+  readonly model: string;
   readonly token_budget: number;
 }
 
@@ -575,17 +577,23 @@ export class TeamStore {
     const existing = agents.map((agent) => ({
       role: agent.role,
       kind: "existing" as const,
+      runtime: agent.runtime,
+      model: agent.profile?.model ?? "default",
       token_budget: agent.token_budget,
     }));
     const planned = [
       ...plan.document.workers.map((worker) => ({
         role: worker.role,
         kind: "worker" as const,
+        runtime: worker.runtime,
+        model: worker.model,
         token_budget: worker.token_budget,
       })),
       {
         role: plan.document.synthesis.role,
         kind: "synthesis" as const,
+        runtime: plan.document.synthesis.runtime,
+        model: plan.document.synthesis.model,
         token_budget: plan.document.synthesis.token_budget,
       },
     ];

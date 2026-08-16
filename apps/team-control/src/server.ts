@@ -31,6 +31,12 @@ function stableFailure(error: unknown, allowed: ReadonlySet<string>, fallback: s
 export interface TeamControlOptions {
   readonly caller?: { readonly team_id: string; readonly agent_id: string };
   readonly models?: Readonly<Record<"codex" | "copilot", ReadonlySet<string>>>;
+  readonly modelCatalog?: Readonly<
+    Record<
+      "codex" | "copilot",
+      { readonly models: readonly string[]; readonly source: "env" | "sdk" | "cli" | "fallback" }
+    >
+  >;
   readonly skills?: Readonly<Record<"codex" | "copilot", ReadonlySet<string>>>;
   readonly dynamicExecution?: boolean;
 }
@@ -156,6 +162,7 @@ export function readTeamStatus(
   store: TeamStore,
   teamId: string,
   caller?: { readonly team_id: string; readonly agent_id: string },
+  modelCatalog?: TeamControlOptions["modelCatalog"],
 ):
   | ReturnType<TeamStore["status"]>
   | {
@@ -167,10 +174,13 @@ export function readTeamStatus(
           readonly max_depth: number;
           readonly token_budget: number;
         };
+        readonly model_catalog?: TeamControlOptions["modelCatalog"];
         readonly agents: readonly {
           readonly agent_id: string;
           readonly kind: "manager" | "worker";
           readonly role: string;
+          readonly runtime: "codex" | "copilot";
+          readonly model: string;
           readonly state: "defined" | "running" | "completed" | "failed" | "stopped";
           readonly token_budget: number;
           readonly max_commands: number;
@@ -195,10 +205,13 @@ export function readTeamStatus(
         max_depth: status.team.max_depth,
         token_budget: status.team.token_budget,
       },
+      ...(modelCatalog ? { model_catalog: modelCatalog } : {}),
       agents: status.agents.map((agent) => ({
         agent_id: agent.agent_id,
         kind: agent.kind,
         role: agent.role,
+        runtime: agent.runtime,
+        model: agent.profile?.model ?? "default",
         state: agent.state,
         token_budget: agent.token_budget,
         max_commands: agent.max_commands ?? 8,
@@ -478,7 +491,7 @@ export function createTeamControlServer(
     },
     ({ team_id }) => {
       authorizeTeam(team_id);
-      return result(readTeamStatus(store, team_id, options.caller));
+      return result(readTeamStatus(store, team_id, options.caller, options.modelCatalog));
     },
   );
 

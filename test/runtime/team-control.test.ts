@@ -9,9 +9,12 @@ import { TeamStore } from "../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
 import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js";
 import {
+  copilotModelCatalogFromDiscoveries,
   parseCodexModelCatalog,
   parseCopilotConfigModels,
   parseCopilotSdkModels,
+  runtimeModelCatalog,
+  runtimeModelCatalogAsync,
   runtimeModels,
   runtimeModelsAsync,
 } from "../../packages/team-control/src/model-discovery.js";
@@ -130,6 +133,10 @@ test("runtime model discovery parses CLI catalogs and keeps explicit env authori
     ["default", "approved-model"],
   );
   assert.deepEqual(
+    runtimeModelCatalog("default,approved-model", ["fallback"], () => ["ignored"]),
+    { models: ["default", "approved-model"], source: "env" },
+  );
+  assert.deepEqual(
     runtimeModels(undefined, ["fallback-model"], () => {
       throw new Error("missing cli");
     }),
@@ -173,6 +180,12 @@ test("async runtime model discovery keeps env authoritative and falls back safel
     ["default", "approved-model"],
   );
   assert.deepEqual(
+    await runtimeModelCatalogAsync("default,approved-model", ["fallback"], async () => {
+      throw new Error("must not discover");
+    }),
+    { models: ["default", "approved-model"], source: "env" },
+  );
+  assert.deepEqual(
     await runtimeModelsAsync(undefined, ["fallback-model"], async () => {
       throw new Error("sdk unavailable");
     }),
@@ -184,6 +197,60 @@ test("async runtime model discovery keeps env authoritative and falls back safel
       "bad value",
     ]),
     ["default", "claude-sonnet-5"],
+  );
+  assert.deepEqual(
+    await runtimeModelCatalogAsync(undefined, ["fallback-model"], async () => [
+      "claude-sonnet-5",
+      "bad value",
+    ]),
+    { models: ["default", "claude-sonnet-5"], source: "sdk" },
+  );
+});
+
+test("Copilot model catalog reports the actual discovery source", async () => {
+  assert.deepEqual(
+    await copilotModelCatalogFromDiscoveries(
+      "default,approved-model",
+      ["fallback-model"],
+      async () => {
+        throw new Error("must not discover sdk");
+      },
+      () => {
+        throw new Error("must not discover cli");
+      },
+    ),
+    { models: ["default", "approved-model"], source: "env" },
+  );
+  assert.deepEqual(
+    await copilotModelCatalogFromDiscoveries(
+      undefined,
+      ["fallback-model"],
+      async () => ["gpt-5.6-sol"],
+      () => ["claude-sonnet-5"],
+    ),
+    { models: ["default", "gpt-5.6-sol"], source: "sdk" },
+  );
+  assert.deepEqual(
+    await copilotModelCatalogFromDiscoveries(
+      undefined,
+      ["fallback-model"],
+      async () => {
+        throw new Error("sdk unavailable");
+      },
+      () => ["claude-sonnet-5"],
+    ),
+    { models: ["default", "claude-sonnet-5"], source: "cli" },
+  );
+  assert.deepEqual(
+    await copilotModelCatalogFromDiscoveries(
+      undefined,
+      ["fallback-model"],
+      async () => [],
+      () => {
+        throw new Error("cli unavailable");
+      },
+    ),
+    { models: ["default", "fallback-model"], source: "fallback" },
   );
 });
 
@@ -741,14 +808,28 @@ test("accounted manager receives the exact persisted team status receipt", async
     });
     const external = readTeamStatus(store, managed.team.team_id);
     assert.equal("status" in external, false);
-    const accounted = readTeamStatus(store, managed.team.team_id, {
-      team_id: managed.team.team_id,
-      agent_id: managed.manager.agent_id,
-    });
+    const accounted = readTeamStatus(
+      store,
+      managed.team.team_id,
+      {
+        team_id: managed.team.team_id,
+        agent_id: managed.manager.agent_id,
+      },
+      {
+        codex: { models: ["default", "gpt-5.6-sol"], source: "cli" },
+        copilot: { models: ["default", "claude-sonnet-5"], source: "sdk" },
+      },
+    );
     assert.equal("status" in accounted, true);
     if (!("status" in accounted)) throw new Error("missing accounted status");
     assert.equal(accounted.receipt.action, "team.status");
     assert.equal(accounted.receipt.actor_agent_id, managed.manager.agent_id);
+    assert.deepEqual(accounted.status.model_catalog?.copilot, {
+      models: ["default", "claude-sonnet-5"],
+      source: "sdk",
+    });
+    assert.equal(accounted.status.agents[0]?.runtime, "codex");
+    assert.equal(accounted.status.agents[0]?.model, "default");
     assert.equal("profile" in accounted.status.agents[0]!, false);
     assert.equal("task" in accounted.status.agents[0]!, false);
     assert.equal(

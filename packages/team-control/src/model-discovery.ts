@@ -7,6 +7,11 @@ export interface CopilotSdkModelInfo {
   readonly [key: string]: unknown;
 }
 
+export interface RuntimeModelCatalog {
+  readonly models: readonly string[];
+  readonly source: "env" | "sdk" | "cli" | "fallback";
+}
+
 interface CopilotSdkClient {
   start(): Promise<void>;
   stop(): Promise<unknown>;
@@ -63,14 +68,26 @@ export function runtimeModels(
   fallback: readonly string[],
   discover: () => readonly string[],
 ): readonly string[] {
-  if (explicit !== undefined) return unique(explicit.split(",").filter(Boolean));
+  return runtimeModelCatalog(explicit, fallback, discover).models;
+}
+
+export function runtimeModelCatalog(
+  explicit: string | undefined,
+  fallback: readonly string[],
+  discover: () => readonly string[],
+): RuntimeModelCatalog {
+  if (explicit !== undefined)
+    return { models: unique(explicit.split(",").filter(Boolean)), source: "env" };
   let discovered: readonly string[] = [];
   try {
     discovered = discover();
   } catch {
     discovered = [];
   }
-  return unique(["default", ...(discovered.length > 0 ? discovered : fallback)]);
+  return {
+    models: unique(["default", ...(discovered.length > 0 ? discovered : fallback)]),
+    source: discovered.length > 0 ? "cli" : "fallback",
+  };
 }
 
 export async function runtimeModelsAsync(
@@ -78,14 +95,45 @@ export async function runtimeModelsAsync(
   fallback: readonly string[],
   discover: () => Promise<readonly string[]>,
 ): Promise<readonly string[]> {
-  if (explicit !== undefined) return unique(explicit.split(",").filter(Boolean));
+  return (await runtimeModelCatalogAsync(explicit, fallback, discover)).models;
+}
+
+export async function runtimeModelCatalogAsync(
+  explicit: string | undefined,
+  fallback: readonly string[],
+  discover: () => Promise<readonly string[]>,
+): Promise<RuntimeModelCatalog> {
+  if (explicit !== undefined)
+    return { models: unique(explicit.split(",").filter(Boolean)), source: "env" };
   let discovered: readonly string[] = [];
   try {
     discovered = await discover();
   } catch {
     discovered = [];
   }
-  return unique(["default", ...(discovered.length > 0 ? discovered : fallback)]);
+  return {
+    models: unique(["default", ...(discovered.length > 0 ? discovered : fallback)]),
+    source: discovered.length > 0 ? "sdk" : "fallback",
+  };
+}
+
+export async function copilotModelCatalogFromDiscoveries(
+  explicit: string | undefined,
+  fallback: readonly string[],
+  discoverSdk: () => Promise<readonly string[]>,
+  discoverCli: () => readonly string[],
+): Promise<RuntimeModelCatalog> {
+  if (explicit !== undefined)
+    return { models: unique(explicit.split(",").filter(Boolean)), source: "env" };
+  try {
+    const sdk = await discoverSdk();
+    if (sdk.length > 0) return { models: unique(["default", ...sdk]), source: "sdk" };
+  } catch {}
+  try {
+    const cli = discoverCli();
+    if (cli.length > 0) return { models: unique(["default", ...cli]), source: "cli" };
+  } catch {}
+  return { models: unique(["default", ...fallback]), source: "fallback" };
 }
 
 export function discoverCodexModels(executable: string): readonly string[] {
@@ -102,6 +150,18 @@ export async function discoverCopilotModels(executable: string): Promise<readonl
   const sdk = await discoverCopilotModelsWithSdk(executable);
   if (sdk.length > 0) return sdk;
   return discoverCopilotModelsFromCliHelp(executable);
+}
+
+export async function discoverCopilotModelCatalog(
+  executable: string,
+  explicit = process.env.YUKH_COPILOT_MODELS,
+): Promise<RuntimeModelCatalog> {
+  return copilotModelCatalogFromDiscoveries(
+    explicit,
+    ["default"],
+    () => discoverCopilotModelsWithSdk(executable),
+    () => discoverCopilotModelsFromCliHelp(executable),
+  );
 }
 
 export async function discoverCopilotModelsWithSdk(
