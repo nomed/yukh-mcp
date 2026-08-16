@@ -1174,6 +1174,10 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
     assert.match(runtimeArguments, /Prefer model "default"/u);
     assert.match(runtimeArguments, /each file at most 4096 bytes/u);
     assert.match(runtimeArguments, /worker pack at most 12288 bytes/u);
+    assert.match(runtimeArguments, /Codex zero-command review\/planning workers/u);
+    assert.match(runtimeArguments, /at least 18000 total tokens/u);
+    assert.match(runtimeArguments, /tool-free synthesis currently needs at least 16000/u);
+    assert.match(runtimeArguments, /Prefer fewer planned agents over under-budgeted agents/u);
     assert.match(runtimeArguments, /completion summary below 4096 UTF-8 bytes/u);
     assert.match(runtimeArguments, /prefer 3500 bytes or less/u);
     assert.doesNotMatch(runtimeArguments, /When engaging a child/u);
