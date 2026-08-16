@@ -86,6 +86,8 @@ export async function executePlan(
   let plan = store.plan(teamId, planId);
   if (plan.digest !== digest) throw new Error("team_plan_digest_mismatch");
   if (["completed", "failed"].includes(plan.state)) return plan;
+  const preflight = store.planTokenBudgetPreflight(teamId, planId);
+  if (preflight.outcome !== "accepted") throw new Error("team_token_budget_exceeded");
   for (const profile of [...plan.document.workers, plan.document.synthesis])
     assertProfileAvailable(options, profile.runtime, profile.model, profile.skills);
   if (plan.state === "proposed") plan = store.reservePlan(teamId, planId, digest);
@@ -341,6 +343,34 @@ export function createTeamControlServer(
   );
 
   server.registerTool(
+    "plan.preflight",
+    {
+      title: "Preflight a deterministic team plan token budget",
+      description:
+        "Read the exact per-role token allocation, total, ceiling and remaining headroom before execution",
+      inputSchema: z
+        .object({
+          team_id: id,
+          plan_id: z.string().regex(/^plan-[0-9a-f-]{36}$/u),
+        })
+        .strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    ({ team_id, plan_id }) => {
+      if (options.caller) throw new Error("agent_delegation_denied");
+      try {
+        return result(store.planTokenBudgetPreflight(team_id, plan_id));
+      } catch (error) {
+        return stableFailure(
+          error,
+          new Set(["team_plan_token_budget_invalid"]),
+          "team_plan_preflight_failed",
+        );
+      }
+    },
+  );
+
+  server.registerTool(
     "plan.execute",
     {
       title: "Execute an approved deterministic team plan",
@@ -383,6 +413,7 @@ export function createTeamControlServer(
             "team_plan_manager_incomplete",
             "agent_model_unavailable",
             "agent_skill_unavailable",
+            "team_plan_token_budget_invalid",
             "team_agent_limit",
             "team_token_budget_exceeded",
             "team_plan_wait_timeout",

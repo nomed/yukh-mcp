@@ -145,6 +145,25 @@ export interface TeamExecutionPlanRecord {
   readonly failure_code?: string;
 }
 
+export interface TeamTokenBudgetPreflightAllocation {
+  readonly role: string;
+  readonly kind: "existing" | "worker" | "synthesis";
+  readonly token_budget: number;
+}
+
+export interface TeamTokenBudgetPreflight {
+  readonly schema: 1;
+  readonly team_id: string;
+  readonly plan_id: string;
+  readonly ceiling: number;
+  readonly existing_allocated: number;
+  readonly planned_allocated: number;
+  readonly total_allocated: number;
+  readonly remaining_headroom: number;
+  readonly outcome: "accepted" | "exceeded";
+  readonly allocations: readonly TeamTokenBudgetPreflightAllocation[];
+}
+
 export interface TeamActionReceipt {
   readonly schema: 1;
   readonly receipt_id: string;
@@ -500,18 +519,10 @@ export class TeamStore {
       manager.completion.plan_id !== planId
     )
       throw new Error("team_plan_manager_incomplete");
-    const status = this.status(id);
-    const allocations = [
-      ...plan.document.workers.map((worker) => worker.token_budget),
-      plan.document.synthesis.token_budget,
-    ];
-    if (status.agents.length + allocations.length > status.team.max_agents)
+    const preflight = this.planTokenBudgetPreflight(id, planId);
+    if (preflight.allocations.length > this.status(id).team.max_agents)
       throw new Error("team_agent_limit");
-    if (
-      status.tokens.allocated + allocations.reduce((total, value) => total + value, 0) >
-      status.team.token_budget
-    )
-      throw new Error("team_token_budget_exceeded");
+    if (preflight.outcome !== "accepted") throw new Error("team_token_budget_exceeded");
     const workers = plan.document.workers.map((worker) =>
       this.spawn(id, {
         parent_agent_id: plan.manager_agent_id,
@@ -555,6 +566,60 @@ export class TeamStore {
       worker_agent_ids: workers.map((worker) => worker.agent_id),
       synthesis_agent_id: synthesizer.agent_id,
     });
+  }
+
+  planTokenBudgetPreflight(id: string, planId: string): TeamTokenBudgetPreflight {
+    const team = this.#readTeam(id);
+    const agents = this.#readAgents(id);
+    const plan = this.plan(id, planId);
+    const existing = agents.map((agent) => ({
+      role: agent.role,
+      kind: "existing" as const,
+      token_budget: agent.token_budget,
+    }));
+    const planned = [
+      ...plan.document.workers.map((worker) => ({
+        role: worker.role,
+        kind: "worker" as const,
+        token_budget: worker.token_budget,
+      })),
+      {
+        role: plan.document.synthesis.role,
+        kind: "synthesis" as const,
+        token_budget: plan.document.synthesis.token_budget,
+      },
+    ];
+    const allocations = [...existing, ...planned];
+    if (
+      !Number.isSafeInteger(team.token_budget) ||
+      team.token_budget < 1_000 ||
+      allocations.some(
+        (allocation) =>
+          !Number.isSafeInteger(allocation.token_budget) || allocation.token_budget < 1_000,
+      )
+    )
+      throw new Error("team_plan_token_budget_invalid");
+    const existingAllocated = existing.reduce(
+      (total, allocation) => total + allocation.token_budget,
+      0,
+    );
+    const plannedAllocated = planned.reduce(
+      (total, allocation) => total + allocation.token_budget,
+      0,
+    );
+    const totalAllocated = existingAllocated + plannedAllocated;
+    return {
+      schema: 1,
+      team_id: id,
+      plan_id: planId,
+      ceiling: team.token_budget,
+      existing_allocated: existingAllocated,
+      planned_allocated: plannedAllocated,
+      total_allocated: totalAllocated,
+      remaining_headroom: Math.max(0, team.token_budget - totalAllocated),
+      outcome: totalAllocated <= team.token_budget ? "accepted" : "exceeded",
+      allocations,
+    };
   }
 
   updatePlan(
