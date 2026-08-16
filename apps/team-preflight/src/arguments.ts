@@ -36,7 +36,7 @@ const presets: Readonly<Record<string, PreflightPreset>> = {
     managerBudget: 180_000,
   },
   "suite-readonly-verifier": {
-    goal: "Verify the Yukh suite baseline for self-development with bounded read-only inspection only. Inspect minimal repository metadata under /home/codex/repos/nomed/yukh-workspace for nomed.github.io, yukh-mcp, yukh-projects and yukh-coordination: git status/log, README, package/go module metadata and workflow files when present. Use safe read-only commands only. Do not modify files, install dependencies, start services, run network calls or write outside runtime logs. Produce a concise baseline, concrete blockers and the first safe implementation increment.",
+    goal: "Verify the Yukh suite baseline for self-development with bounded read-only inspection only. Inspect minimal repository metadata under /home/codex/repos/nomed/yukh-workspace for nomed.github.io, yukh-mcp, yukh-projects and yukh-coordination. Use at most four safe read-only commands. Exclude node_modules, dist, build, .qualification, .worktrees and nested worktrees from every listing. Keep combined command output below 250 lines. Prefer compact commands for git status/log, root README heading, package/go module metadata and workflow command summaries. Do not modify files, install dependencies, start services, run network calls or write outside runtime logs. Produce a concise baseline, concrete blockers and the first safe implementation increment.",
     role: "suite-readonly-verifier",
     workProfile: "readonly",
     preferredRuntime: "codex",
