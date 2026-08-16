@@ -368,4 +368,13 @@ test("watch renders closed coordinator lifecycle without message content", () =>
     renderLifecycle(lifecycleRecords('{"schema":1,"event":"coordinator_recovered"}\n', 0)[0]!),
     "COORDINATOR  COORDINATION RECOVERED",
   );
+  assert.equal(
+    renderLifecycle(
+      lifecycleRecords(
+        '{"schema":1,"event":"coordinator_coordination_failed","coordination_action":"bootstrap","ykc_code":"YKC-CUSTODY-001"}\n',
+        0,
+      )[0]!,
+    ),
+    "COORDINATOR  COORDINATION BOOTSTRAP FAILED code=YKC-CUSTODY-001 — RETRYING",
+  );
 });

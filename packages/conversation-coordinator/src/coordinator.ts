@@ -22,12 +22,22 @@ export interface CoordinatorOptions {
 export interface CoordinatorEvent {
   readonly schema: 1;
   readonly event:
-    "agent_started" | "answer_verified" | "agent_completed_without_answer" | "agent_failed";
-  readonly agent: PreviewAgent;
-  readonly question_event_id: string;
-  readonly turn: number;
+    | "agent_started"
+    | "answer_verified"
+    | "agent_completed_without_answer"
+    | "agent_failed"
+    | "coordinator_coordination_failed";
+  readonly agent?: PreviewAgent;
+  readonly question_event_id?: string;
+  readonly turn?: number;
   readonly failure_code?:
-    "agent_spawn_failed" | "agent_timed_out" | "agent_exit_nonzero" | "agent_error";
+    | "agent_spawn_failed"
+    | "agent_timed_out"
+    | "agent_exit_nonzero"
+    | "agent_coordination_failed"
+    | "agent_error";
+  readonly coordination_action?: "bootstrap" | "join" | "replay";
+  readonly ykc_code?: string;
 }
 
 type RecordValue = { readonly event?: unknown };
@@ -38,7 +48,8 @@ type EventValue = {
 };
 
 function events(output: CoordinationOutput): EventValue[] {
-  if (output.status !== "ok" || !output.result || typeof output.result !== "object")
+  if (output.status === "error") throw new Error(`coordination_replay_failed:${output.code}`);
+  if (!output.result || typeof output.result !== "object")
     throw new Error("coordination_protocol_error");
   const records = (output.result as { records?: unknown }).records;
   if (!Array.isArray(records)) throw new Error("coordination_protocol_error");
@@ -107,12 +118,18 @@ export class ConversationCoordinator {
     this.#turns++;
     this.#observe("agent_started", agent, question.id);
     try {
+      await this.#prepare(agent);
       await this.#options.runner.run(
         agent,
         `Use yukh-coordination for communication. Bootstrap if required, join, replay, and find question event ${question.id}. Complete the requested work with the available local tools inside the current workspace, including files, shell, dependencies, and tests. Then answer through yukh-coordination preserving work_uri, correlation_id, and question_event_id. If another peer action is required, publish one directed follow-up question with the same work_uri.`,
       );
     } catch (error) {
-      const known = ["agent_spawn_failed", "agent_timed_out", "agent_exit_nonzero"];
+      const known = [
+        "agent_spawn_failed",
+        "agent_timed_out",
+        "agent_exit_nonzero",
+        "agent_coordination_failed",
+      ];
       const failure =
         error instanceof Error && known.includes(error.message)
           ? (error.message as CoordinatorEvent["failure_code"])
@@ -152,11 +169,51 @@ export class ConversationCoordinator {
     const launcher = this.#options.launchers[agent];
     if (!launcher) throw new Error("coordination_protocol_error");
     let output = await launcher.invoke("events replay");
-    if (output.status === "error" && output.code === "YKC-AUTH-001") {
+    if (output.status === "error" && output.code === "YKC-UNAVAILABLE-001")
+      throw new Error("coordination_unavailable");
+    if (output.status === "error") {
       const bootstrap = await launcher.invoke("session bootstrap");
-      if (bootstrap.status !== "ok") return bootstrap;
+      if (bootstrap.status !== "ok") {
+        this.#observeCoordinationFailure("bootstrap", bootstrap.code);
+        throw new Error("coordination_unavailable");
+      }
       output = await launcher.invoke("events replay");
     }
+    if (output.status === "error") {
+      this.#observeCoordinationFailure("replay", output.code);
+      throw new Error("coordination_unavailable");
+    }
     return output;
+  }
+
+  async #prepare(agent: PreviewAgent): Promise<void> {
+    const launcher = this.#options.launchers[agent];
+    if (!launcher) throw new Error("agent_coordination_failed");
+    const bootstrap = await launcher.invoke("session bootstrap");
+    if (bootstrap.status !== "ok") {
+      this.#observeCoordinationFailure("bootstrap", bootstrap.code);
+      throw new Error("agent_coordination_failed");
+    }
+    const join = await launcher.invoke("session join", {
+      capabilities: ["publish", "replay"],
+      session_label: agent,
+      status: "available",
+    });
+    if (join.status !== "ok") {
+      this.#observeCoordinationFailure("join", join.code);
+      throw new Error("agent_coordination_failed");
+    }
+  }
+
+  #observeCoordinationFailure(
+    action: NonNullable<CoordinatorEvent["coordination_action"]>,
+    code: string | undefined,
+  ) {
+    this.#options.observe?.({
+      schema: 1,
+      event: "coordinator_coordination_failed",
+      coordination_action: action,
+      ykc_code: code ?? "YKC-UNKNOWN-000",
+    });
   }
 }
