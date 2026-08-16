@@ -31,7 +31,7 @@ try {
     defaultWorkspace: workspace,
   });
   const output = runEngagePreflight(args);
-  const path = args.outputPath ?? approvalPath(workspace, output.planned_worker.role);
+  const path = args.outputPath ?? approvalPath(output.workspace, output.planned_worker.role);
   writeFileSync(path, `${JSON.stringify(output)}\n`, { mode: 0o600 });
   const rendered =
     args.format === "json"
