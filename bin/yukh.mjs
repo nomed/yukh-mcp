@@ -9,9 +9,12 @@ if (process.argv[2] === "conversation" && process.argv[3] === "watch") {
 } else if (process.argv[2] === "team" && process.argv[3] === "preflight-engage") {
   process.argv.splice(2, 2);
   await import("../dist/apps/team-preflight/src/main.js");
+} else if (process.argv[2] === "team" && process.argv[3] === "run-approved") {
+  process.argv.splice(2, 2);
+  await import("../dist/apps/team-preflight/src/run-approved-main.js");
 } else {
   process.stderr.write(
-    "usage: yukh conversation watch [--full] [--verbose]\n       yukh team serve\n       yukh team preflight-engage [--role backend-reviewer] [--work-profile implementation]\n",
+    "usage: yukh conversation watch [--full] [--verbose]\n       yukh team serve\n       yukh team preflight-engage [--role backend-reviewer] [--work-profile implementation]\n       yukh team run-approved --preflight file --approved-digest sha-256:...\n",
   );
   process.exitCode = 2;
 }

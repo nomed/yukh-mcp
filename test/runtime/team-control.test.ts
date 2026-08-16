@@ -8,6 +8,7 @@ import test from "node:test";
 import { TeamStore } from "../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
 import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js";
+import { runApprovedPreflight } from "../../apps/team-preflight/src/approved-run.js";
 import { runEngagePreflight } from "../../apps/team-preflight/src/preflight.js";
 import {
   copilotModelCatalogFromDiscoveries,
@@ -177,6 +178,67 @@ test("engage preflight composes a worker without launching a provider runtime", 
     assert.equal(output.budget.allocated, 230_000);
     assert.equal(output.budget.observed, 0);
     assert.equal(output.budget.pending_agents, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("approved preflight launches exactly the planned worker after digest approval", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-approved-run-")));
+  try {
+    const executable = join(root, "agent-cli");
+    const launcher = join(root, "launcher");
+    const support = join(root, "support.mjs");
+    const preflightPath = join(root, "preflight.json");
+    await writeFile(
+      executable,
+      `#!/bin/sh
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"approved worker ran"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20,"reasoning_output_tokens":5}}'
+`,
+      { mode: 0o700 },
+    );
+    await writeFile(
+      launcher,
+      '#!/bin/sh\ncat >/dev/null\nprintf \'{"schema":1,"status":"ok","command":"test"}\\n\'\n',
+      { mode: 0o700 },
+    );
+    await writeFile(support, "", { mode: 0o600 });
+    const preflight = runEngagePreflight({
+      workspace: root,
+      goal: "Preflight backend worker",
+      role: "backend-reviewer",
+      workProfile: "review",
+      preferredRuntime: "codex",
+      teamBudget: 220_000,
+      managerBudget: 180_000,
+      codexModels: ["default"],
+      copilotModels: ["default"],
+      codexSkills: ["api-design", "testing"],
+      copilotSkills: ["frontend"],
+    });
+    await writeFile(preflightPath, `${JSON.stringify(preflight)}\n`, { mode: 0o600 });
+    const output = await runApprovedPreflight({
+      preflightPath,
+      approvedDigest: preflight.approval_digest,
+      launcher,
+      codex: executable,
+      copilot: executable,
+      waitMs: 0,
+      codexModels: "default",
+      copilotModels: "default",
+      codexSkills: "api-design,testing",
+      copilotSkills: "frontend",
+    });
+    assert.equal(output.status, "ok");
+    assert.equal(output.provider_runtime_launched, true);
+    assert.equal(output.launched_worker, preflight.planned_worker.agent_id);
+    assert.equal(output.receipt.action, "agent.engage");
+    assert.equal(output.receipt.actor_agent_id, preflight.manager.agent_id);
+    assert.equal(output.receipt.subject_agent_id, preflight.planned_worker.agent_id);
+    assert.equal(output.terminal_agent, undefined);
+    assert.equal(output.tokens.observed, 0);
+    assert.equal(output.tokens.unaccounted_agents, 0);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

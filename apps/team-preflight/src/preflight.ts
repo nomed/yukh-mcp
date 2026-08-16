@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,11 +21,76 @@ export interface EngagePreflightArguments {
   readonly copilotSkills: readonly string[];
 }
 
+export interface EngagePreflightOutput {
+  readonly schema: 1;
+  readonly status: "ok";
+  readonly command: "team preflight-engage";
+  readonly workspace: string;
+  readonly provider_tokens_observed: 0;
+  readonly provider_runtime_launched: false;
+  readonly approval_digest: `sha-256:${string}`;
+  readonly team: ReturnType<TeamStore["createManaged"]>["team"];
+  readonly manager: ReturnType<TeamStore["createManaged"]>["manager"];
+  readonly policy: ReturnType<typeof roleProfilePolicy>;
+  readonly planned_worker: ReturnType<TeamStore["spawn"]>;
+  readonly budget: ReturnType<TeamStore["status"]>["tokens"];
+  readonly next_real_action: string;
+}
+
 function runtimeSet(values: readonly string[]): ReadonlySet<string> {
   return new Set(values);
 }
 
-export function runEngagePreflight(args: EngagePreflightArguments) {
+export function approvalDigest(input: {
+  readonly team_id: string;
+  readonly manager_agent_id: string;
+  readonly worker_agent_id: string;
+  readonly runtime: string;
+  readonly role: string;
+  readonly model: string;
+  readonly skills: readonly string[];
+  readonly token_budget: number;
+  readonly tool_mode?: string;
+  readonly max_commands?: number;
+  readonly timeout_ms?: number;
+}): `sha-256:${string}` {
+  const stable = {
+    schema: 1,
+    team_id: input.team_id,
+    manager_agent_id: input.manager_agent_id,
+    worker_agent_id: input.worker_agent_id,
+    runtime: input.runtime,
+    role: input.role,
+    model: input.model,
+    skills: [...input.skills].sort(),
+    token_budget: input.token_budget,
+    tool_mode: input.tool_mode ?? "default",
+    max_commands: input.max_commands ?? 8,
+    timeout_ms: input.timeout_ms ?? 300_000,
+  };
+  return `sha-256:${createHash("sha256").update(JSON.stringify(stable)).digest("hex")}`;
+}
+
+export function preflightApprovalDigest(
+  output: Pick<EngagePreflightOutput, "team" | "manager" | "planned_worker">,
+): `sha-256:${string}` {
+  const worker = output.planned_worker;
+  return approvalDigest({
+    team_id: output.team.team_id,
+    manager_agent_id: output.manager.agent_id,
+    worker_agent_id: worker.agent_id,
+    runtime: worker.runtime,
+    role: worker.role,
+    model: worker.profile?.model ?? "default",
+    skills: worker.profile?.skills ?? [],
+    token_budget: worker.token_budget,
+    ...(worker.model_tool_mode ? { tool_mode: worker.model_tool_mode } : {}),
+    ...(worker.max_commands !== undefined ? { max_commands: worker.max_commands } : {}),
+    ...(worker.timeout_ms !== undefined ? { timeout_ms: worker.timeout_ms } : {}),
+  });
+}
+
+export function runEngagePreflight(args: EngagePreflightArguments): EngagePreflightOutput {
   const workspace = realpathSync(args.workspace ?? mkdtempSync(join(tmpdir(), "yukh-preflight-")));
   const store = new TeamStore(workspace);
   const managed = store.createManaged(args.goal, "codex", 3, 2, args.teamBudget, {
@@ -79,13 +145,14 @@ export function runEngagePreflight(args: EngagePreflightArguments) {
     timeout_ms: policy.recommendation.runtime_timeout_ms,
   });
   const budget = store.status(managed.team.team_id).tokens;
-  return {
+  const output = {
     schema: 1 as const,
     status: "ok" as const,
     command: "team preflight-engage" as const,
     workspace,
-    provider_tokens_observed: 0,
-    provider_runtime_launched: false,
+    provider_tokens_observed: 0 as const,
+    provider_runtime_launched: false as const,
+    approval_digest: "sha-256:" as `sha-256:${string}`,
     team: managed.team,
     manager: managed.manager,
     policy,
@@ -94,4 +161,5 @@ export function runEngagePreflight(args: EngagePreflightArguments) {
     next_real_action:
       "Run a managed manager or agent.engage from Team Control only after approving this policy and budget.",
   };
+  return { ...output, approval_digest: preflightApprovalDigest(output) };
 }
