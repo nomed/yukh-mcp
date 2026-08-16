@@ -10,6 +10,7 @@ import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
 import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js";
 import { teamRuntimeEntrypoints } from "../../packages/team-control/src/entrypoints.js";
 import { runApprovedPreflight } from "../../apps/team-preflight/src/approved-run.js";
+import { formatApprovedRun, formatEngagePreflight } from "../../apps/team-preflight/src/format.js";
 import { runEngagePreflight } from "../../apps/team-preflight/src/preflight.js";
 import {
   copilotModelCatalogFromDiscoveries,
@@ -194,6 +195,33 @@ test("engage preflight composes a worker without launching a provider runtime", 
   }
 });
 
+test("engage preflight text output shows approval and budget without raw JSON noise", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-engage-preflight-text-")));
+  try {
+    const output = runEngagePreflight({
+      workspace: root,
+      goal: "Preflight backend worker",
+      role: "backend-reviewer",
+      workProfile: "review",
+      preferredRuntime: "codex",
+      teamBudget: 220_000,
+      managerBudget: 180_000,
+      codexModels: ["default"],
+      copilotModels: ["default"],
+      codexSkills: ["api-design", "testing"],
+      copilotSkills: ["frontend"],
+    });
+    const text = formatEngagePreflight(output);
+    assert.match(text, /Yukh team preflight/u);
+    assert.match(text, new RegExp(output.approval_digest, "u"));
+    assert.match(text, /runtime: codex/u);
+    assert.match(text, /observed provider tokens: 0/u);
+    assert.doesNotMatch(text, /"planned_worker"/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("approved preflight launches exactly the planned worker after digest approval", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-approved-run-")));
   try {
@@ -250,6 +278,10 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
     assert.equal(output.terminal_agent, undefined);
     assert.equal(output.tokens.observed, 0);
     assert.equal(output.tokens.unaccounted_agents, 0);
+    const text = formatApprovedRun(output);
+    assert.match(text, /Yukh approved run/u);
+    assert.match(text, /Provider launched: yes/u);
+    assert.match(text, /Terminal worker state: not waited/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
