@@ -2,9 +2,8 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { fileURLToPath } from "node:url";
 import {
   discoverCodexModels,
-  discoverCopilotModels,
-  runtimeModels,
-  runtimeModelsAsync,
+  discoverCopilotModelCatalog,
+  runtimeModelCatalog,
 } from "../../../packages/team-control/src/model-discovery.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
@@ -21,15 +20,17 @@ const callerTeamId = process.env.YUKH_CALLER_TEAM_ID;
 const callerAgentId = process.env.YUKH_CALLER_AGENT_ID;
 if ((callerTeamId && !callerAgentId) || (!callerTeamId && callerAgentId))
   throw new TypeError("invalid team control caller");
-const codexModels = runtimeModels(process.env.YUKH_CODEX_MODELS, ["default"], () =>
+const codexCatalog = runtimeModelCatalog(process.env.YUKH_CODEX_MODELS, ["default"], () =>
   discoverCodexModels(codex),
 );
-const copilotModels = await runtimeModelsAsync(process.env.YUKH_COPILOT_MODELS, ["default"], () =>
-  discoverCopilotModels(copilot),
-);
+const copilotCatalog = await discoverCopilotModelCatalog(copilot);
+const codexModels = codexCatalog.models;
+const copilotModels = copilotCatalog.models;
 const profileEnvironment = {
   YUKH_CODEX_MODELS: codexModels.join(","),
   YUKH_COPILOT_MODELS: copilotModels.join(","),
+  YUKH_CODEX_MODEL_SOURCE: codexCatalog.source,
+  YUKH_COPILOT_MODEL_SOURCE: copilotCatalog.source,
   ...Object.fromEntries(
     ["YUKH_CODEX_SKILLS", "YUKH_COPILOT_SKILLS"]
       .filter((name) => process.env[name] !== undefined)
@@ -65,6 +66,10 @@ serveStdio(
       skills: {
         codex: allowlist("YUKH_CODEX_SKILLS"),
         copilot: allowlist("YUKH_COPILOT_SKILLS"),
+      },
+      modelCatalog: {
+        codex: { models: codexModels, source: codexCatalog.source },
+        copilot: { models: copilotModels, source: copilotCatalog.source },
       },
       ...(callerTeamId && callerAgentId
         ? { caller: { team_id: callerTeamId, agent_id: callerAgentId } }
