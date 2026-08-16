@@ -4,6 +4,7 @@ import {
   discoverCodexModels,
   discoverCopilotModels,
   runtimeModels,
+  runtimeModelsAsync,
 } from "../../../packages/team-control/src/model-discovery.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
@@ -23,7 +24,7 @@ if ((callerTeamId && !callerAgentId) || (!callerTeamId && callerAgentId))
 const codexModels = runtimeModels(process.env.YUKH_CODEX_MODELS, ["default"], () =>
   discoverCodexModels(codex),
 );
-const copilotModels = runtimeModels(process.env.YUKH_COPILOT_MODELS, ["default"], () =>
+const copilotModels = await runtimeModelsAsync(process.env.YUKH_COPILOT_MODELS, ["default"], () =>
   discoverCopilotModels(copilot),
 );
 const profileEnvironment = {
