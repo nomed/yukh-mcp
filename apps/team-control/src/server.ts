@@ -60,6 +60,22 @@ export async function awaitAgent(
   }
 }
 
+export function readTeamStatus(
+  store: TeamStore,
+  teamId: string,
+  caller?: { readonly team_id: string; readonly agent_id: string },
+):
+  | ReturnType<TeamStore["status"]>
+  | {
+      readonly status: ReturnType<TeamStore["status"]>;
+      readonly receipt: ReturnType<TeamStore["receipt"]>;
+    } {
+  const status = store.status(teamId);
+  if (!caller) return status;
+  const receipt = store.receipt(teamId, "team.status", caller.agent_id, caller.agent_id);
+  return { status, receipt };
+}
+
 export function createTeamControlServer(
   store: TeamStore,
   supervisor: TeamSupervisor,
@@ -207,10 +223,7 @@ export function createTeamControlServer(
     },
     ({ team_id }) => {
       authorizeTeam(team_id);
-      const status = store.status(team_id);
-      if (options.caller)
-        store.receipt(team_id, "team.status", options.caller.agent_id, options.caller.agent_id);
-      return result(status);
+      return result(readTeamStatus(store, team_id, options.caller));
     },
   );
 
