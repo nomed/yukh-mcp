@@ -11,6 +11,7 @@ import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js
 import {
   assertProfileAvailable,
   awaitAgent,
+  costSafeDeterministicPlan,
   dynamicExecutionEnabled,
   executePlan,
   readTeamStatus,
@@ -20,6 +21,18 @@ test("real dynamic execution can fail closed without changing deterministic help
   assert.equal(dynamicExecutionEnabled({ dynamicExecution: false }), false);
   assert.equal(dynamicExecutionEnabled({ dynamicExecution: true }), true);
   assert.equal(dynamicExecutionEnabled({}), true);
+});
+
+test("only zero-command tool-free deterministic plans satisfy the default cost profile", () => {
+  const safe = structuredClone(planDocument());
+  const record = { document: safe } as unknown as Parameters<typeof costSafeDeterministicPlan>[0];
+  safe.workers[0]!.max_commands = 0;
+  assert.equal(costSafeDeterministicPlan(record), true);
+  safe.workers[0]!.max_commands = 1;
+  assert.equal(costSafeDeterministicPlan(record), false);
+  safe.workers[0]!.max_commands = 0;
+  (safe.workers[0] as { tool_mode: string }).tool_mode = "coordination";
+  assert.equal(costSafeDeterministicPlan(record), false);
 });
 
 const usage = {
@@ -1024,6 +1037,8 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
     assert.match(runtimeArguments, /--output-schema/u);
     assert.match(runtimeArguments, /Every role must be a lowercase slug/u);
     assert.match(runtimeArguments, /token-efficiency-auditor/u);
+    assert.doesNotMatch(runtimeArguments, /When engaging a child/u);
+    assert.doesNotMatch(runtimeArguments, /Coordination model tools are omitted/u);
     assert.doesNotMatch(runtimeArguments, /mcp_servers\.yukh-team-control/u);
   } finally {
     await rm(root, { recursive: true, force: true });

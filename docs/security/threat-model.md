@@ -884,6 +884,8 @@ two observable command boundaries or before the deadline fires.
 
 The real qualification for issue #155 confirmed this residual risk: one worker
 reported 61,740 tokens against a 12,000 allocation after one bounded read-only
-command. Dynamic worker execution is therefore disabled by default. An explicit
-unsafe qualification flag may enable it only in an isolated runtime; it is not a
-token-budget enforcement mechanism.
+command. Default deterministic execution therefore admits only agents with no
+model-facing MCP and a zero-command limit. Their server-built prompt is the only
+task context, so shell output cannot trigger another inference. Other dynamic
+execution remains disabled. An explicit unsafe qualification flag may enable it
+only in an isolated runtime; it is not a token-budget enforcement mechanism.

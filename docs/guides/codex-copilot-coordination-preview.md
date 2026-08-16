@@ -94,11 +94,13 @@ trustworthy token counts. Copilot exposes credits and duration but not tokens, s
 token-strict Copilot worker terminates with `token_accounting_unavailable`
 rather than inventing a conversion.
 
-Real dynamic execution is temporarily fail-closed after issue #155 proved that a
-single provider turn can exceed its allocation before usage is reported. The
-server returns `dynamic_worker_cost_boundary_unavailable`. The escape hatch
-`YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS=1` is for isolated qualification only; it is
-not a cost-safe production profile.
+Issue #155 proved that a single provider turn can exceed its allocation before
+usage is reported. Deterministic plans therefore run by default only when every
+worker and the synthesizer use `tool_mode: none` and `max_commands: 0`; they
+receive only the closed server-built prompt and cannot feed shell output into a
+follow-up inference. Other dynamic execution returns
+`dynamic_worker_cost_boundary_unavailable`. The escape hatch
+`YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS=1` is for isolated qualification only.
 
 For Copilot, use the equivalent MCP server values in `copilot mcp add`. Then ask
 the manager:
@@ -108,9 +110,9 @@ Use yukh-team-control. Call manager.start with a 120000-token team budget and a
 20000-token Codex planning-manager budget, max_commands 2, runtime_timeout_ms
 120000, no required actions and
 output_contract team-plan-v1. Ask for the minimum specialists needed, explicit
-token, command, timeout and tool-mode bounds, plus one small tool-free synthesis
-budget. Show me the proposed plan and digest. After I approve that exact digest,
-call plan.execute once and report terminal state and exact usage.
+token and timeout bounds, `tool_mode: none` and `max_commands: 0` for every
+worker and synthesis. Show me the proposed plan and digest. After I approve that
+exact digest, call plan.execute once and report terminal state and exact usage.
 Do not use team.create and do not engage a runtime that cannot provide token
 accounting.
 ```
