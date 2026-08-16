@@ -94,6 +94,12 @@ trustworthy token counts. Copilot exposes credits and duration but not tokens, s
 token-strict Copilot worker terminates with `token_accounting_unavailable`
 rather than inventing a conversion.
 
+Real dynamic execution is temporarily fail-closed after issue #155 proved that a
+single provider turn can exceed its allocation before usage is reported. The
+server returns `dynamic_worker_cost_boundary_unavailable`. The escape hatch
+`YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS=1` is for isolated qualification only; it is
+not a cost-safe production profile.
+
 For Copilot, use the equivalent MCP server values in `copilot mcp add`. Then ask
 the manager:
 

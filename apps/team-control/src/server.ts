@@ -31,6 +31,11 @@ export interface TeamControlOptions {
   readonly caller?: { readonly team_id: string; readonly agent_id: string };
   readonly models?: Readonly<Record<"codex" | "copilot", ReadonlySet<string>>>;
   readonly skills?: Readonly<Record<"codex" | "copilot", ReadonlySet<string>>>;
+  readonly dynamicExecution?: boolean;
+}
+
+export function dynamicExecutionEnabled(options: TeamControlOptions): boolean {
+  return options.dynamicExecution !== false;
 }
 
 export function assertProfileAvailable(
@@ -335,6 +340,8 @@ export function createTeamControlServer(
     },
     async ({ team_id, plan_id, approved_digest, timeout_ms }) => {
       if (options.caller) throw new Error("agent_delegation_denied");
+      if (!dynamicExecutionEnabled(options))
+        return failure("dynamic_worker_cost_boundary_unavailable");
       try {
         return result(
           await executePlan(
@@ -454,6 +461,8 @@ export function createTeamControlServer(
     },
     (input) => {
       if (!options.caller) return failure("manager_runtime_required");
+      if (!dynamicExecutionEnabled(options))
+        return failure("dynamic_worker_cost_boundary_unavailable");
       try {
         assertProfileAvailable(options, input.runtime, input.model, input.skills);
       } catch (error) {
@@ -545,6 +554,8 @@ export function createTeamControlServer(
     },
     (input) => {
       if (!options.caller) return failure("manager_runtime_required");
+      if (!dynamicExecutionEnabled(options))
+        return failure("dynamic_worker_cost_boundary_unavailable");
       if (
         options.caller &&
         (input.team_id !== options.caller.team_id ||
