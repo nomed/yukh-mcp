@@ -1,7 +1,9 @@
 import type { runApprovedPreflight } from "./approved-run.js";
 import type { EngagePreflightOutput } from "./preflight.js";
+import type { TeamStore } from "../../../packages/team-control/src/store.js";
 
 type ApprovedRunOutput = Awaited<ReturnType<typeof runApprovedPreflight>>;
+type TeamStatus = ReturnType<TeamStore["status"]>;
 
 function list(values: readonly string[]): string {
   return values.length > 0 ? values.join(", ") : "none";
@@ -70,4 +72,29 @@ export function formatApprovedRun(output: ApprovedRunOutput): string {
     "",
     `Terminal worker state: ${output.terminal_agent?.state ?? "not waited"}`,
   ].join("\n");
+}
+
+export function formatTeamStatus(output: TeamStatus): string {
+  const lines = [
+    "Yukh team status",
+    `Team: ${output.team.team_id}`,
+    `State: ${output.team.state}`,
+    `Workspace: ${output.team.workspace}`,
+    "",
+    "Tokens",
+    `- budget: ${output.tokens.budget}`,
+    `- allocated: ${output.tokens.allocated}`,
+    `- observed: ${output.tokens.observed}`,
+    `- remaining: ${output.tokens.remaining}`,
+    `- pending agents: ${output.tokens.pending_agents}`,
+    `- unaccounted agents: ${output.tokens.unaccounted_agents}`,
+    `- exceeded agents: ${output.tokens.exceeded_agents}`,
+    "",
+    "Agents",
+  ];
+  for (const agent of output.agents)
+    lines.push(
+      `- ${agent.agent_id} ${agent.kind}/${agent.role} state=${agent.state} budget=${agent.token_budget} observed=${agent.usage?.total_tokens ?? 0} outcome=${agent.completion?.outcome ?? "none"}`,
+    );
+  return lines.join("\n");
 }
