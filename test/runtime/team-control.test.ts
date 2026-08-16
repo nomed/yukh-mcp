@@ -445,6 +445,231 @@ test("structured planning contract rejects model-facing manager actions", async 
   }
 });
 
+test("plan token preflight reports deterministic boundaries before worker creation", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-token-preflight-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Preflight exact budget", "codex", 3, 1, 90_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Return one structured plan",
+        model: "default",
+        skills: [],
+        instructions: "Declare exact token allocations.",
+      },
+      task: "Plan",
+      token_budget: 1_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    const accepted = store.proposePlan(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      JSON.stringify(planDocument(86_999, 2_000)),
+    );
+    const acceptedPreflight = store.planTokenBudgetPreflight(
+      managed.team.team_id,
+      accepted.plan_id,
+    );
+    assert.deepEqual(
+      acceptedPreflight.allocations.map((allocation) => [
+        allocation.kind,
+        allocation.role,
+        allocation.token_budget,
+      ]),
+      [
+        ["existing", "delivery-manager", 1_000],
+        ["worker", "backend-developer", 86_999],
+        ["synthesis", "delivery-synthesizer", 2_000],
+      ],
+    );
+    assert.equal(acceptedPreflight.total_allocated, 89_999);
+    assert.equal(acceptedPreflight.remaining_headroom, 1);
+    assert.equal(acceptedPreflight.outcome, "accepted");
+
+    const exact = store.createManaged("Preflight exact ceiling", "codex", 3, 1, 90_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Return one structured plan",
+        model: "default",
+        skills: [],
+        instructions: "Declare exact token allocations.",
+      },
+      task: "Plan",
+      token_budget: 1_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    const exactPlan = store.proposePlan(
+      exact.team.team_id,
+      exact.manager.agent_id,
+      JSON.stringify(planDocument(87_000, 2_000)),
+    );
+    assert.equal(
+      store.planTokenBudgetPreflight(exact.team.team_id, exactPlan.plan_id).outcome,
+      "accepted",
+    );
+    assert.equal(
+      store.planTokenBudgetPreflight(exact.team.team_id, exactPlan.plan_id).remaining_headroom,
+      0,
+    );
+
+    const exceeded = store.createManaged("Preflight over ceiling", "codex", 3, 1, 90_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Return one structured plan",
+        model: "default",
+        skills: [],
+        instructions: "Declare exact token allocations.",
+      },
+      task: "Plan",
+      token_budget: 1_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    const exceededPlan = store.proposePlan(
+      exceeded.team.team_id,
+      exceeded.manager.agent_id,
+      JSON.stringify(planDocument(87_001, 2_000)),
+    );
+    const exceededPreflight = store.planTokenBudgetPreflight(
+      exceeded.team.team_id,
+      exceededPlan.plan_id,
+    );
+    assert.equal(exceededPreflight.total_allocated, 90_001);
+    assert.equal(exceededPreflight.remaining_headroom, 0);
+    assert.equal(exceededPreflight.outcome, "exceeded");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("plan execution blocks over-budget proposals before creating workers", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-token-block-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Block expensive plan", "codex", 3, 1, 90_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Return one structured plan",
+        model: "default",
+        skills: [],
+        instructions: "Declare exact token allocations.",
+      },
+      task: "Plan",
+      token_budget: 1_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    const plan = store.proposePlan(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      JSON.stringify(planDocument(87_001, 2_000)),
+    );
+    store.transition(managed.team.team_id, managed.manager.agent_id, "running");
+    store.finish(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      { schema: 1, outcome: "succeeded", summary: "Approved plan", plan_id: plan.plan_id },
+      usage,
+    );
+    let launches = 0;
+    await assert.rejects(
+      () =>
+        executePlan(
+          store,
+          {
+            launch: () => {
+              launches += 1;
+              return { pid: 1, log: "unused" };
+            },
+          },
+          { models: { codex: new Set(["default"]), copilot: new Set(["default"]) } },
+          managed.team.team_id,
+          plan.plan_id,
+          plan.digest,
+          1_000,
+        ),
+      /team_token_budget_exceeded/u,
+    );
+    assert.equal(launches, 0);
+    assert.equal(store.status(managed.team.team_id).agents.length, 1);
+    assert.equal(store.plan(managed.team.team_id, plan.plan_id).state, "proposed");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("plan token preflight rejects malformed persisted allocations fail closed", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-token-invalid-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Reject malformed budget", "codex", 3, 1, 90_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Return one structured plan",
+        model: "default",
+        skills: [],
+        instructions: "Declare exact token allocations.",
+      },
+      task: "Plan",
+      token_budget: 1_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    const plan = store.proposePlan(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      JSON.stringify(planDocument(10_000, 2_000)),
+    );
+    const planPath = join(
+      root,
+      ".yukh",
+      "teams",
+      managed.team.team_id,
+      "plans",
+      `${plan.plan_id}.json`,
+    );
+    const raw = JSON.parse(await readFile(planPath, "utf8")) as {
+      document: { workers: { token_budget?: unknown }[] };
+    };
+    raw.document.workers[0]!.token_budget = "10000";
+    await writeFile(planPath, `${JSON.stringify(raw)}\n`);
+    assert.throws(
+      () => store.planTokenBudgetPreflight(managed.team.team_id, plan.plan_id),
+      /team_plan_token_budget_invalid/u,
+    );
+    store.transition(managed.team.team_id, managed.manager.agent_id, "running");
+    store.finish(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      { schema: 1, outcome: "succeeded", summary: "Malformed plan", plan_id: plan.plan_id },
+      usage,
+    );
+    await assert.rejects(
+      () =>
+        executePlan(
+          store,
+          { launch: () => ({ pid: 1, log: "unused" }) },
+          { models: { codex: new Set(["default"]), copilot: new Set(["default"]) } },
+          managed.team.team_id,
+          plan.plan_id,
+          plan.digest,
+          1_000,
+        ),
+      /team_plan_token_budget_invalid/u,
+    );
+    assert.equal(store.status(managed.team.team_id).agents.length, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("accounted manager receives the exact persisted team status receipt", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-manager-status-receipt-")));
   try {
