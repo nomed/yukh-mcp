@@ -13,6 +13,7 @@ import { isAbsolute, join } from "node:path";
 export type AgentRuntime = "codex" | "copilot";
 export type AgentKind = "manager" | "worker";
 export type ManagerOutputContract = "summary" | "team-plan-v1";
+export type ModelToolMode = "none" | "coordination" | "team";
 export type TeamState = "active" | "stopped";
 export type AgentState = "defined" | "running" | "completed" | "failed" | "stopped";
 
@@ -34,6 +35,8 @@ export interface AgentCompletion {
     | "agent_exit_nonzero"
     | "completion_missing"
     | "team_plan_invalid"
+    | "command_budget_exceeded"
+    | "runtime_deadline_exceeded"
     | "required_action_missing"
     | "token_accounting_unavailable"
     | "token_budget_exceeded";
@@ -80,7 +83,9 @@ export interface AgentRecord {
   readonly token_budget: number;
   readonly required_actions: readonly TeamAction[];
   readonly output_contract?: ManagerOutputContract;
-  readonly model_tool_mode?: "default" | "none";
+  readonly model_tool_mode?: "default" | ModelToolMode;
+  readonly max_commands?: number;
+  readonly timeout_ms?: number;
   readonly usage?: AgentUsage;
   readonly completion?: AgentCompletion;
   readonly state: AgentState;
@@ -102,6 +107,9 @@ export interface PlannedAgent {
   readonly skills: readonly string[];
   readonly instructions: string;
   readonly task: string;
+  readonly tool_mode: ModelToolMode;
+  readonly max_commands: number;
+  readonly timeout_ms: number;
   readonly token_budget: number;
 }
 
@@ -219,6 +227,8 @@ export class TeamStore {
       readonly token_budget: number;
       readonly required_actions: readonly TeamAction[];
       readonly output_contract?: ManagerOutputContract;
+      readonly max_commands?: number;
+      readonly timeout_ms?: number;
     },
   ): {
     readonly team: TeamRecord;
@@ -232,6 +242,7 @@ export class TeamStore {
       manager.required_actions.length > 3 ||
       new Set(manager.required_actions).size !== manager.required_actions.length ||
       (manager.output_contract === "team-plan-v1" && manager.required_actions.length > 0) ||
+      !this.#validRuntimeBounds(manager.max_commands ?? 8, manager.timeout_ms ?? 300_000) ||
       manager.required_actions.some(
         (action) => !["team.status", "agent.engage", "agent.await"].includes(action),
       )
@@ -260,6 +271,8 @@ export class TeamStore {
       token_budget: manager.token_budget,
       required_actions: manager.required_actions,
       output_contract: manager.output_contract ?? "summary",
+      max_commands: manager.max_commands ?? 8,
+      timeout_ms: manager.timeout_ms ?? 300_000,
       state: "defined",
     };
     this.#write(
@@ -280,7 +293,9 @@ export class TeamStore {
       readonly task: string;
       readonly can_spawn?: boolean;
       readonly token_budget: number;
-      readonly model_tool_mode?: "default" | "none";
+      readonly model_tool_mode?: "default" | ModelToolMode;
+      readonly max_commands?: number;
+      readonly timeout_ms?: number;
     },
   ): AgentRecord {
     const team = this.#readTeam(id);
@@ -294,7 +309,8 @@ export class TeamStore {
       input.task.length > 4_096 ||
       !Number.isSafeInteger(input.token_budget) ||
       input.token_budget < 1_000 ||
-      input.token_budget > 2_000_000
+      input.token_budget > 2_000_000 ||
+      !this.#validRuntimeBounds(input.max_commands ?? 8, input.timeout_ms ?? 300_000)
     )
       throw new TypeError("invalid agent definition");
     if (input.profile) this.#validateProfile(input.profile);
@@ -333,6 +349,8 @@ export class TeamStore {
       token_budget: input.token_budget,
       required_actions: [],
       model_tool_mode: input.model_tool_mode ?? "default",
+      max_commands: input.max_commands ?? 8,
+      timeout_ms: input.timeout_ms ?? 300_000,
       state: "defined",
     };
     this.#write(join(this.#teamDirectory(id), "agents", `${record.agent_id}.json`), record, true);
@@ -468,6 +486,9 @@ export class TeamStore {
         },
         task: worker.task,
         token_budget: worker.token_budget,
+        model_tool_mode: worker.tool_mode,
+        max_commands: worker.max_commands,
+        timeout_ms: worker.timeout_ms,
       }),
     );
     const synthesis = plan.document.synthesis;
@@ -485,6 +506,8 @@ export class TeamStore {
       task: "Awaiting deterministic worker completion artifacts.",
       token_budget: synthesis.token_budget,
       model_tool_mode: "none",
+      max_commands: synthesis.max_commands,
+      timeout_ms: synthesis.timeout_ms,
     });
     return this.updatePlan(id, planId, {
       state: "reserved",
@@ -629,6 +652,8 @@ export class TeamStore {
         "agent_exit_nonzero",
         "completion_missing",
         "team_plan_invalid",
+        "command_budget_exceeded",
+        "runtime_deadline_exceeded",
         "required_action_missing",
         "token_accounting_unavailable",
         "token_budget_exceeded",
@@ -662,6 +687,9 @@ export class TeamStore {
         "skills",
         "instructions",
         "task",
+        "tool_mode",
+        "max_commands",
+        "timeout_ms",
         "token_budget",
       ];
       if (!exact(candidate, keys)) throw new TypeError("invalid team plan");
@@ -680,6 +708,8 @@ export class TeamStore {
         candidate.task.trim() !== candidate.task ||
         candidate.task.length < 1 ||
         candidate.task.length > 4_096 ||
+        !["none", "coordination", "team"].includes(String(candidate.tool_mode)) ||
+        !this.#validRuntimeBounds(Number(candidate.max_commands), Number(candidate.timeout_ms)) ||
         !Number.isSafeInteger(candidate.token_budget) ||
         Number(candidate.token_budget) < 1_000 ||
         Number(candidate.token_budget) > 2_000_000
@@ -698,13 +728,29 @@ export class TeamStore {
         skills: candidate.skills as readonly string[],
         instructions: candidate.instructions as string,
         task: candidate.task,
+        tool_mode: candidate.tool_mode as ModelToolMode,
+        max_commands: candidate.max_commands as number,
+        timeout_ms: candidate.timeout_ms as number,
         token_budget: candidate.token_budget as number,
       };
     };
     const workers = value.workers.map(normalize);
     if (new Set(workers.map((worker) => worker.role)).size !== workers.length)
       throw new TypeError("invalid team plan");
-    return { schema: 1, workers, synthesis: normalize(value.synthesis) };
+    const synthesis = normalize(value.synthesis);
+    if (synthesis.tool_mode !== "none") throw new TypeError("invalid team plan");
+    return { schema: 1, workers, synthesis };
+  }
+
+  #validRuntimeBounds(maxCommands: number, timeoutMs: number): boolean {
+    return (
+      Number.isSafeInteger(maxCommands) &&
+      maxCommands >= 0 &&
+      maxCommands <= 32 &&
+      Number.isSafeInteger(timeoutMs) &&
+      timeoutMs >= 5_000 &&
+      timeoutMs <= 900_000
+    );
   }
 
   #validateUsage(agent: AgentRecord, usage: AgentUsage): void {
@@ -743,6 +789,14 @@ export class TeamStore {
       ...value,
       kind: value.kind ?? "worker",
       required_actions: Array.isArray(value.required_actions) ? value.required_actions : [],
+      max_commands:
+        typeof value.max_commands === "number" && Number.isSafeInteger(value.max_commands)
+          ? value.max_commands
+          : 8,
+      timeout_ms:
+        typeof value.timeout_ms === "number" && Number.isSafeInteger(value.timeout_ms)
+          ? value.timeout_ms
+          : 300_000,
       ...(Number.isSafeInteger(value.token_budget) ? {} : { token_budget: 0 }),
       ...(value.coordination_participant
         ? {}

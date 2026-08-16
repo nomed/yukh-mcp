@@ -173,11 +173,11 @@ export function renderTeamChanges(
     }
     for (const agent of snapshot.agents) {
       const key = `agent:${agent.agent_id}`;
-      const value = `${agent.state}:${agent.task}:${agent.usage?.total_tokens ?? "pending"}:${agent.completion?.outcome ?? "pending"}`;
+      const value = `${agent.state}:${agent.task}:${agent.max_commands ?? 8}:${agent.timeout_ms ?? 300_000}:${agent.usage?.total_tokens ?? "pending"}:${agent.completion?.outcome ?? "pending"}`;
       if (previous.get(key) === value) continue;
       previous.set(key, value);
       lines.push(
-        `${agent.kind === "manager" ? "MANAGER" : "WORKER"}  ${agent.role}  ${agent.state.toUpperCase()}  runtime=${agent.runtime}${agent.profile ? ` model=${agent.profile.model}` : ""}\n        task=${compact(agent.task, 180)}${agent.profile ? `\n        mission=${compact(agent.profile.mission, 160)} skills=${agent.profile.skills.join(",") || "none"}` : ""}\n        tokens=${agent.usage?.total_tokens ?? "pending"}/${agent.token_budget} input=${agent.usage?.input_tokens ?? "pending"} cached=${agent.usage?.cached_input_tokens ?? "pending"} output=${agent.usage?.output_tokens ?? "pending"} reasoning=${agent.usage?.reasoning_output_tokens ?? "pending"} accounting=${agent.usage?.source ?? "pending"} completion=${agent.completion?.outcome ?? "pending"}\n        required=${agent.required_actions.join(",") || "none"} receipts=${
+        `${agent.kind === "manager" ? "MANAGER" : "WORKER"}  ${agent.role}  ${agent.state.toUpperCase()}  runtime=${agent.runtime}${agent.profile ? ` model=${agent.profile.model}` : ""}\n        task=${compact(agent.task, 180)}${agent.profile ? `\n        mission=${compact(agent.profile.mission, 160)} skills=${agent.profile.skills.join(",") || "none"}` : ""}\n        bounds=commands:${agent.max_commands ?? 8} timeout_ms:${agent.timeout_ms ?? 300_000} tools=${agent.model_tool_mode ?? "default"}\n        tokens=${agent.usage?.total_tokens ?? "pending"}/${agent.token_budget} input=${agent.usage?.input_tokens ?? "pending"} cached=${agent.usage?.cached_input_tokens ?? "pending"} output=${agent.usage?.output_tokens ?? "pending"} reasoning=${agent.usage?.reasoning_output_tokens ?? "pending"} accounting=${agent.usage?.source ?? "pending"} completion=${agent.completion?.outcome ?? "pending"}\n        required=${agent.required_actions.join(",") || "none"} receipts=${
           snapshot.receipts
             .filter((receipt) => receipt.actor_agent_id === agent.agent_id)
             .map((receipt) => receipt.action)

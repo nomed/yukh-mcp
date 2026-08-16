@@ -17,6 +17,7 @@ export class RuntimeOutput {
     reasoning_output_tokens: 0,
   };
   #usageObserved = false;
+  #commandsStarted = 0;
 
   constructor(runtime: "codex" | "copilot") {
     this.#runtime = runtime;
@@ -41,6 +42,10 @@ export class RuntimeOutput {
     return Buffer.byteLength(normalized, "utf8") <= 4_096 ? normalized : "";
   }
 
+  commandsStarted(): number {
+    return this.#commandsStarted;
+  }
+
   usage(budget: number): AgentUsage | undefined {
     if (!this.#usageObserved) return undefined;
     const total = this.#usage.input_tokens + this.#usage.output_tokens;
@@ -54,6 +59,12 @@ export class RuntimeOutput {
   }
 
   #codex(event: Record<string, unknown>): void {
+    if (
+      event.type === "item.started" &&
+      object(event.item) &&
+      event.item.type === "command_execution"
+    )
+      this.#commandsStarted += 1;
     if (event.type === "item.completed" && object(event.item)) {
       const item = event.item;
       if (item.type === "agent_message" && typeof item.text === "string") this.#summary = item.text;

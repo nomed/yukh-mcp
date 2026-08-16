@@ -75,6 +75,8 @@ test("watch explains team and worker activity in work-oriented language", () => 
             depth: 1,
             can_spawn: true,
             token_budget: 50_000,
+            max_commands: 6,
+            timeout_ms: 120_000,
             required_actions: [],
             state: "running",
           },
@@ -96,6 +98,7 @@ test("watch explains team and worker activity in work-oriented language", () => 
   assert.match(changes.join("\n"), /manager=manager runtime=codex goal=Build a task board/u);
   assert.match(changes.join("\n"), /WORKER  backend-lead  RUNNING/u);
   assert.match(changes.join("\n"), /task=Define and implement the API/u);
+  assert.match(changes.join("\n"), /bounds=commands:6 timeout_ms:120000 tools=default/u);
 });
 
 test("watch exposes manager accounting and receipt-backed actions", () => {
@@ -175,6 +178,9 @@ test("watch exposes manager accounting and receipt-backed actions", () => {
                   skills: [],
                   instructions: "Implement and test.",
                   task: "Deliver one increment.",
+                  tool_mode: "none",
+                  max_commands: 4,
+                  timeout_ms: 60_000,
                   token_budget: 20_000,
                 },
               ],
@@ -186,6 +192,9 @@ test("watch exposes manager accounting and receipt-backed actions", () => {
                 skills: [],
                 instructions: "Use verified evidence.",
                 task: "Summarize the delivery.",
+                tool_mode: "none",
+                max_commands: 0,
+                timeout_ms: 60_000,
                 token_budget: 5_000,
               },
             },

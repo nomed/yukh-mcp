@@ -66,6 +66,12 @@ is single-use and deterministic: it launches and awaits reserved workers without
 calling the planning model again. Final synthesis is a separate tool-free,
 budgeted runtime over bounded public completion artifacts. Mismatch, replay,
 worker failure or incomplete accounting fails closed and remains observable.
+Post-turn token evidence alone is not an expense control: the real qualification
+for issue #149 observed 344,007 tokens against a 45,000 worker allocation before
+the provider reported usage. New agents therefore carry preemptive command-count
+and wall-clock bounds enforced by the wrapper process, and model-facing Yukh tools
+are exposed only through an explicit plan mode. Exact token evidence remains
+post-turn and preemptive termination may leave usage unknown rather than zero.
 
 ### Prompt and content injection
 
@@ -861,3 +867,17 @@ its own token allocation. Digest substitution, replay, unavailable profiles,
 over-allocation, worker failure and incomplete accounting fail closed. The
 remaining cost risk is the provider's post-turn usage boundary described by
 RFC-0020.
+
+## Accepted preemptive agent runtime bounds — 2026-08-16
+
+- Governing issue: #149
+- Accepted architecture: RFC-0024
+
+Real qualification proved a worker can consume hundreds of thousands of tokens
+inside one provider turn before post-turn accounting detects an overrun. Every
+new agent now has a bounded command count and runtime deadline enforced by its
+wrapper. Planned agents explicitly select no Yukh tools, Coordination only, or
+the team surface; synthesis has no model-facing MCP. Executor replay resumes
+persistent state and cannot duplicate a running or completed worker. Residual
+risk remains that the provider can consume more tokens than allocated between
+two observable command boundaries or before the deadline fires.
