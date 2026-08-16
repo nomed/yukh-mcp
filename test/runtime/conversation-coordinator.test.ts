@@ -48,9 +48,15 @@ function replay(answered = false) {
 
 test("coordinator wakes the addressed agent once and excludes answered work", async () => {
   const prompts: string[] = [];
+  const commands: string[] = [];
   const lifecycle: string[] = [];
   let output = replay();
-  const launcher: CoordinationLauncher = { invoke: async () => output };
+  const launcher: CoordinationLauncher = {
+    invoke: async (command) => {
+      commands.push(command);
+      return output;
+    },
+  };
   const coordinator = new ConversationCoordinator({
     launchers: { "agent-a": launcher, "agent-b": launcher },
     runner: {
@@ -68,6 +74,13 @@ test("coordinator wakes the addressed agent once and excludes answered work", as
   assert.equal(await coordinator.tick(), "handled");
   assert.equal(await coordinator.tick(), "idle");
   assert.equal(prompts.length, 1);
+  assert.deepEqual(commands, [
+    "events replay",
+    "session bootstrap",
+    "session join",
+    "events replay",
+    "events replay",
+  ]);
   assert.match(prompts[0] ?? "", new RegExp(questionId));
   assert.match(prompts[0] ?? "", /Complete the requested work/u);
   assert.deepEqual(lifecycle, ["agent_started", "answer_verified"]);
@@ -93,6 +106,73 @@ test("coordinator explicitly recovers replay authentication without retrying pub
   });
   assert.equal(await coordinator.tick(), "idle");
   assert.deepEqual(commands, ["events replay", "session bootstrap", "events replay"]);
+});
+
+test("coordinator records replay bootstrap failures with the Yukh code", async () => {
+  const lifecycle: unknown[] = [];
+  const launcher: CoordinationLauncher = {
+    invoke: async (command) =>
+      command === "session bootstrap"
+        ? { schema: 1, status: "error", command, code: "YKC-CUSTODY-001" }
+        : { schema: 1, status: "error", command, code: "YKC-AUTH-001" },
+  };
+  const coordinator = new ConversationCoordinator({
+    launchers: { "agent-a": launcher, "agent-b": launcher },
+    runner: { run: async () => assert.fail() },
+    maxTurns: 1,
+    lifetimeMs: 10_000,
+    observe: (event) => lifecycle.push(event),
+  });
+  await assert.rejects(coordinator.tick(), /coordination_unavailable/u);
+  assert.deepEqual(lifecycle, [
+    {
+      schema: 1,
+      event: "coordinator_coordination_failed",
+      coordination_action: "bootstrap",
+      ykc_code: "YKC-CUSTODY-001",
+    },
+  ]);
+});
+
+test("coordinator fails the agent before launch when target bootstrap is unavailable", async () => {
+  const lifecycle: unknown[] = [];
+  const launcher: CoordinationLauncher = {
+    invoke: async (command) =>
+      command === "events replay"
+        ? replay(false)
+        : { schema: 1, status: "error", command, code: "YKC-CUSTODY-001" },
+  };
+  const coordinator = new ConversationCoordinator({
+    launchers: { "agent-a": launcher, "agent-b": launcher },
+    runner: { run: async () => assert.fail("agent must not launch without Coordination") },
+    maxTurns: 1,
+    lifetimeMs: 10_000,
+    observe: (event) => lifecycle.push(event),
+  });
+  assert.equal(await coordinator.tick(), "handled");
+  assert.deepEqual(lifecycle, [
+    {
+      schema: 1,
+      event: "agent_started",
+      agent: "agent-b",
+      question_event_id: questionId,
+      turn: 1,
+    },
+    {
+      schema: 1,
+      event: "coordinator_coordination_failed",
+      coordination_action: "bootstrap",
+      ykc_code: "YKC-CUSTODY-001",
+    },
+    {
+      schema: 1,
+      event: "agent_failed",
+      agent: "agent-b",
+      question_event_id: questionId,
+      turn: 1,
+      failure_code: "agent_coordination_failed",
+    },
+  ]);
 });
 
 test("coordinator fails closed on malformed transcript and enforces lifetime", async () => {

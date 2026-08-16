@@ -25,6 +25,8 @@ export interface LifecycleRecord {
   readonly question_event_id?: string;
   readonly turn?: number;
   readonly failure_code?: string;
+  readonly coordination_action?: string;
+  readonly ykc_code?: string;
 }
 
 export interface TeamSnapshot {
@@ -129,6 +131,7 @@ export function lifecycleRecords(raw: string, after: number): LifecycleRecord[] 
       "agent_failed",
       "coordinator_unavailable",
       "coordinator_recovered",
+      "coordinator_coordination_failed",
       "conversation_complete",
     ];
     if (
@@ -138,9 +141,16 @@ export function lifecycleRecords(raw: string, after: number): LifecycleRecord[] 
       (record.question_event_id !== undefined && !uuid.test(record.question_event_id)) ||
       (record.turn !== undefined && (!Number.isSafeInteger(record.turn) || record.turn < 1)) ||
       (record.failure_code !== undefined &&
-        !["agent_spawn_failed", "agent_timed_out", "agent_exit_nonzero", "agent_error"].includes(
-          record.failure_code,
-        ))
+        ![
+          "agent_spawn_failed",
+          "agent_timed_out",
+          "agent_exit_nonzero",
+          "agent_coordination_failed",
+          "agent_error",
+        ].includes(record.failure_code)) ||
+      (record.coordination_action !== undefined &&
+        !["bootstrap", "join", "replay"].includes(record.coordination_action)) ||
+      (record.ykc_code !== undefined && !/^YKC-[A-Z]+-[0-9]{3}$/u.test(record.ykc_code))
     )
       throw new Error("coordination_protocol_error");
     return record;
@@ -152,6 +162,8 @@ export function renderLifecycle(record: LifecycleRecord): string {
   if (record.event === "coordinator_unavailable")
     return "COORDINATOR  COORDINATION TEMPORARILY UNAVAILABLE — RETRYING";
   if (record.event === "coordinator_recovered") return "COORDINATOR  COORDINATION RECOVERED";
+  if (record.event === "coordinator_coordination_failed")
+    return `COORDINATOR  COORDINATION ${record.coordination_action?.toUpperCase() ?? "ACTION"} FAILED code=${record.ykc_code ?? "unknown"} — RETRYING`;
   const label = record.event.replaceAll("_", " ").toUpperCase();
   const failure = record.failure_code ? ` failure=${record.failure_code}` : "";
   return `COORDINATOR  ${record.agent ?? "agent"}  ${label}  turn=${record.turn ?? "?"} question=${record.question_event_id ?? "?"}${failure}`;
