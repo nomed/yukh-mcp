@@ -57,6 +57,7 @@ const planDocument = (workerBudget = 2_000, synthesisBudget = 2_000) => ({
       skills: [],
       instructions: "Inspect only relevant files, implement and test the requested increment.",
       task: "Implement and verify the backend increment.",
+      context_paths: [],
       tool_mode: "none" as const,
       max_commands: 4,
       timeout_ms: 60_000,
@@ -71,6 +72,7 @@ const planDocument = (workerBudget = 2_000, synthesisBudget = 2_000) => ({
     skills: [],
     instructions: "Use only supplied verified completion artifacts and remain concise.",
     task: "Synthesize outcome, remaining gaps and the next action.",
+    context_paths: [],
     tool_mode: "none" as const,
     max_commands: 0,
     timeout_ms: 60_000,
@@ -336,6 +338,46 @@ test("managed team rejects a manager budget above the team budget", async () => 
           required_actions: [],
         }),
       /invalid manager definition/u,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("context packs retain only bounded verified regular-file content", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-context-pack-")));
+  try {
+    await writeFile(join(root, "bounded.ts"), "export const bounded = true;\n");
+    const store = new TeamStore(root);
+    const team = store.create("Prepare bounded context", "codex", 2, 1, 50_000);
+    const agent = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "context-reviewer",
+      task: "Review supplied context only",
+      token_budget: 20_000,
+      model_tool_mode: "none",
+      max_commands: 0,
+      timeout_ms: 60_000,
+      context_paths: ["bounded.ts"],
+    });
+    assert.deepEqual(agent.context_pack?.paths, ["bounded.ts"]);
+    assert.match(agent.context_pack?.digest ?? "", /^sha-256:[0-9a-f]{64}$/u);
+    assert.deepEqual(store.contextPack(team.team_id, agent.agent_id)?.files, [
+      { path: "bounded.ts", content: "export const bounded = true;\n" },
+    ]);
+    assert.throws(
+      () =>
+        store.spawn(team.team_id, {
+          runtime: "codex",
+          role: "invalid-context",
+          task: "Reject traversal",
+          token_budget: 20_000,
+          model_tool_mode: "none",
+          max_commands: 0,
+          timeout_ms: 60_000,
+          context_paths: ["../secret"],
+        }),
+      /invalid agent context paths/u,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

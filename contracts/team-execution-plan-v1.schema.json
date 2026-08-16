@@ -26,6 +26,7 @@
         "skills",
         "instructions",
         "task",
+        "context_paths",
         "tool_mode",
         "max_commands",
         "timeout_ms",
@@ -45,6 +46,11 @@
         },
         "instructions": { "type": "string" },
         "task": { "type": "string" },
+        "context_paths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "At most four repository-relative regular files; synthesis must use an empty list."
+        },
         "tool_mode": {
           "type": "string",
           "enum": ["none", "coordination", "team"],

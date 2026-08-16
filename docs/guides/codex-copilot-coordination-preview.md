@@ -117,6 +117,12 @@ Do not use team.create and do not engage a runtime that cannot provide token
 accounting.
 ```
 
+Each zero-command worker may name at most four `context_paths`. At reservation,
+the server accepts only repository-relative regular UTF-8 files, rejects links
+and traversal, caps each file at 4 KiB and the pack at 12 KiB, then persists its
+SHA-256 digest. The worker receives this pack in its prompt and cannot request
+more context.
+
 The tool-free planning profile measured 14,382 total tokens: 13,735 input,
 including 9,984 cached, and 647 output. The 20,000-token allocation provides a
 bounded margin; it is not a universal estimate. Every operational tool call is

@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 export type AgentRuntime = "codex" | "copilot";
 export type AgentKind = "manager" | "worker";
@@ -86,9 +86,21 @@ export interface AgentRecord {
   readonly model_tool_mode?: "default" | ModelToolMode;
   readonly max_commands?: number;
   readonly timeout_ms?: number;
+  readonly context_pack?: ContextPackMetadata;
   readonly usage?: AgentUsage;
   readonly completion?: AgentCompletion;
   readonly state: AgentState;
+}
+
+export interface ContextPackMetadata {
+  readonly schema: 1;
+  readonly digest: `sha-256:${string}`;
+  readonly byte_length: number;
+  readonly paths: readonly string[];
+}
+
+export interface ContextPackDocument extends ContextPackMetadata {
+  readonly files: readonly { readonly path: string; readonly content: string }[];
 }
 
 export type TeamAction =
@@ -107,6 +119,7 @@ export interface PlannedAgent {
   readonly skills: readonly string[];
   readonly instructions: string;
   readonly task: string;
+  readonly context_paths: readonly string[];
   readonly tool_mode: ModelToolMode;
   readonly max_commands: number;
   readonly timeout_ms: number;
@@ -296,6 +309,7 @@ export class TeamStore {
       readonly model_tool_mode?: "default" | ModelToolMode;
       readonly max_commands?: number;
       readonly timeout_ms?: number;
+      readonly context_paths?: readonly string[];
     },
   ): AgentRecord {
     const team = this.#readTeam(id);
@@ -332,6 +346,7 @@ export class TeamStore {
     if (depth > team.max_depth) throw new Error("team_depth_limit");
     const suffix = randomUUID().replaceAll("-", "").slice(0, 8);
     const coordination = `agent-${input.role.slice(0, 32)}-${suffix}` as const;
+    const context = this.#prepareContextPack(input.context_paths ?? []);
     const record: AgentRecord = {
       schema: 1,
       agent_id: `worker-${randomUUID()}`,
@@ -351,10 +366,35 @@ export class TeamStore {
       model_tool_mode: input.model_tool_mode ?? "default",
       max_commands: input.max_commands ?? 8,
       timeout_ms: input.timeout_ms ?? 300_000,
+      ...(context ? { context_pack: context.metadata } : {}),
       state: "defined",
     };
     this.#write(join(this.#teamDirectory(id), "agents", `${record.agent_id}.json`), record, true);
+    if (context)
+      this.#write(
+        join(this.#teamDirectory(id), "agents", `${record.agent_id}.context.json`),
+        context.document,
+        true,
+      );
     return record;
+  }
+
+  contextPack(id: string, agentId: string): ContextPackDocument | undefined {
+    const agent = this.#readAgent(id, agentId);
+    if (!agent.context_pack) return undefined;
+    const document = this.#read(
+      join(this.#teamDirectory(id), "agents", `${agentId}.context.json`),
+    ) as ContextPackDocument;
+    const content = JSON.stringify({ schema: 1, files: document.files });
+    const digest = `sha-256:${createHash("sha256").update(content).digest("hex")}`;
+    if (
+      document.digest !== digest ||
+      document.digest !== agent.context_pack.digest ||
+      document.byte_length !== agent.context_pack.byte_length ||
+      document.paths.join("\n") !== agent.context_pack.paths.join("\n")
+    )
+      throw new Error("agent_context_pack_invalid");
+    return document;
   }
 
   status(id: string): {
@@ -485,6 +525,7 @@ export class TeamStore {
           instructions: worker.instructions,
         },
         task: worker.task,
+        context_paths: worker.context_paths,
         token_budget: worker.token_budget,
         model_tool_mode: worker.tool_mode,
         max_commands: worker.max_commands,
@@ -687,6 +728,7 @@ export class TeamStore {
         "skills",
         "instructions",
         "task",
+        "context_paths",
         "tool_mode",
         "max_commands",
         "timeout_ms",
@@ -708,6 +750,10 @@ export class TeamStore {
         candidate.task.trim() !== candidate.task ||
         candidate.task.length < 1 ||
         candidate.task.length > 4_096 ||
+        !Array.isArray(candidate.context_paths) ||
+        candidate.context_paths.length > 4 ||
+        new Set(candidate.context_paths).size !== candidate.context_paths.length ||
+        candidate.context_paths.some((path) => !this.#validContextPath(path)) ||
         !["none", "coordination", "team"].includes(String(candidate.tool_mode)) ||
         !this.#validRuntimeBounds(Number(candidate.max_commands), Number(candidate.timeout_ms)) ||
         !Number.isSafeInteger(candidate.token_budget) ||
@@ -728,6 +774,7 @@ export class TeamStore {
         skills: candidate.skills as readonly string[],
         instructions: candidate.instructions as string,
         task: candidate.task,
+        context_paths: candidate.context_paths as readonly string[],
         tool_mode: candidate.tool_mode as ModelToolMode,
         max_commands: candidate.max_commands as number,
         timeout_ms: candidate.timeout_ms as number,
@@ -738,7 +785,8 @@ export class TeamStore {
     if (new Set(workers.map((worker) => worker.role)).size !== workers.length)
       throw new TypeError("invalid team plan");
     const synthesis = normalize(value.synthesis);
-    if (synthesis.tool_mode !== "none") throw new TypeError("invalid team plan");
+    if (synthesis.tool_mode !== "none" || synthesis.context_paths.length !== 0)
+      throw new TypeError("invalid team plan");
     return { schema: 1, workers, synthesis };
   }
 
@@ -751,6 +799,57 @@ export class TeamStore {
       timeoutMs >= 5_000 &&
       timeoutMs <= 900_000
     );
+  }
+
+  #validContextPath(value: unknown): value is string {
+    if (typeof value !== "string" || value.length < 1 || value.length > 256) return false;
+    if (isAbsolute(value) || value.includes("\\") || /[\u0000-\u001f\u007f]/u.test(value))
+      return false;
+    const parts = value.split("/");
+    return (
+      parts.every((part) => part.length > 0 && part !== "." && part !== "..") &&
+      ![".git", ".yukh"].includes(parts[0]!)
+    );
+  }
+
+  #prepareContextPack(
+    paths: readonly string[],
+  ):
+    { readonly metadata: ContextPackMetadata; readonly document: ContextPackDocument } | undefined {
+    if (paths.length === 0) return undefined;
+    if (
+      paths.length > 4 ||
+      new Set(paths).size !== paths.length ||
+      paths.some((path) => !this.#validContextPath(path))
+    )
+      throw new TypeError("invalid agent context paths");
+    const files = paths.map((path) => {
+      let component = this.#workspace;
+      for (const part of path.split("/")) {
+        component = join(component, part);
+        if (lstatSync(component).isSymbolicLink())
+          throw new TypeError("invalid agent context file");
+      }
+      const target = join(this.#workspace, path);
+      const info = lstatSync(target);
+      if (!info.isFile() || info.isSymbolicLink() || info.size > 4_096)
+        throw new TypeError("invalid agent context file");
+      const resolved = realpathSync(target);
+      const scope = relative(this.#workspace, resolved);
+      if (scope.startsWith(`..${sep}`) || scope === ".." || isAbsolute(scope))
+        throw new TypeError("invalid agent context file");
+      const bytes = readFileSync(resolved);
+      const content = bytes.toString("utf8");
+      if (!Buffer.from(content, "utf8").equals(bytes))
+        throw new TypeError("invalid agent context file");
+      return { path, content };
+    });
+    const byteLength = files.reduce((total, file) => total + Buffer.byteLength(file.content), 0);
+    if (byteLength > 12_288) throw new TypeError("agent_context_pack_too_large");
+    const canonical = JSON.stringify({ schema: 1, files });
+    const digest = `sha-256:${createHash("sha256").update(canonical).digest("hex")}` as const;
+    const metadata = { schema: 1 as const, digest, byte_length: byteLength, paths: [...paths] };
+    return { metadata, document: { ...metadata, files } };
   }
 
   #validateUsage(agent: AgentRecord, usage: AgentUsage): void {
