@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
+import { RuntimeOutput } from "../../../packages/team-control/src/runtime-output.js";
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -23,7 +25,7 @@ const mcpEnv = {
   YUKH_COORDINATION_LAUNCHER: launcher,
 };
 const profile = agent.profile;
-const prompt = `You are ${agent.role}, worker ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nYour Coordination session is already bootstrapped and joined. Use yukh-coordination to replay messages and communicate decisions, questions, blockers and completion. You may create a bounded child only when explicitly delegated.`;
+const prompt = `You are ${agent.role}, worker ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nToken budget: ${agent.token_budget} total input plus output tokens. Keep inspection and tool output bounded. The team already exists: do not call team.create. When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. Your Coordination session is already bootstrapped and joined. Use yukh-coordination to replay messages and communicate decisions and blockers. End with one concise public-safe completion summary of at most 4096 UTF-8 bytes; the wrapper persists that final response for the manager. You may create a bounded child only when explicitly delegated.`;
 const teamControlEnv = {
   YUKH_TEAM_WORKSPACE: workspace,
   YUKH_COORDINATION_LAUNCHER: launcher,
@@ -47,6 +49,7 @@ const args =
     ? [
         "exec",
         "--ephemeral",
+        "--json",
         "--dangerously-bypass-approvals-and-sandbox",
         ...(profile && profile.model !== "default" ? ["--model", profile.model] : []),
         "-c",
@@ -73,6 +76,8 @@ const args =
         "-s",
         "--no-ask-user",
         "--allow-all",
+        "--output-format",
+        "json",
         ...(profile && profile.model !== "default" ? ["--model", profile.model] : []),
         `--additional-mcp-config=${JSON.stringify({
           mcpServers: {
@@ -163,13 +168,23 @@ if (!joined) {
 
 const outcome = !joined
   ? { exitCode: 1, stopped: false }
-  : await new Promise<{ readonly exitCode: number; readonly stopped: boolean }>((resolve) => {
+  : await new Promise<{
+      readonly exitCode: number;
+      readonly stopped: boolean;
+      readonly output: RuntimeOutput;
+    }>((resolve) => {
+      const output = new RuntimeOutput(agent.runtime);
       const child = spawn(command, args, {
         cwd: workspace,
         shell: false,
-        stdio: ["ignore", "inherit", "inherit"],
+        stdio: ["ignore", "pipe", "pipe"],
         env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
       });
+      if (!child.stdout || !child.stderr) throw new Error("agent_output_unavailable");
+      child.stdout.pipe(process.stdout);
+      child.stderr.pipe(process.stderr);
+      const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+      lines.on("line", (line) => output.line(line));
       let stopped = false;
       let killTimer: NodeJS.Timeout | undefined;
       const monitor = setInterval(() => {
@@ -181,15 +196,31 @@ const outcome = !joined
       const finish = (exitCode: number): void => {
         clearInterval(monitor);
         if (killTimer) clearTimeout(killTimer);
-        resolve({ exitCode, stopped });
+        lines.close();
+        resolve({ exitCode, stopped, output });
       };
       child.once("error", () => finish(1));
       child.once("close", (code) => finish(code ?? 1));
     });
-if (joined)
-  store.transition(
-    teamID,
-    agentID,
-    outcome.stopped ? "stopped" : outcome.exitCode === 0 ? "completed" : "failed",
-  );
-process.exitCode = outcome.stopped ? 0 : outcome.exitCode;
+let wrapperExitCode = outcome.stopped ? 0 : outcome.exitCode;
+if (joined && "output" in outcome) {
+  if (outcome.stopped) {
+    store.transition(teamID, agentID, "stopped");
+  } else {
+    const summary = outcome.output.summary();
+    const usage = outcome.output.usage(agent.token_budget);
+    const completion =
+      outcome.exitCode !== 0
+        ? { schema: 1 as const, outcome: "agent_exit_nonzero" as const, summary }
+        : !usage
+          ? { schema: 1 as const, outcome: "token_accounting_unavailable" as const, summary }
+          : usage.budget_outcome === "exceeded"
+            ? { schema: 1 as const, outcome: "token_budget_exceeded" as const, summary }
+            : !summary
+              ? { schema: 1 as const, outcome: "completion_missing" as const, summary: "" }
+              : { schema: 1 as const, outcome: "succeeded" as const, summary };
+    store.finish(teamID, agentID, completion, usage);
+    if (completion.outcome !== "succeeded") wrapperExitCode = 1;
+  }
+}
+process.exitCode = wrapperExitCode;

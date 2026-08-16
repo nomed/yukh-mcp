@@ -774,3 +774,29 @@ RFC-0019 supersedes RFC-0018's fixed catalog. Manager-composed professions are
 data, not new authority: runtime-specific model and skill allowlists, team
 bounds and parent delegation remain server-owned. Team lifecycle facts expose
 control actions and outcomes without claiming access to private reasoning.
+
+## Accepted reliable completion and token accounting — 2026-08-16
+
+- Governing issue: #137
+- Accepted architecture: RFC-0020
+
+Dynamic workers reserve explicit token budgets under one team aggregate. Codex
+usage is accepted only from its structured runtime event and is persisted with
+the bounded completion artifact. Missing accounting, missing completion,
+runtime failure and post-turn budget overrun are distinct fail-closed outcomes.
+Copilot credit or duration metadata is never represented as token usage.
+
+The current boundary cannot interrupt a model exactly at the token limit
+because the CLI reports usage at turn completion. It therefore detects and
+fails overruns after the turn; unexpectedly large single-turn cost remains a
+residual availability and expense risk. Managers must use small explicit
+budgets and bounded tasks. Team count/depth, model and skill allowlists, stop
+semantics and workspace isolation remain independent controls.
+
+Canonical launcher and Coordination participant identifiers are stored
+separately to prevent duplicated prefixes and misdirected handoffs. Managers
+consume child terminal evidence through bounded `agent.await`; a worker cannot
+claim successful collaboration without a bounded public-safe completion and
+accounted usage. Local runtime JSON logs may contain operational detail and
+remain private; only completion, usage counts and stable outcomes enter team
+state and the viewer.
