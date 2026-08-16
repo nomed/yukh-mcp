@@ -79,6 +79,7 @@ test("suite readonly verifier preset allows bounded read-only inspection", () =>
   assert.equal(args.format, "text");
   assert.match(args.goal, /bounded read-only inspection/u);
   assert.match(args.goal, /Do not modify files/u);
+  assert.match(args.goal, /Keep combined command output below 250 lines/u);
 });
 
 const usage = {
@@ -195,10 +196,10 @@ test("role profile policy maps specialists to allowlisted runtime models skills 
       runtime: "codex",
       model: "default",
       skills: ["testing"],
-      token_budget: 40_000,
+      token_budget: 30_000,
       tool_mode: "none",
-      max_commands: 8,
-      runtime_timeout_ms: 180_000,
+      max_commands: 4,
+      runtime_timeout_ms: 120_000,
     },
   );
   assert.deepEqual(roleProfilePolicy(options, "security-reviewer", "review").omitted_skills, [

@@ -46,6 +46,12 @@ function concise(value: string, maxLength: number): string {
   return `${value.slice(0, maxLength - 1)}…`;
 }
 
+function workerInstructions(workProfile: TeamWorkProfile): string {
+  if (workProfile === "readonly")
+    return "Execute only the approved read-only task. Use no model-facing tools. Do not mutate files, install dependencies, start services, call the network or traverse dependency/build/runtime artifact directories. Keep every command and final output compact; stop and summarize rather than dumping large listings.";
+  return "Execute only the approved task, stay within the approved runtime bounds, keep output concise, and report any missing context instead of guessing.";
+}
+
 export function approvalDigest(input: {
   readonly team_id: string;
   readonly manager_agent_id: string;
@@ -139,8 +145,7 @@ export function runEngagePreflight(args: EngagePreflightArguments): EngagePrefli
       mission: concise(args.goal, 1_024),
       model: policy.recommendation.model,
       skills: policy.recommendation.skills,
-      instructions:
-        "Execute only the approved task, stay within the approved runtime bounds, keep output concise, and report any missing context instead of guessing.",
+      instructions: workerInstructions(args.workProfile),
     },
     task: args.goal,
     can_spawn: false,
