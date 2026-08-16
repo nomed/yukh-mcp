@@ -60,6 +60,14 @@ const delegationInstruction =
   agent.can_spawn && modelUsesTeamControl
     ? "When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. You may create a bounded child only when explicitly delegated."
     : "";
+const allowlist = (name: string, fallback: readonly string[]): readonly string[] => {
+  const raw = process.env[name];
+  return raw ? raw.split(",").filter(Boolean) : fallback;
+};
+const planConstraintInstruction =
+  agent.output_contract === "team-plan-v1"
+    ? `Plan constraints: use only allowlisted models. Codex models: ${allowlist("YUKH_CODEX_MODELS", ["default"]).join(", ")}. Copilot models: ${allowlist("YUKH_COPILOT_MODELS", ["default"]).join(", ")}. Prefer model "default" unless the task explicitly requires another allowlisted model. Do not invent model names. Worker context_paths must name repository-relative regular UTF-8 files, at most four per worker, each file at most 4096 bytes and each worker pack at most 12288 bytes total. If a requested or attractive file may exceed 4096 bytes, omit it or choose a smaller file; never rely on a large document being accepted at execution time. Synthesis must use no context_paths.`
+    : "";
 const outputInstruction =
   agent.output_contract === "team-plan-v1"
     ? "Return only the JSON team execution plan required by the supplied output schema. Include the minimum specialists needed and one concise delivery synthesizer. Every role must be a lowercase slug matching ^[a-z][a-z0-9-]{0,31}$, for example token-efficiency-auditor; spaces are invalid. Select at most four small repository-relative context_paths per worker and none for synthesis. Do not wrap JSON in Markdown."
@@ -77,6 +85,7 @@ const prompt = [
   teamControlInstruction,
   delegationInstruction,
   coordinationInstruction,
+  planConstraintInstruction,
   outputInstruction,
 ]
   .filter(Boolean)
