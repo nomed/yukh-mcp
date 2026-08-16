@@ -9,6 +9,7 @@ import { TeamStore } from "../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
 import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js";
 import { teamRuntimeEntrypoints } from "../../packages/team-control/src/entrypoints.js";
+import { parsePreflightArguments } from "../../apps/team-preflight/src/arguments.js";
 import { runApprovedPreflight } from "../../apps/team-preflight/src/approved-run.js";
 import { formatApprovedRun, formatEngagePreflight } from "../../apps/team-preflight/src/format.js";
 import { runEngagePreflight } from "../../apps/team-preflight/src/preflight.js";
@@ -48,6 +49,21 @@ test("only zero-command tool-free deterministic plans satisfy the default cost p
   safe.workers[0]!.max_commands = 0;
   (safe.workers[0] as { tool_mode: string }).tool_mode = "coordination";
   assert.equal(costSafeDeterministicPlan(record), false);
+});
+
+test("suite qualification preset defines the official read-only reviewer profile", () => {
+  const args = parsePreflightArguments(["--preset", "suite-qualification"], {
+    defaultFormat: "text",
+    defaultWorkspace: "/tmp",
+  });
+  assert.equal(args.role, "suite-qualification-reviewer");
+  assert.equal(args.workProfile, "review");
+  assert.equal(args.preferredRuntime, "codex");
+  assert.equal(args.teamBudget, 260_000);
+  assert.equal(args.managerBudget, 180_000);
+  assert.equal(args.format, "text");
+  assert.match(args.goal, /Review Yukh suite readiness/u);
+  assert.match(args.goal, /Do not modify repositories/u);
 });
 
 const usage = {

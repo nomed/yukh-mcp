@@ -17,6 +17,26 @@ export interface PreflightArguments {
   readonly outputPath?: string;
 }
 
+interface PreflightPreset {
+  readonly goal: string;
+  readonly role: string;
+  readonly workProfile: TeamWorkProfile;
+  readonly preferredRuntime: AgentRuntime;
+  readonly teamBudget: number;
+  readonly managerBudget: number;
+}
+
+const presets: Readonly<Record<string, PreflightPreset>> = {
+  "suite-qualification": {
+    goal: "Review Yukh suite readiness for self-development across nomed.github.io, yukh-mcp, yukh-projects and yukh-coordination. Produce a concise read-only qualification checklist and identify the first safe implementation increment. Do not modify repositories.",
+    role: "suite-qualification-reviewer",
+    workProfile: "review",
+    preferredRuntime: "codex",
+    teamBudget: 260_000,
+    managerBudget: 180_000,
+  },
+};
+
 function list(value: string | undefined, fallback: readonly string[]): readonly string[] {
   return value ? value.split(",").filter(Boolean) : fallback;
 }
@@ -51,10 +71,13 @@ export function parsePreflightArguments(
   },
 ): PreflightArguments {
   const values = parseKeyValueArguments(argv, "invalid team preflight arguments");
-  const preferredRuntime = values.get("preferred-runtime");
+  const presetName = values.get("preset");
+  const preset = presetName ? presets[presetName] : undefined;
+  if (presetName && !preset) throw new TypeError("invalid team preflight preset");
+  const preferredRuntime = values.get("preferred-runtime") ?? preset?.preferredRuntime;
   if (preferredRuntime !== undefined && !["codex", "copilot"].includes(preferredRuntime))
     throw new TypeError("invalid preferred runtime");
-  const workProfile = values.get("work-profile") ?? "implementation";
+  const workProfile = values.get("work-profile") ?? preset?.workProfile ?? "implementation";
   if (!["review", "implementation", "synthesis"].includes(workProfile))
     throw new TypeError("invalid work profile");
   const format = values.get("format") ?? options?.defaultFormat ?? "json";
@@ -63,12 +86,12 @@ export function parsePreflightArguments(
   const outputPath = values.get("output");
   return {
     ...(workspace ? { workspace } : {}),
-    goal: values.get("goal") ?? "Preflight one dynamic Yukh worker engagement.",
-    role: values.get("role") ?? "backend-reviewer",
+    goal: values.get("goal") ?? preset?.goal ?? "Preflight one dynamic Yukh worker engagement.",
+    role: values.get("role") ?? preset?.role ?? "backend-reviewer",
     workProfile: workProfile as TeamWorkProfile,
     ...(preferredRuntime ? { preferredRuntime: preferredRuntime as AgentRuntime } : {}),
-    teamBudget: integer(values.get("team-budget"), 260_000),
-    managerBudget: integer(values.get("manager-budget"), 180_000),
+    teamBudget: integer(values.get("team-budget"), preset?.teamBudget ?? 260_000),
+    managerBudget: integer(values.get("manager-budget"), preset?.managerBudget ?? 180_000),
     codexModels: list(values.get("codex-models") ?? process.env.YUKH_CODEX_MODELS, ["default"]),
     copilotModels: list(values.get("copilot-models") ?? process.env.YUKH_COPILOT_MODELS, [
       "default",
