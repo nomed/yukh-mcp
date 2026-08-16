@@ -7,10 +7,13 @@ function list(values: readonly string[]): string {
   return values.length > 0 ? values.join(", ") : "none";
 }
 
-export function formatEngagePreflight(output: EngagePreflightOutput): string {
+export function formatEngagePreflight(
+  output: EngagePreflightOutput,
+  options?: { readonly runCommand?: string | false },
+): string {
   const worker = output.planned_worker;
   const policy = output.policy.recommendation;
-  return [
+  const lines = [
     "Yukh team preflight",
     `Status: ${output.status}`,
     `Workspace: ${output.workspace}`,
@@ -32,10 +35,13 @@ export function formatEngagePreflight(output: EngagePreflightOutput): string {
     `- allocated: ${output.budget.allocated}`,
     `- observed provider tokens: ${output.provider_tokens_observed}`,
     `- provider launched: ${output.provider_runtime_launched ? "yes" : "no"}`,
-    "",
-    "Run after approval",
-    `yukh team run-approved --preflight <preflight.json> --approved-digest ${output.approval_digest}`,
-  ].join("\n");
+  ];
+  const runCommand =
+    options?.runCommand === undefined
+      ? `yukh team run-approved --preflight <preflight.json> --approved-digest ${output.approval_digest}`
+      : options.runCommand;
+  if (runCommand) lines.push("", "Run after approval", runCommand);
+  return lines.join("\n");
 }
 
 export function formatApprovedRun(output: ApprovedRunOutput): string {
