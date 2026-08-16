@@ -41,6 +41,11 @@ function runtimeSet(values: readonly string[]): ReadonlySet<string> {
   return new Set(values);
 }
 
+function concise(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
 export function approvalDigest(input: {
   readonly team_id: string;
   readonly manager_agent_id: string;
@@ -131,13 +136,13 @@ export function runEngagePreflight(args: EngagePreflightArguments): EngagePrefli
     role: policy.role,
     profile: {
       schema: 1,
-      mission: `Preflighted ${policy.role}`,
+      mission: concise(args.goal, 1_024),
       model: policy.recommendation.model,
       skills: policy.recommendation.skills,
       instructions:
-        "This worker was composed by preflight only. A real run must be launched separately.",
+        "Execute only the approved task, stay within the approved runtime bounds, keep output concise, and report any missing context instead of guessing.",
     },
-    task: "Preflight only: no provider runtime launched.",
+    task: args.goal,
     can_spawn: false,
     token_budget: policy.recommendation.token_budget,
     model_tool_mode: policy.recommendation.tool_mode,

@@ -186,6 +186,8 @@ test("engage preflight composes a worker without launching a provider runtime", 
     assert.equal(output.policy.recommendation.model, "default");
     assert.deepEqual(output.policy.recommendation.skills, ["frontend"]);
     assert.equal(output.planned_worker.state, "defined");
+    assert.equal(output.planned_worker.task, "Preflight frontend worker");
+    assert.equal(output.planned_worker.profile?.mission, "Preflight frontend worker");
     assert.equal(output.planned_worker.parent_agent_id, output.manager.agent_id);
     assert.equal(output.budget.allocated, 230_000);
     assert.equal(output.budget.observed, 0);
@@ -215,6 +217,7 @@ test("engage preflight text output shows approval and budget without raw JSON no
     assert.match(text, /Yukh team preflight/u);
     assert.match(text, new RegExp(output.approval_digest, "u"));
     assert.match(text, /runtime: codex/u);
+    assert.match(text, /task: Preflight backend worker/u);
     assert.match(text, /observed provider tokens: 0/u);
     assert.doesNotMatch(text, /"planned_worker"/u);
   } finally {
