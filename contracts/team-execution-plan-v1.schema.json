@@ -33,7 +33,10 @@
       ],
       "properties": {
         "runtime": { "type": "string", "enum": ["codex", "copilot"] },
-        "role": { "type": "string" },
+        "role": {
+          "type": "string",
+          "description": "Lowercase role slug matching ^[a-z][a-z0-9-]{0,31}$; use hyphens, never spaces."
+        },
         "mission": { "type": "string" },
         "model": { "$ref": "#/$defs/token" },
         "skills": {
@@ -42,9 +45,19 @@
         },
         "instructions": { "type": "string" },
         "task": { "type": "string" },
-        "tool_mode": { "type": "string", "enum": ["none", "coordination", "team"] },
-        "max_commands": { "type": "integer" },
-        "timeout_ms": { "type": "integer" },
+        "tool_mode": {
+          "type": "string",
+          "enum": ["none", "coordination", "team"],
+          "description": "Use none unless this agent explicitly needs Yukh communication or delegation."
+        },
+        "max_commands": {
+          "type": "integer",
+          "description": "Closed command-start limit from 0 through 32."
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "description": "Closed wall-clock limit from 5000 through 900000 milliseconds."
+        },
         "token_budget": { "type": "integer" }
       }
     }

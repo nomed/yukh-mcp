@@ -43,6 +43,7 @@ test("team execution plan response schema uses the supported closed subset", () 
     }
   };
   visit(schema);
+  assert.match(schema.$defs.agent.properties.role.description, /never spaces/u);
   assert.equal(
     validate({
       schema: 1,
