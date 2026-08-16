@@ -1,8 +1,10 @@
 import type { runApprovedPreflight } from "./approved-run.js";
+import type { runApprovedPlan } from "./plan-execute.js";
 import type { EngagePreflightOutput } from "./preflight.js";
 import type { TeamStore } from "../../../packages/team-control/src/store.js";
 
 type ApprovedRunOutput = Awaited<ReturnType<typeof runApprovedPreflight>>;
+type ApprovedPlanRunOutput = Awaited<ReturnType<typeof runApprovedPlan>>;
 type TeamStatus = ReturnType<TeamStore["status"]>;
 
 function list(values: readonly string[]): string {
@@ -71,6 +73,26 @@ export function formatApprovedRun(output: ApprovedRunOutput): string {
     `- unaccounted agents: ${output.tokens.unaccounted_agents}`,
     "",
     `Terminal worker state: ${output.terminal_agent?.state ?? "not waited"}`,
+  ].join("\n");
+}
+
+export function formatApprovedPlanRun(output: ApprovedPlanRunOutput): string {
+  return [
+    "Yukh approved plan run",
+    `Status: ${output.status}`,
+    `Plan: ${output.plan.plan_id}`,
+    `Plan state: ${output.plan.state}`,
+    `Provider launched: ${output.provider_runtime_launched ? "yes" : "no"}`,
+    `Workers: ${output.plan.worker_agent_ids.length}`,
+    `Synthesis: ${output.plan.synthesis_agent_id ?? "none"}`,
+    "",
+    "Tokens",
+    `- observed: ${output.team.tokens.observed}`,
+    `- allocated: ${output.team.tokens.allocated}`,
+    `- remaining: ${output.team.tokens.remaining}`,
+    `- pending agents: ${output.team.tokens.pending_agents}`,
+    `- unaccounted agents: ${output.team.tokens.unaccounted_agents}`,
+    `- exceeded agents: ${output.team.tokens.exceeded_agents}`,
   ].join("\n");
 }
 

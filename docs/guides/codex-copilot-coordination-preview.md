@@ -114,6 +114,10 @@ budget, accounting source and completion outcome. Codex currently supplies
 trustworthy token counts. Copilot exposes credits and duration but not tokens, so a
 token-strict Copilot worker terminates with `token_accounting_unavailable`
 rather than inventing a conversion.
+The CLI command `yukh team run-plan-approved` executes an already proposed plan
+by team ID, plan ID and approved digest. A zero-command CLI proof on the VPS
+completed one worker plus synthesis with 28,440 observed tokens: 120 manager,
+14,092 worker and 14,228 synthesis.
 
 Issue #155 proved that a single provider turn can exceed its allocation before
 usage is reported. Deterministic plans therefore run by default only when every
@@ -175,6 +179,11 @@ explicit final synthesis consume additional model tokens. If a worker returns
 useful text but exceeds budget, the plan fails before synthesis; inspect the
 worker summary as a review artifact and approve a fresh plan rather than
 retrying blindly.
+
+The local preview script allows 32 generated agent identities per runtime
+directory. Repeated dynamic-team tests can exhaust that preview limit and fail
+with `agent limit reached` or bootstrap errors. Reset only the disposable local
+preview runtime before continuing those tests.
 
 Codex managers run without inherited user configuration. Yukh injects only the
 tools required by the manager record; a pure planning turn receives no
