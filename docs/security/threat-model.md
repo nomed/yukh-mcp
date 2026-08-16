@@ -889,3 +889,9 @@ model-facing MCP and a zero-command limit. Their server-built prompt is the only
 task context, so shell output cannot trigger another inference. Other dynamic
 execution remains disabled. An explicit unsafe qualification flag may enable it
 only in an isolated runtime; it is not a token-budget enforcement mechanism.
+
+The bounded-context profile resolves at most four repository-relative regular
+UTF-8 files without following links. Files are limited to 4 KiB each and 12 KiB
+in aggregate. The retained pack records paths, byte length and a SHA-256 digest;
+the wrapper verifies it again before prompt construction. `.git`, `.yukh`,
+absolute paths, traversal and invalid UTF-8 fail closed.

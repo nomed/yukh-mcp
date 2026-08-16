@@ -26,6 +26,7 @@ const mcpEnv = {
   YUKH_COORDINATION_LAUNCHER: launcher,
 };
 const profile = agent.profile;
+const contextPack = store.contextPack(teamID, agentID);
 const modelToolMode = agent.model_tool_mode ?? "default";
 const requiredActions = agent.required_actions.join(", ") || "none";
 const modelUsesCoordination =
@@ -61,7 +62,7 @@ const delegationInstruction =
     : "";
 const outputInstruction =
   agent.output_contract === "team-plan-v1"
-    ? "Return only the JSON team execution plan required by the supplied output schema. Include the minimum specialists needed and one concise delivery synthesizer. Every role must be a lowercase slug matching ^[a-z][a-z0-9-]{0,31}$, for example token-efficiency-auditor; spaces are invalid. Do not wrap JSON in Markdown."
+    ? "Return only the JSON team execution plan required by the supplied output schema. Include the minimum specialists needed and one concise delivery synthesizer. Every role must be a lowercase slug matching ^[a-z][a-z0-9-]{0,31}$, for example token-efficiency-auditor; spaces are invalid. Select at most four small repository-relative context_paths per worker and none for synthesis. Do not wrap JSON in Markdown."
     : "End with one concise public-safe completion summary of at most 4096 UTF-8 bytes; the wrapper persists that final response.";
 const prompt = [
   `You are ${agent.role}, ${agent.kind} ${agent.agent_id} in team ${agent.team_id}.`,
@@ -69,6 +70,9 @@ const prompt = [
     ? `Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.`
     : "",
   `Complete this task: ${agent.task}`,
+  contextPack
+    ? `Use only this server-prepared context pack (${contextPack.digest}, ${contextPack.byte_length} bytes):\n${contextPack.files.map((file) => `--- ${file.path} ---\n${file.content}`).join("\n")}`
+    : "",
   `Token budget: ${agent.token_budget} total input plus output tokens. Runtime bounds: at most ${agent.max_commands ?? 8} command executions and ${agent.timeout_ms ?? 300_000} milliseconds. Keep inspection and tool output bounded.`,
   teamControlInstruction,
   delegationInstruction,

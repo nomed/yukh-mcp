@@ -18,6 +18,7 @@ const agent = {
   skills: ["testing"],
   instructions: "Inspect relevant files, implement and test.",
   task: "Deliver the increment.",
+  context_paths: [],
   tool_mode: "none",
   max_commands: 4,
   timeout_ms: 60_000,
