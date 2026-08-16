@@ -119,6 +119,22 @@ by team ID, plan ID and approved digest. A zero-command CLI proof on the VPS
 completed one worker plus synthesis with 28,440 observed tokens: 120 manager,
 14,092 worker and 14,228 synthesis.
 
+From the workspace configured for the existing team, run the approved plan with
+the identifiers returned by the proposal:
+
+```sh
+yukh team run-plan-approved \
+  --team team-... \
+  --plan plan-... \
+  --approved-digest sha-256:... \
+  --format text
+```
+
+Use the exact digest that the operator approved; the command fails closed if it
+does not match the stored plan. The default cost boundary accepts only workers
+and synthesis with `tool_mode: none` and `max_commands: 0`; unsafe dynamic
+workers require explicit isolated qualification.
+
 Issue #155 proved that a single provider turn can exceed its allocation before
 usage is reported. Deterministic plans therefore run by default only when every
 worker and the synthesizer use `tool_mode: none` and `max_commands: 0`; they
