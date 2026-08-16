@@ -60,6 +60,17 @@ const presets: Readonly<Record<string, PreflightPreset>> = {
     workerMaxCommands: 1,
     workerTimeoutMs: 120_000,
   },
+  "micro-code-edit": {
+    goal: "Perform one small code edit in explicitly named files. Inspect only the target files, the governing issue and the minimum directly related test context. Do not read broad repository context, do not delegate, and run exactly one focused validation command before handoff.",
+    role: "backend-developer",
+    workProfile: "implementation",
+    preferredRuntime: "codex",
+    teamBudget: 90_000,
+    managerBudget: 20_000,
+    workerBudget: 45_000,
+    workerMaxCommands: 1,
+    workerTimeoutMs: 180_000,
+  },
 };
 
 function list(value: string | undefined, fallback: readonly string[]): readonly string[] {
