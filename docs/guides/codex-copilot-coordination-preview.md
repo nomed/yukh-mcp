@@ -38,6 +38,11 @@ It budgets one non-delegating Codex worker at 35,000 tokens, `tool_mode: none`,
 one command and a 120-second runtime. Use it only when the target file and issue
 are already known; otherwise run a read-only verifier first.
 
+Before approving the generated run command, check four lines in the proposal:
+`token budget`, `max commands`, `provider launched` and `Approval digest`. If
+the worker is broader than the issue, if `provider launched` is `yes`, or if the
+budget is not appropriate for the edit, stop and create a narrower proposal.
+
 Use absolute paths below. Configure Codex as `agent-a`:
 
 ```toml
