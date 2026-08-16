@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { TeamStore } from "../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
-import { assertProfileAvailable } from "../../apps/team-control/src/server.js";
+import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js";
+import { assertProfileAvailable, awaitAgent } from "../../apps/team-control/src/server.js";
 
 const workerMain = fileURLToPath(new URL("../../apps/team-worker/src/main.ts", import.meta.url));
 const tsxLoader = fileURLToPath(import.meta.resolve("tsx"));
@@ -47,18 +48,22 @@ test("team store creates dynamic workers and bounded delegated children", async 
       },
       task: "Implement the API",
       can_spawn: true,
+      token_budget: 100_000,
     });
     const testWorker = store.spawn(team.team_id, {
       parent_agent_id: backend.agent_id,
       runtime: "copilot",
       role: "api-tester",
       task: "Test the API",
+      token_budget: 50_000,
     });
     assert.equal(testWorker.parent_agent_id, backend.agent_id);
     assert.deepEqual(backend.profile?.skills, ["api-design", "testing"]);
     assert.equal(testWorker.depth, 2);
     assert.notEqual(testWorker.coordination_agent, backend.coordination_agent);
+    assert.equal(backend.coordination_participant, `agent:${backend.coordination_agent.slice(6)}`);
     assert.equal(store.status(team.team_id).agents.length, 2);
+    assert.equal(store.status(team.team_id).tokens.allocated, 150_000);
     assert.equal(store.transition(team.team_id, backend.agent_id, "running").state, "running");
     assert.equal(store.transition(team.team_id, backend.agent_id, "completed").state, "completed");
     assert.throws(
@@ -76,8 +81,191 @@ test("team store creates dynamic workers and bounded delegated children", async 
           runtime: "copilot",
           role: "frontend-developer",
           task: "Implement UI",
+          token_budget: 50_000,
         }),
       /team_not_active/u,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("team store reserves budgets and persists bounded completion usage", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-budget-")));
+  try {
+    const store = new TeamStore(root);
+    const team = store.create("Bound token use", "codex", 3, 1, 100_000);
+    const agent = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "bounded-analyst",
+      task: "Return a concise result",
+      token_budget: 40_000,
+    });
+    const exceeded = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "second-analyst",
+      task: "Record an overrun",
+      token_budget: 40_000,
+    });
+    assert.throws(
+      () =>
+        store.spawn(team.team_id, {
+          runtime: "codex",
+          role: "third-analyst",
+          task: "Exceed the allocation",
+          token_budget: 30_000,
+        }),
+      /team_token_budget_exceeded/u,
+    );
+    assert.equal(await awaitAgent(store, team.team_id, agent.agent_id, 0), undefined);
+    store.transition(team.team_id, agent.agent_id, "running");
+    const usage = {
+      schema: 1 as const,
+      source: "codex-json-v1" as const,
+      input_tokens: 10_000,
+      cached_input_tokens: 5_000,
+      output_tokens: 1_000,
+      reasoning_output_tokens: 250,
+      total_tokens: 11_000,
+      budget_outcome: "within" as const,
+    };
+    const finished = store.finish(
+      team.team_id,
+      agent.agent_id,
+      { schema: 1, outcome: "succeeded", summary: "Evidence-based result" },
+      usage,
+    );
+    assert.equal(finished.state, "completed");
+    assert.equal(finished.completion?.summary, "Evidence-based result");
+    assert.equal(store.status(team.team_id).tokens.observed, 11_000);
+    assert.equal((await awaitAgent(store, team.team_id, agent.agent_id, 0))?.state, "completed");
+
+    store.transition(team.team_id, exceeded.agent_id, "running");
+    const overrunUsage = {
+      ...usage,
+      input_tokens: 40_000,
+      cached_input_tokens: 10_000,
+      output_tokens: 5_000,
+      reasoning_output_tokens: 1_000,
+      total_tokens: 45_000,
+      budget_outcome: "exceeded" as const,
+    };
+    const failed = store.finish(
+      team.team_id,
+      exceeded.agent_id,
+      { schema: 1, outcome: "token_budget_exceeded", summary: "Stopped after reported overrun" },
+      overrunUsage,
+    );
+    assert.equal(failed.state, "failed");
+    assert.equal(store.status(team.team_id).tokens.exceeded_agents, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("runtime output extracts Codex completion and refuses invented Copilot token usage", () => {
+  const codex = new RuntimeOutput("codex");
+  codex.line(
+    JSON.stringify({
+      type: "item.completed",
+      item: { type: "agent_message", text: "Concise completion" },
+    }),
+  );
+  codex.line(
+    JSON.stringify({
+      type: "turn.completed",
+      usage: {
+        input_tokens: 10_000,
+        cached_input_tokens: 4_000,
+        output_tokens: 750,
+        reasoning_output_tokens: 200,
+      },
+    }),
+  );
+  assert.equal(codex.summary(), "Concise completion");
+  assert.deepEqual(codex.usage(10_000), {
+    schema: 1,
+    source: "codex-json-v1",
+    input_tokens: 10_000,
+    cached_input_tokens: 4_000,
+    output_tokens: 750,
+    reasoning_output_tokens: 200,
+    total_tokens: 10_750,
+    budget_outcome: "exceeded",
+  });
+
+  const copilot = new RuntimeOutput("copilot");
+  copilot.line(
+    JSON.stringify({
+      type: "result",
+      usage: { premiumRequests: 1, sessionDurationMs: 100 },
+    }),
+  );
+  assert.equal(copilot.usage(50_000), undefined);
+
+  const malformed = new RuntimeOutput("codex");
+  malformed.line(
+    JSON.stringify({
+      type: "turn.completed",
+      usage: {
+        input_tokens: -1,
+        cached_input_tokens: 0,
+        output_tokens: 1,
+        reasoning_output_tokens: 0,
+      },
+    }),
+  );
+  malformed.line(
+    JSON.stringify({
+      type: "item.completed",
+      item: { type: "agent_message", text: "x".repeat(4_097) },
+    }),
+  );
+  assert.equal(malformed.usage(50_000), undefined);
+  assert.equal(malformed.summary(), "");
+});
+
+test("legacy teams stay readable but cannot bypass explicit token allocation", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-legacy-budget-")));
+  try {
+    const store = new TeamStore(root);
+    const team = store.create("Legacy state", "codex", 2, 1, 100_000);
+    const agent = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "legacy-worker",
+      task: "Existing work",
+      token_budget: 20_000,
+    });
+    const teamPath = join(root, ".yukh", "teams", team.team_id, "team.json");
+    const agentPath = join(
+      root,
+      ".yukh",
+      "teams",
+      team.team_id,
+      "agents",
+      `${agent.agent_id}.json`,
+    );
+    const legacyTeam = JSON.parse(await readFile(teamPath, "utf8")) as Record<string, unknown>;
+    const legacyAgent = JSON.parse(await readFile(agentPath, "utf8")) as Record<string, unknown>;
+    delete legacyTeam.token_budget;
+    delete legacyAgent.token_budget;
+    delete legacyAgent.coordination_participant;
+    await writeFile(teamPath, `${JSON.stringify(legacyTeam)}\n`);
+    await writeFile(agentPath, `${JSON.stringify(legacyAgent)}\n`);
+
+    const status = store.status(team.team_id);
+    assert.equal(status.team.token_budget, 0);
+    assert.equal(status.agents[0]?.token_budget, 0);
+    assert.match(status.agents[0]?.coordination_participant ?? "", /^agent:legacy-worker-/u);
+    assert.throws(
+      () =>
+        store.spawn(team.team_id, {
+          runtime: "codex",
+          role: "new-worker",
+          task: "Must recreate the team first",
+          token_budget: 20_000,
+        }),
+      /team_token_budget_unavailable/u,
     );
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -94,6 +282,7 @@ test("team store denies undelegated and over-depth children", async () => {
       role: "frontend-lead",
       task: "Lead frontend",
       can_spawn: false,
+      token_budget: 100_000,
     });
     assert.throws(
       () =>
@@ -102,6 +291,7 @@ test("team store denies undelegated and over-depth children", async () => {
           runtime: "copilot",
           role: "ui-worker",
           task: "Build UI",
+          token_budget: 50_000,
         }),
       /agent_delegation_denied/u,
     );
@@ -131,6 +321,7 @@ test("team supervisor starts a detached bounded worker wrapper", async () => {
       runtime: "copilot",
       role: "frontend-developer",
       task: "Build UI",
+      token_budget: 50_000,
     });
     const supervisor = new TeamSupervisor({
       node: process.execPath,
@@ -180,6 +371,7 @@ test("stopping a team makes its wrapper terminate the owned agent CLI", async ()
       runtime: "codex",
       role: "backend-developer",
       task: "Wait",
+      token_budget: 50_000,
     });
     const child = spawn(
       process.execPath,
@@ -233,6 +425,7 @@ test("worker fails closed before agent launch when Coordination cannot join", as
       runtime: "codex",
       role: "delivery-lead",
       task: "Do not start without Coordination",
+      token_budget: 50_000,
     });
     const child = spawn(
       process.execPath,
@@ -268,7 +461,15 @@ test("worker retries bounded transient Coordination unavailability before launch
     const executable = join(root, "agent-cli");
     const launcher = join(root, "launcher");
     const support = join(root, "support.mjs");
-    await writeFile(executable, `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o700 });
+    await writeFile(
+      executable,
+      `#!/bin/sh
+touch ${marker}
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Ready after Coordination recovered"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":50,"output_tokens":20,"reasoning_output_tokens":5}}'
+`,
+      { mode: 0o700 },
+    );
     await writeFile(
       launcher,
       `#!/bin/sh
@@ -292,6 +493,7 @@ printf '{"schema":1,"status":"ok","command":"test"}\\n'
       runtime: "codex",
       role: "delivery-lead",
       task: "Start after Coordination recovers",
+      token_budget: 50_000,
     });
     const child = spawn(
       process.execPath,
@@ -314,7 +516,68 @@ printf '{"schema":1,"status":"ok","command":"test"}\\n'
     assert.equal(await new Promise<number | null>((resolve) => child.once("close", resolve)), 0);
     assert.equal(await readFile(counter, "utf8"), "4");
     assert.equal(store.agent(team.team_id, agent.agent_id).state, "completed");
+    assert.equal(store.agent(team.team_id, agent.agent_id).usage?.total_tokens, 120);
+    assert.equal(
+      store.agent(team.team_id, agent.agent_id).completion?.summary,
+      "Ready after Coordination recovered",
+    );
     assert.equal((await readFile(marker)).length, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("worker fails closed when its runtime exposes no token accounting", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-accounting-deny-")));
+  try {
+    const executable = join(root, "agent-cli");
+    const launcher = join(root, "launcher");
+    const support = join(root, "support.mjs");
+    await writeFile(
+      executable,
+      `#!/bin/sh
+printf '%s\n' '{"type":"result","exitCode":0,"usage":{"premiumRequests":1,"sessionDurationMs":100}}'
+`,
+      { mode: 0o700 },
+    );
+    await writeFile(
+      launcher,
+      '#!/bin/sh\ncat >/dev/null\nprintf \'{"schema":1,"status":"ok","command":"test"}\\n\'\n',
+      { mode: 0o700 },
+    );
+    await writeFile(support, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const team = store.create("Require exact accounting", "copilot");
+    const agent = store.spawn(team.team_id, {
+      runtime: "copilot",
+      role: "credit-only-worker",
+      task: "Do not mislabel credits as tokens",
+      token_budget: 50_000,
+    });
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxLoader, workerMain, team.team_id, agent.agent_id],
+      {
+        cwd: root,
+        stdio: "ignore",
+        env: {
+          HOME: process.env.HOME ?? "",
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          YUKH_TEAM_WORKSPACE: root,
+          YUKH_COORDINATION_LAUNCHER: launcher,
+          YUKH_COORDINATION_MCP_MAIN: support,
+          YUKH_TEAM_CONTROL_MCP_MAIN: support,
+          YUKH_CODEX_EXECUTABLE: executable,
+          YUKH_COPILOT_EXECUTABLE: executable,
+        },
+      },
+    );
+    assert.equal(await new Promise<number | null>((resolve) => child.once("close", resolve)), 1);
+    const failed = store.agent(team.team_id, agent.agent_id);
+    assert.equal(failed.state, "failed");
+    assert.equal(failed.completion?.outcome, "token_accounting_unavailable");
+    assert.equal(failed.usage, undefined);
+    assert.equal(store.status(team.team_id).tokens.unaccounted_agents, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

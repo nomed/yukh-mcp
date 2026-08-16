@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
+import type { AgentRecord } from "../../../packages/team-control/src/store.js";
 
 const id = z.string().regex(/^team-[0-9a-f-]{36}$/u);
 
@@ -10,6 +11,20 @@ function result(value: unknown) {
     content: [{ type: "text" as const, text: JSON.stringify(value) }],
     structuredContent: { result: value },
   };
+}
+
+function failure(code: string) {
+  const value = { schema: 1, status: "error", code };
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(value) }],
+    structuredContent: { result: value },
+    isError: true,
+  };
+}
+
+function stableFailure(error: unknown, allowed: ReadonlySet<string>, fallback: string) {
+  const code = error instanceof Error && allowed.has(error.message) ? error.message : fallback;
+  return failure(code);
 }
 
 export interface TeamControlOptions {
@@ -30,6 +45,21 @@ export function assertProfileAvailable(
     throw new Error("agent_skill_unavailable");
 }
 
+export async function awaitAgent(
+  store: TeamStore,
+  teamId: string,
+  agentId: string,
+  timeoutMs: number,
+): Promise<AgentRecord | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const agent = store.agent(teamId, agentId);
+    if (["completed", "failed", "stopped"].includes(agent.state)) return agent;
+    if (Date.now() >= deadline) return undefined;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now())));
+  }
+}
+
 export function createTeamControlServer(
   store: TeamStore,
   supervisor: TeamSupervisor,
@@ -44,7 +74,7 @@ export function createTeamControlServer(
     {
       capabilities: { tools: { listChanged: false } },
       instructions:
-        "Create and inspect bounded local agent teams from explicit user goals. Team state is persistent; creating a team does not yet start workers.",
+        "Create bounded local teams with explicit token budgets. The team already exists for delegated workers: they must not call team.create. Engage children with smaller budgets, use returned coordination_participant identifiers exactly, wait with agent.await, and consume every successful completion before synthesis. Team state is persistent; creating a team does not start workers.",
     },
   );
 
@@ -64,14 +94,23 @@ export function createTeamControlServer(
           manager_mission: z.string().min(1).max(1_024).optional(),
           max_agents: z.number().int().min(1).max(32).default(16),
           max_depth: z.number().int().min(1).max(5).default(3),
+          token_budget: z.number().int().min(1_000).max(10_000_000),
         })
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    ({ goal, manager_runtime, manager_role, manager_mission, max_agents, max_depth }) => {
+    ({
+      goal,
+      manager_runtime,
+      manager_role,
+      manager_mission,
+      max_agents,
+      max_depth,
+      token_budget,
+    }) => {
       if (options.caller) throw new Error("agent_delegation_denied");
       return result(
-        store.create(goal, manager_runtime, max_agents, max_depth, {
+        store.create(goal, manager_runtime, max_agents, max_depth, token_budget, {
           role: manager_role ?? "delivery-manager",
           mission: manager_mission ?? goal,
         }),
@@ -114,12 +153,21 @@ export function createTeamControlServer(
           instructions: z.string().min(1).max(4_096),
           task: z.string().min(1).max(4_096),
           can_spawn: z.boolean().default(false),
+          token_budget: z.number().int().min(1_000).max(2_000_000),
         })
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     (input) => {
-      assertProfileAvailable(options, input.runtime, input.model, input.skills);
+      try {
+        assertProfileAvailable(options, input.runtime, input.model, input.skills);
+      } catch (error) {
+        return stableFailure(
+          error,
+          new Set(["agent_model_unavailable", "agent_skill_unavailable"]),
+          "agent_profile_unavailable",
+        );
+      }
       if (
         options.caller &&
         (input.team_id !== options.caller.team_id ||
@@ -127,26 +175,43 @@ export function createTeamControlServer(
             input.parent_agent_id !== options.caller.agent_id))
       )
         throw new Error("agent_delegation_denied");
-      const agent = store.spawn(input.team_id, {
-        ...(options.caller
-          ? { parent_agent_id: options.caller.agent_id }
-          : input.parent_agent_id
-            ? { parent_agent_id: input.parent_agent_id }
-            : {}),
-        runtime: input.runtime,
-        role: input.role,
-        profile: {
-          schema: 1,
-          mission: input.mission,
-          model: input.model,
-          skills: input.skills,
-          instructions: input.instructions,
-        },
-        task: input.task,
-        can_spawn: input.can_spawn,
-      });
-      const runtime = supervisor.launch(agent);
-      return result({ agent, ...runtime });
+      try {
+        const agent = store.spawn(input.team_id, {
+          ...(options.caller
+            ? { parent_agent_id: options.caller.agent_id }
+            : input.parent_agent_id
+              ? { parent_agent_id: input.parent_agent_id }
+              : {}),
+          runtime: input.runtime,
+          role: input.role,
+          profile: {
+            schema: 1,
+            mission: input.mission,
+            model: input.model,
+            skills: input.skills,
+            instructions: input.instructions,
+          },
+          task: input.task,
+          can_spawn: input.can_spawn,
+          token_budget: input.token_budget,
+        });
+        const runtime = supervisor.launch(agent);
+        return result({ agent, ...runtime });
+      } catch (error) {
+        return stableFailure(
+          error,
+          new Set([
+            "team_not_active",
+            "team_agent_limit",
+            "team_token_budget_exceeded",
+            "team_token_budget_unavailable",
+            "agent_delegation_denied",
+            "team_depth_limit",
+            "agent_spawn_failed",
+          ]),
+          "agent_engage_failed",
+        );
+      }
     },
   );
 
@@ -167,6 +232,7 @@ export function createTeamControlServer(
           role: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/u),
           task: z.string().min(1).max(4_096),
           can_spawn: z.boolean().default(false),
+          token_budget: z.number().int().min(1_000).max(2_000_000),
         })
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
@@ -189,6 +255,7 @@ export function createTeamControlServer(
         role: input.role,
         task: input.task,
         can_spawn: input.can_spawn,
+        token_budget: input.token_budget,
       });
       const runtime = supervisor.launch(agent);
       return result({ agent, ...runtime });
@@ -208,6 +275,28 @@ export function createTeamControlServer(
     ({ team_id, agent_id }) => {
       authorizeTeam(team_id);
       return result(store.agent(team_id, agent_id));
+    },
+  );
+
+  server.registerTool(
+    "agent.await",
+    {
+      title: "Wait for a local team worker",
+      description:
+        "Wait bounded time for a worker terminal state and return its completion artifact",
+      inputSchema: z
+        .object({
+          team_id: id,
+          agent_id: z.string().regex(/^worker-[0-9a-f-]{36}$/u),
+          timeout_ms: z.number().int().min(0).max(300_000).default(60_000),
+        })
+        .strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    async ({ team_id, agent_id, timeout_ms }) => {
+      authorizeTeam(team_id);
+      const agent = await awaitAgent(store, team_id, agent_id, timeout_ms);
+      return agent ? result(agent) : failure("agent_wait_timeout");
     },
   );
 

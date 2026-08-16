@@ -25,6 +25,15 @@ export interface LifecycleRecord {
 export interface TeamSnapshot {
   readonly team: TeamRecord;
   readonly agents: readonly AgentRecord[];
+  readonly tokens: {
+    readonly budget: number;
+    readonly allocated: number;
+    readonly observed: number;
+    readonly remaining: number;
+    readonly pending_agents: number;
+    readonly unaccounted_agents: number;
+    readonly exceeded_agents: number;
+  };
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -148,20 +157,20 @@ export function renderTeamChanges(
   const lines: string[] = [];
   for (const snapshot of snapshots) {
     const teamKey = `team:${snapshot.team.team_id}`;
-    const teamValue = `${snapshot.team.state}:${snapshot.agents.length}`;
+    const teamValue = `${snapshot.team.state}:${snapshot.agents.length}:${snapshot.tokens.allocated}:${snapshot.tokens.observed}:${snapshot.tokens.pending_agents}:${snapshot.tokens.unaccounted_agents}:${snapshot.tokens.exceeded_agents}`;
     if (previous.get(teamKey) !== teamValue) {
       previous.set(teamKey, teamValue);
       lines.push(
-        `TEAM  ${snapshot.team.team_id}  ${snapshot.team.state.toUpperCase()}  agents=${snapshot.agents.length}\n      manager=${snapshot.team.manager_role ?? "manager"} runtime=${snapshot.team.manager_runtime} goal=${compact(snapshot.team.goal, 160)}${snapshot.team.manager_mission ? `\n      mission=${compact(snapshot.team.manager_mission, 160)}` : ""}`,
+        `TEAM  ${snapshot.team.team_id}  ${snapshot.team.state.toUpperCase()}  agents=${snapshot.agents.length}\n      manager=${snapshot.team.manager_role ?? "manager"} runtime=${snapshot.team.manager_runtime} goal=${compact(snapshot.team.goal, 160)}${snapshot.team.manager_mission ? `\n      mission=${compact(snapshot.team.manager_mission, 160)}` : ""}\n      tokens=${snapshot.tokens.observed}/${snapshot.tokens.budget} allocated=${snapshot.tokens.allocated} pending=${snapshot.tokens.pending_agents} unaccounted=${snapshot.tokens.unaccounted_agents} exceeded=${snapshot.tokens.exceeded_agents}`,
       );
     }
     for (const agent of snapshot.agents) {
       const key = `agent:${agent.agent_id}`;
-      const value = `${agent.state}:${agent.task}`;
+      const value = `${agent.state}:${agent.task}:${agent.usage?.total_tokens ?? "pending"}:${agent.completion?.outcome ?? "pending"}`;
       if (previous.get(key) === value) continue;
       previous.set(key, value);
       lines.push(
-        `WORKER  ${agent.role}  ${agent.state.toUpperCase()}  runtime=${agent.runtime}${agent.profile ? ` model=${agent.profile.model}` : ""}\n        task=${compact(agent.task, 180)}${agent.profile ? `\n        mission=${compact(agent.profile.mission, 160)} skills=${agent.profile.skills.join(",") || "none"}` : ""}\n        id=${agent.agent_id} parent=${agent.parent_agent_id ?? "manager"}`,
+        `WORKER  ${agent.role}  ${agent.state.toUpperCase()}  runtime=${agent.runtime}${agent.profile ? ` model=${agent.profile.model}` : ""}\n        task=${compact(agent.task, 180)}${agent.profile ? `\n        mission=${compact(agent.profile.mission, 160)} skills=${agent.profile.skills.join(",") || "none"}` : ""}\n        tokens=${agent.usage?.total_tokens ?? "pending"}/${agent.token_budget} accounting=${agent.usage?.source ?? "pending"} completion=${agent.completion?.outcome ?? "pending"}\n        coordination=${agent.coordination_participant} id=${agent.agent_id} parent=${agent.parent_agent_id ?? "manager"}`,
       );
     }
   }

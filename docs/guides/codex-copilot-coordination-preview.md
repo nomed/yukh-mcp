@@ -58,7 +58,7 @@ paths to the project workspace, Coordination launcher and both agent CLIs:
 command = "node"
 args = ["/path/to/yukh-mcp/dist/apps/team-control/src/main.js"]
 env = { YUKH_TEAM_WORKSPACE = "/path/to/project", YUKH_COORDINATION_LAUNCHER = "/path/to/yukh-local-agent.py", YUKH_CODEX_EXECUTABLE = "/absolute/path/to/codex", YUKH_COPILOT_EXECUTABLE = "/absolute/path/to/copilot" }
-enabled_tools = ["team.create", "team.status", "agent.spawn", "agent.status", "task.assign", "team.stop"]
+enabled_tools = ["team.create", "team.status", "agent.engage", "agent.await", "agent.status", "task.assign", "team.stop"]
 default_tools_approval_mode = "writes"
 ```
 
@@ -70,15 +70,28 @@ env = { YUKH_CODEX_MODELS = "default,approved-codex-model", YUKH_COPILOT_MODELS 
 
 The manager uses `agent.engage` to compose any bounded professional role. Model
 and skill values outside these allowlists fail before process launch. The
-worker must bootstrap and join Coordination before its agent CLI starts.
+worker must bootstrap and join Coordination before its agent CLI starts. Set an
+explicit team `token_budget` in `team.create` and a smaller `token_budget` for
+every `agent.engage`. Allocations above the team budget are rejected.
+Teams created by an older preview remain readable with budget zero but cannot
+engage more workers; stop and recreate them with an explicit budget.
+
+After engaging a child, use the returned `coordination_participant` exactly and
+call `agent.await`. A successful terminal record contains the child's bounded
+completion summary and structured usage. The viewer shows observed/team budget,
+accounting source and completion outcome. Codex currently supplies trustworthy
+token counts. Copilot exposes credits and duration but not tokens, so a
+token-strict Copilot worker terminates with `token_accounting_unavailable`
+rather than inventing a conversion.
 
 For Copilot, use the equivalent MCP server values in `copilot mcp add`. Then ask
 the manager:
 
 ```text
-Use yukh-team-control. Create a team for this workspace with one Codex backend
-developer and one Copilot frontend developer. Start both, let them coordinate
-through Yukh, and report their states and log paths.
+Use yukh-team-control. Create a 120000-token team for this workspace. Engage one
+Codex backend developer with a 50000-token budget. Wait for its completion,
+inspect its summary and usage, then report the result. Do not engage a runtime
+that cannot provide token accounting.
 ```
 
 `agent.spawn` starts a real detached CLI and returns its PID and log path. A
