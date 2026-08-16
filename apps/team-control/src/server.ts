@@ -170,7 +170,7 @@ function budgetFor(workProfile: TeamWorkProfile): {
     return { token_budget: 18_000, tool_mode: "none", max_commands: 0, runtime_timeout_ms: 60_000 };
   if (workProfile === "readonly")
     return {
-      token_budget: 30_000,
+      token_budget: 50_000,
       tool_mode: "none",
       max_commands: 4,
       runtime_timeout_ms: 120_000,
