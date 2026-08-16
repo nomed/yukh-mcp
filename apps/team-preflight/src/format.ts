@@ -7,6 +7,11 @@ function list(values: readonly string[]): string {
   return values.length > 0 ? values.join(", ") : "none";
 }
 
+function compact(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
 export function formatEngagePreflight(
   output: EngagePreflightOutput,
   options?: { readonly runCommand?: string | false },
@@ -22,6 +27,7 @@ export function formatEngagePreflight(
     "Planned worker",
     `- id: ${worker.agent_id}`,
     `- role: ${worker.role}`,
+    `- task: ${compact(worker.task, 240)}`,
     `- runtime: ${policy.runtime}`,
     `- model: ${policy.model}`,
     `- skills: ${list(policy.skills)}`,
