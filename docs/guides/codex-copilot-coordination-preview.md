@@ -10,6 +10,18 @@ npm ci --ignore-scripts
 npm run build
 ```
 
+Before starting a team, check the local suite checkout without installing
+dependencies or starting services:
+
+```sh
+yukh suite baseline --workspace /path/to/yukh-workspace
+```
+
+The command reports the tracked Git state, runtime hints and documented
+validation command for `nomed.github.io`, `yukh-mcp`, `yukh-projects` and
+`yukh-coordination`. Detached checkouts are warnings; missing repositories or
+tracked-file drift are errors.
+
 Use absolute paths below. Configure Codex as `agent-a`:
 
 ```toml
