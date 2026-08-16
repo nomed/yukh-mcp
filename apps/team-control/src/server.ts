@@ -2,8 +2,12 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
-import type { AgentRecord } from "../../../packages/team-control/src/store.js";
-import type { TeamExecutionPlanRecord } from "../../../packages/team-control/src/store.js";
+import type {
+  AgentRecord,
+  AgentRuntime,
+  ModelToolMode,
+  TeamExecutionPlanRecord,
+} from "../../../packages/team-control/src/store.js";
 
 const id = z.string().regex(/^team-[0-9a-f-]{36}$/u);
 
@@ -41,6 +45,25 @@ export interface TeamControlOptions {
   readonly dynamicExecution?: boolean;
 }
 
+export type TeamWorkProfile = "review" | "implementation" | "synthesis";
+
+export interface RoleProfilePolicy {
+  readonly schema: 1;
+  readonly role: string;
+  readonly work_profile: TeamWorkProfile;
+  readonly recommendation: {
+    readonly runtime: AgentRuntime;
+    readonly model: string;
+    readonly skills: readonly string[];
+    readonly token_budget: number;
+    readonly tool_mode: ModelToolMode;
+    readonly max_commands: number;
+    readonly runtime_timeout_ms: number;
+  };
+  readonly omitted_skills: readonly string[];
+  readonly rationale: string;
+}
+
 export function dynamicExecutionEnabled(options: TeamControlOptions): boolean {
   return options.dynamicExecution !== false;
 }
@@ -63,6 +86,100 @@ export function assertProfileAvailable(
   const availableSkills = options.skills?.[runtime] ?? new Set<string>();
   if (skills.some((skill) => !availableSkills.has(skill)))
     throw new Error("agent_skill_unavailable");
+}
+
+export function roleProfilePolicy(
+  options: TeamControlOptions,
+  role: string,
+  workProfile: TeamWorkProfile,
+  preferredRuntime?: AgentRuntime,
+): RoleProfilePolicy {
+  const runtime = selectRuntime(options, role, preferredRuntime);
+  const skills = selectSkills(options, runtime, role);
+  const budget = budgetFor(workProfile);
+  return {
+    schema: 1,
+    role,
+    work_profile: workProfile,
+    recommendation: {
+      runtime,
+      model: selectModel(options, runtime),
+      skills: skills.selected,
+      token_budget: budget.token_budget,
+      tool_mode: budget.tool_mode,
+      max_commands: budget.max_commands,
+      runtime_timeout_ms: budget.runtime_timeout_ms,
+    },
+    omitted_skills: skills.omitted,
+    rationale: rationaleFor(role, runtime, workProfile),
+  };
+}
+
+function selectRuntime(
+  options: TeamControlOptions,
+  role: string,
+  preferredRuntime?: AgentRuntime,
+): AgentRuntime {
+  if (preferredRuntime && hasRuntime(options, preferredRuntime)) return preferredRuntime;
+  const frontend = /\b(frontend|front-end|ui|ux|react|vite|web)\b/u.test(role);
+  if (frontend && hasRuntime(options, "copilot")) return "copilot";
+  if (hasRuntime(options, "codex")) return "codex";
+  return "copilot";
+}
+
+function hasRuntime(options: TeamControlOptions, runtime: AgentRuntime): boolean {
+  return (options.models?.[runtime].size ?? options.modelCatalog?.[runtime].models.length ?? 0) > 0;
+}
+
+function selectModel(options: TeamControlOptions, runtime: AgentRuntime): string {
+  const models = [...(options.models?.[runtime] ?? options.modelCatalog?.[runtime].models ?? [])];
+  return models.includes("default") ? "default" : (models[0] ?? "default");
+}
+
+function selectSkills(
+  options: TeamControlOptions,
+  runtime: AgentRuntime,
+  role: string,
+): { readonly selected: readonly string[]; readonly omitted: readonly string[] } {
+  const desired = desiredSkills(role);
+  const available = options.skills?.[runtime] ?? new Set<string>();
+  const selected = desired.filter((skill) => available.has(skill));
+  return {
+    selected,
+    omitted: desired.filter((skill) => !selected.includes(skill)),
+  };
+}
+
+function desiredSkills(role: string): readonly string[] {
+  if (/\b(frontend|front-end|ui|ux|react|vite|web)\b/u.test(role)) return ["frontend"];
+  if (/\b(qa|test|tester|quality)\b/u.test(role)) return ["testing"];
+  if (/\b(security|threat|audit)\b/u.test(role)) return ["security", "testing"];
+  if (/\b(doc|docs|documentation|site)\b/u.test(role)) return ["documentation"];
+  if (/\b(product|manager|pm|delivery)\b/u.test(role)) return ["product", "testing"];
+  if (/\b(backend|api|server|integration)\b/u.test(role)) return ["api-design", "testing"];
+  return ["testing"];
+}
+
+function budgetFor(workProfile: TeamWorkProfile): {
+  readonly token_budget: number;
+  readonly tool_mode: ModelToolMode;
+  readonly max_commands: number;
+  readonly runtime_timeout_ms: number;
+} {
+  if (workProfile === "review")
+    return { token_budget: 18_000, tool_mode: "none", max_commands: 0, runtime_timeout_ms: 60_000 };
+  if (workProfile === "synthesis")
+    return { token_budget: 16_000, tool_mode: "none", max_commands: 0, runtime_timeout_ms: 60_000 };
+  return {
+    token_budget: 50_000,
+    tool_mode: "team",
+    max_commands: 8,
+    runtime_timeout_ms: 300_000,
+  };
+}
+
+function rationaleFor(role: string, runtime: AgentRuntime, workProfile: TeamWorkProfile): string {
+  return `${role} mapped to ${runtime} with a ${workProfile} budget profile; unavailable skills are omitted rather than invented.`;
 }
 
 export async function awaitAgent(
@@ -270,8 +387,8 @@ export function createTeamControlServer(
           instructions: z.string().min(1).max(4_096),
           task: z.string().min(1).max(4_096),
           required_actions: z
-            .array(z.enum(["team.status", "agent.engage", "agent.await"]))
-            .max(3)
+            .array(z.enum(["policy.profile", "team.status", "agent.engage", "agent.await"]))
+            .max(4)
             .default([]),
           output_contract: z.enum(["summary", "team-plan-v1"]).default("summary"),
           max_agents: z.number().int().min(1).max(32).default(16),
@@ -478,6 +595,40 @@ export function createTeamControlServer(
           mission: manager_mission ?? goal,
         }),
       );
+    },
+  );
+
+  server.registerTool(
+    "policy.profile",
+    {
+      title: "Recommend a bounded specialist profile",
+      description:
+        "Map a role to an allowlisted runtime, model, skills and token budget before engaging a worker",
+      inputSchema: z
+        .object({
+          team_id: id.optional(),
+          role: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/u),
+          work_profile: z.enum(["review", "implementation", "synthesis"]).default("implementation"),
+          preferred_runtime: z.enum(["codex", "copilot"]).optional(),
+        })
+        .strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    ({ team_id, role, work_profile, preferred_runtime }) => {
+      if (options.caller) {
+        if (!team_id || team_id !== options.caller.team_id)
+          throw new Error("agent_delegation_denied");
+        return result({
+          ...roleProfilePolicy(options, role, work_profile, preferred_runtime),
+          receipt: store.receipt(
+            team_id,
+            "policy.profile",
+            options.caller.agent_id,
+            options.caller.agent_id,
+          ),
+        });
+      }
+      return result(roleProfilePolicy(options, role, work_profile, preferred_runtime));
     },
   );
 

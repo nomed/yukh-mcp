@@ -40,7 +40,7 @@ const modelTeamTools = [
       ? []
       : modelToolMode === "team"
         ? agent.can_spawn
-          ? ["team.status", "agent.status", "agent.engage", "agent.await"]
+          ? ["policy.profile", "team.status", "agent.status", "agent.engage", "agent.await"]
           : ["team.status", "agent.status"]
         : agent.kind === "manager"
           ? agent.required_actions
