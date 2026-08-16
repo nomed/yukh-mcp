@@ -158,6 +158,10 @@ tokens. The default implementation allocation is therefore 80,000 tokens and
 the generic team preflight default is 260,000 tokens. Delegating workers still
 receive the explicit Yukh tools they need for receipt-backed actions.
 Keep simple workers non-delegating unless they need child agents or receipt-backed actions.
+Compact implementation probes should use one small tracked file and one
+explicit validation command. A compact preflight-to-worker documentation edit
+measured 59,006 total worker tokens against the 80,000-token implementation
+allocation.
 A zero-command worker using two small context files measured 15,652 total tokens
 against an 8,000-token allocation and failed closed after preserving its summary
 for review. Use at least an 18,000-token worker budget for similar
