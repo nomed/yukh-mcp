@@ -125,6 +125,20 @@ test("micro code edit preset requires a narrow code path and one validation comm
   assert.match(args.goal, /Do not read broad repository context/u);
 });
 
+test("preflight rejects invalid role arguments with a focused error", () => {
+  for (const role of [
+    "Backend Developer",
+    "-backend-developer",
+    "backend_developer",
+    "a".repeat(33),
+  ]) {
+    assert.throws(
+      () => parsePreflightArguments(["--role", role]),
+      (error: unknown) => error instanceof TypeError && error.message === "invalid role argument",
+    );
+  }
+});
+
 const usage = {
   schema: 1 as const,
   source: "codex-json-v1" as const,

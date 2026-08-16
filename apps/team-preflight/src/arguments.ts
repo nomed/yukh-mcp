@@ -116,6 +116,8 @@ export function parsePreflightArguments(
   const workProfile = values.get("work-profile") ?? preset?.workProfile ?? "implementation";
   if (!["review", "readonly", "implementation", "synthesis"].includes(workProfile))
     throw new TypeError("invalid work profile");
+  const role = values.get("role") ?? preset?.role ?? "backend-reviewer";
+  if (!/^[a-z][a-z0-9-]{0,31}$/u.test(role)) throw new TypeError("invalid role argument");
   const format = values.get("format") ?? options?.defaultFormat ?? "json";
   if (!["json", "text"].includes(format)) throw new TypeError("invalid output format");
   const workspace = values.get("workspace") ?? options?.defaultWorkspace;
@@ -123,7 +125,7 @@ export function parsePreflightArguments(
   return {
     ...(workspace ? { workspace } : {}),
     goal: values.get("goal") ?? preset?.goal ?? "Preflight one dynamic Yukh worker engagement.",
-    role: values.get("role") ?? preset?.role ?? "backend-reviewer",
+    role,
     workProfile: workProfile as TeamWorkProfile,
     ...(preferredRuntime ? { preferredRuntime: preferredRuntime as AgentRuntime } : {}),
     teamBudget: integer(values.get("team-budget"), preset?.teamBudget ?? 260_000),
