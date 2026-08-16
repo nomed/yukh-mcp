@@ -29,11 +29,13 @@ const profile = agent.profile;
 const contextPack = store.contextPack(teamID, agentID);
 const modelToolMode = agent.model_tool_mode ?? "default";
 const requiredActions = agent.required_actions.join(", ") || "none";
+const requiresDelegationAction = agent.required_actions.some(
+  (action) => action === "agent.engage" || action === "agent.await",
+);
 const modelUsesCoordination =
   modelToolMode === "coordination" ||
   modelToolMode === "team" ||
-  (modelToolMode === "default" &&
-    (agent.kind === "worker" || agent.required_actions.some((action) => action !== "team.status")));
+  (modelToolMode === "default" && requiresDelegationAction);
 const modelTeamTools = [
   ...new Set(
     modelToolMode === "none" || modelToolMode === "coordination"
@@ -44,9 +46,9 @@ const modelTeamTools = [
           : ["team.status", "agent.status"]
         : agent.kind === "manager"
           ? agent.required_actions
-          : agent.can_spawn
+          : agent.can_spawn && requiresDelegationAction
             ? ["team.status", "agent.status", "agent.engage", "agent.await"]
-            : ["team.status", "agent.status"],
+            : agent.required_actions,
   ),
 ];
 const modelUsesTeamControl = modelTeamTools.length > 0;
@@ -57,7 +59,7 @@ const teamControlInstruction = modelUsesTeamControl
   ? `Required receipt-backed actions before success: ${requiredActions}. A textual claim is not evidence; invoke each required yukh-team-control tool successfully.`
   : "";
 const delegationInstruction =
-  agent.can_spawn && modelUsesTeamControl
+  agent.can_spawn && modelUsesTeamControl && modelTeamTools.includes("agent.engage")
     ? agent.required_actions.includes("agent.await")
       ? "When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. You may create a bounded child only when explicitly delegated."
       : "When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Do not wait for the child unless the task explicitly requires agent.await. You may create a bounded child only when explicitly delegated."

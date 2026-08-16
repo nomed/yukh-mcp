@@ -152,6 +152,10 @@ so the official readonly verifier allocation is 90,000 tokens and one command.
 A tiny documentation implementation worker measured 90,893 total tokens, so the
 default implementation allocation is 120,000 tokens and the generic team
 preflight default is 340,000 tokens.
+After removing unnecessary model-facing Yukh MCP tools from simple
+non-delegating implementation workers, a minimal no-edit Codex probe measured
+14,003 total tokens. Delegating workers still receive the explicit Yukh tools
+they need for receipt-backed actions.
 A zero-command worker using two small context files measured 15,652 total tokens
 against an 8,000-token allocation and failed closed after preserving its summary
 for review. Use at least an 18,000-token worker budget for similar
