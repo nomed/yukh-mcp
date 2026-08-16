@@ -26,7 +26,25 @@ const mcpEnv = {
 };
 const profile = agent.profile;
 const requiredActions = agent.required_actions.join(", ") || "none";
-const prompt = `You are ${agent.role}, ${agent.kind} ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nToken budget: ${agent.token_budget} total input plus output tokens. Keep inspection and tool output bounded. The team already exists: do not call team.create. Required receipt-backed actions before success: ${requiredActions}. A textual claim is not evidence; invoke each required yukh-team-control tool successfully. When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. Your Coordination session is already bootstrapped and joined. Use yukh-coordination to replay messages and communicate decisions and blockers. End with one concise public-safe completion summary of at most 4096 UTF-8 bytes; the wrapper persists that final response. You may create a bounded child only when explicitly delegated.`;
+const modelUsesCoordination =
+  agent.kind === "worker" || agent.required_actions.some((action) => action !== "team.status");
+const modelTeamTools = [
+  ...new Set(
+    agent.kind === "manager"
+      ? agent.required_actions
+      : agent.can_spawn
+        ? ["team.status", "agent.status", "agent.engage", "agent.await"]
+        : ["team.status", "agent.status"],
+  ),
+];
+const modelUsesTeamControl = modelTeamTools.length > 0;
+const coordinationInstruction = modelUsesCoordination
+  ? "Your Coordination session is already bootstrapped and joined. Use yukh-coordination only for necessary team communication."
+  : "Coordination model tools are omitted for this bounded turn because no communication action is required.";
+const teamControlInstruction = modelUsesTeamControl
+  ? `Required receipt-backed actions before success: ${requiredActions}. A textual claim is not evidence; invoke each required yukh-team-control tool successfully.`
+  : "No model-facing team-control tools are required or exposed for this single-pass turn; the controller verifies manager.start and terminal state.";
+const prompt = `You are ${agent.role}, ${agent.kind} ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nToken budget: ${agent.token_budget} total input plus output tokens. Keep inspection and tool output bounded. The team already exists: do not call team.create. ${teamControlInstruction} When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. ${coordinationInstruction} End with one concise public-safe completion summary of at most 4096 UTF-8 bytes; the wrapper persists that final response. You may create a bounded child only when explicitly delegated.`;
 const teamControlEnv = {
   YUKH_TEAM_WORKSPACE: workspace,
   YUKH_COORDINATION_LAUNCHER: launcher,
@@ -51,24 +69,35 @@ const args =
         "exec",
         "--ephemeral",
         "--json",
+        "--ignore-user-config",
         "--dangerously-bypass-approvals-and-sandbox",
         ...(profile && profile.model !== "default" ? ["--model", profile.model] : []),
-        "-c",
-        `mcp_servers.yukh-coordination.command=${JSON.stringify(node)}`,
-        "-c",
-        `mcp_servers.yukh-coordination.args=${JSON.stringify([mcpMain])}`,
-        "-c",
-        `mcp_servers.yukh-coordination.env.YUKH_COORDINATION_AGENT=${JSON.stringify(agent.coordination_agent)}`,
-        "-c",
-        `mcp_servers.yukh-coordination.env.YUKH_COORDINATION_LAUNCHER=${JSON.stringify(launcher)}`,
-        "-c",
-        `mcp_servers.yukh-team-control.command=${JSON.stringify(node)}`,
-        "-c",
-        `mcp_servers.yukh-team-control.args=${JSON.stringify([teamControlMain])}`,
-        ...Object.entries(teamControlEnv).flatMap(([name, value]) => [
-          "-c",
-          `mcp_servers.yukh-team-control.env.${name}=${JSON.stringify(value)}`,
-        ]),
+        ...(modelUsesCoordination
+          ? [
+              "-c",
+              `mcp_servers.yukh-coordination.command=${JSON.stringify(node)}`,
+              "-c",
+              `mcp_servers.yukh-coordination.args=${JSON.stringify([mcpMain])}`,
+              "-c",
+              `mcp_servers.yukh-coordination.env.YUKH_COORDINATION_AGENT=${JSON.stringify(agent.coordination_agent)}`,
+              "-c",
+              `mcp_servers.yukh-coordination.env.YUKH_COORDINATION_LAUNCHER=${JSON.stringify(launcher)}`,
+            ]
+          : []),
+        ...(modelUsesTeamControl
+          ? [
+              "-c",
+              `mcp_servers.yukh-team-control.command=${JSON.stringify(node)}`,
+              "-c",
+              `mcp_servers.yukh-team-control.args=${JSON.stringify([teamControlMain])}`,
+              "-c",
+              `mcp_servers.yukh-team-control.enabled_tools=${JSON.stringify(modelTeamTools)}`,
+              ...Object.entries(teamControlEnv).flatMap(([name, value]) => [
+                "-c",
+                `mcp_servers.yukh-team-control.env.${name}=${JSON.stringify(value)}`,
+              ]),
+            ]
+          : []),
         prompt,
       ]
     : [
@@ -82,20 +111,28 @@ const args =
         ...(profile && profile.model !== "default" ? ["--model", profile.model] : []),
         `--additional-mcp-config=${JSON.stringify({
           mcpServers: {
-            "yukh-coordination": {
-              type: "stdio",
-              command: node,
-              args: [mcpMain],
-              env: mcpEnv,
-              tools: ["*"],
-            },
-            "yukh-team-control": {
-              type: "stdio",
-              command: node,
-              args: [teamControlMain],
-              env: teamControlEnv,
-              tools: ["*"],
-            },
+            ...(modelUsesCoordination
+              ? {
+                  "yukh-coordination": {
+                    type: "stdio" as const,
+                    command: node,
+                    args: [mcpMain],
+                    env: mcpEnv,
+                    tools: ["*"],
+                  },
+                }
+              : {}),
+            ...(modelUsesTeamControl
+              ? {
+                  "yukh-team-control": {
+                    type: "stdio" as const,
+                    command: node,
+                    args: [teamControlMain],
+                    env: teamControlEnv,
+                    tools: modelTeamTools,
+                  },
+                }
+              : {}),
           },
         })}`,
       ];

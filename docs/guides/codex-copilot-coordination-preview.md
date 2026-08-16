@@ -94,17 +94,28 @@ the manager:
 
 ```text
 Use yukh-team-control. Call manager.start with a 120000-token team budget and a
-45000-token Codex manager budget. Require agent.engage and agent.await receipts.
+20000-token Codex planning-manager budget and no required actions. Ask it for a
+single-pass proposal using only supplied facts. After approving the proposal,
+start a separate operational manager that requires agent.engage and agent.await
+receipts.
 Ask the manager to engage one Codex backend developer with a 50000-token budget,
 wait for its completion, inspect its summary and usage, then report the result.
 Do not use team.create and do not engage a runtime that cannot provide token
 accounting.
 ```
 
-The 45,000-token manager allocation reflects the measured bounded planning
-profile with no repository, shell or web inspection. Treat it as an initial
-qualification value, not a universal estimate. `team.status` returns its newly
-issued receipt directly to an accounted manager while also persisting it.
+The tool-free planning profile measured 14,382 total tokens: 13,735 input,
+including 9,984 cached, and 647 output. The 20,000-token allocation provides a
+bounded margin; it is not a universal estimate. Every operational tool call is
+a separate context round and needs its own justified budget. `team.status`
+returns its newly issued receipt directly to an accounted manager while also
+persisting it.
+
+Codex managers run without inherited user configuration. Yukh injects only the
+tools required by the manager record; a pure planning turn receives no
+model-facing MCP at all. A status-only operational turn receives only compact
+team status and no Coordination tools. Its status result is a compact projection,
+while the operator and conversation viewer retain full persistent state.
 
 `agent.spawn` starts a real detached CLI and returns its PID and log path. A
 worker with `can_spawn=true` receives the same team-control MCP but can create

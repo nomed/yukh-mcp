@@ -67,13 +67,52 @@ export function readTeamStatus(
 ):
   | ReturnType<TeamStore["status"]>
   | {
-      readonly status: ReturnType<TeamStore["status"]>;
+      readonly status: {
+        readonly team: {
+          readonly team_id: string;
+          readonly state: "active" | "stopped";
+          readonly max_agents: number;
+          readonly max_depth: number;
+          readonly token_budget: number;
+        };
+        readonly agents: readonly {
+          readonly agent_id: string;
+          readonly kind: "manager" | "worker";
+          readonly role: string;
+          readonly state: "defined" | "running" | "completed" | "failed" | "stopped";
+          readonly token_budget: number;
+          readonly observed_tokens: number;
+          readonly completion: string;
+        }[];
+        readonly tokens: ReturnType<TeamStore["status"]>["tokens"];
+      };
       readonly receipt: ReturnType<TeamStore["receipt"]>;
     } {
   const status = store.status(teamId);
   if (!caller) return status;
   const receipt = store.receipt(teamId, "team.status", caller.agent_id, caller.agent_id);
-  return { status, receipt };
+  return {
+    status: {
+      team: {
+        team_id: status.team.team_id,
+        state: status.team.state,
+        max_agents: status.team.max_agents,
+        max_depth: status.team.max_depth,
+        token_budget: status.team.token_budget,
+      },
+      agents: status.agents.map((agent) => ({
+        agent_id: agent.agent_id,
+        kind: agent.kind,
+        role: agent.role,
+        state: agent.state,
+        token_budget: agent.token_budget,
+        observed_tokens: agent.usage?.total_tokens ?? 0,
+        completion: agent.completion?.outcome ?? "pending",
+      })),
+      tokens: status.tokens,
+    },
+    receipt,
+  };
 }
 
 export function createTeamControlServer(

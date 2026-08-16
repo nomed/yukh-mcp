@@ -249,6 +249,21 @@ The observer exposes exact runtime token categories. Residual risk remains
 post-turn budget detection because the agent CLI does not provide a trusted
 preemptive token-control boundary.
 
+## Accepted isolated minimal manager context — 2026-08-16
+
+- Governing issue: #143
+- Accepted architecture: RFC-0022
+- Scope: Codex configuration isolation, per-agent MCP minimization and compact status
+
+Accounted Codex runtimes ignore user configuration and receive only explicit
+Yukh MCP overrides. Tool exposure is derived from the persistent agent record;
+a pure planning manager receives no model-facing MCP, while a status-only
+manager receives neither unrelated team tools nor Coordination. Accounted
+status excludes prompt-derived task, mission,
+instruction and skill text while retaining exact bounds, states, token totals
+and the current receipt. External operator status remains complete. Residual
+risk is the provider's irreducible system/context cost and post-turn accounting.
+
 ## Capability contract implementation review — 2026-08-03
 
 - Governing issue: #5

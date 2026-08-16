@@ -305,6 +305,8 @@ test("accounted manager receives the exact persisted team status receipt", async
     if (!("status" in accounted)) throw new Error("missing accounted status");
     assert.equal(accounted.receipt.action, "team.status");
     assert.equal(accounted.receipt.actor_agent_id, managed.manager.agent_id);
+    assert.equal("profile" in accounted.status.agents[0]!, false);
+    assert.equal("task" in accounted.status.agents[0]!, false);
     assert.equal(
       store.status(managed.team.team_id).receipts.at(-1)?.receipt_id,
       accounted.receipt.receipt_id,
@@ -738,11 +740,13 @@ test("root manager fails closed when a required action has no receipt", async ()
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-manager-receipt-deny-")));
   try {
     const executable = join(root, "agent-cli");
+    const argumentsFile = join(root, "agent-arguments");
     const launcher = join(root, "launcher");
     const support = join(root, "support.mjs");
     await writeFile(
       executable,
       `#!/bin/sh
+printf '%s\n' "$@" >${argumentsFile}
 printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"I claim the team was inspected"}}'
 printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20,"reasoning_output_tokens":5}}'
 `,
@@ -791,6 +795,81 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
     assert.equal(failed.state, "failed");
     assert.equal(failed.completion?.outcome, "required_action_missing");
     assert.equal(failed.usage?.total_tokens, 120);
+    const runtimeArguments = await readFile(argumentsFile, "utf8");
+    assert.match(runtimeArguments, /--ignore-user-config/u);
+    assert.match(
+      runtimeArguments,
+      /mcp_servers\.yukh-team-control\.enabled_tools=\["team\.status"\]/u,
+    );
+    assert.doesNotMatch(runtimeArguments, /mcp_servers\.yukh-coordination\.command/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("pure planning manager receives no model-facing MCP configuration", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-manager-tool-free-")));
+  try {
+    const executable = join(root, "agent-cli");
+    const argumentsFile = join(root, "agent-arguments");
+    const launcher = join(root, "launcher");
+    const support = join(root, "support.mjs");
+    await writeFile(
+      executable,
+      `#!/bin/sh
+printf '%s\n' "$@" >${argumentsFile}
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"One-pass plan"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":20,"reasoning_output_tokens":5}}'
+`,
+      { mode: 0o700 },
+    );
+    await writeFile(
+      launcher,
+      '#!/bin/sh\ncat >/dev/null\nprintf \'{"schema":1,"status":"ok","command":"test"}\\n\'\n',
+      { mode: 0o700 },
+    );
+    await writeFile(support, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Plan once", "codex", 2, 1, 5_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Return one compact plan",
+        model: "default",
+        skills: [],
+        instructions: "Use only supplied facts.",
+      },
+      task: "Propose the plan",
+      token_budget: 2_000,
+      required_actions: [],
+    });
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxLoader, workerMain, managed.team.team_id, managed.manager.agent_id],
+      {
+        cwd: root,
+        stdio: "ignore",
+        env: {
+          HOME: process.env.HOME ?? "",
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          YUKH_TEAM_WORKSPACE: root,
+          YUKH_COORDINATION_LAUNCHER: launcher,
+          YUKH_COORDINATION_MCP_MAIN: support,
+          YUKH_TEAM_CONTROL_MCP_MAIN: support,
+          YUKH_CODEX_EXECUTABLE: executable,
+          YUKH_COPILOT_EXECUTABLE: executable,
+        },
+      },
+    );
+    assert.equal(await new Promise<number | null>((resolve) => child.once("close", resolve)), 0);
+    const runtimeArguments = await readFile(argumentsFile, "utf8");
+    assert.match(runtimeArguments, /--ignore-user-config/u);
+    assert.doesNotMatch(runtimeArguments, /mcp_servers\.yukh-team-control/u);
+    assert.doesNotMatch(runtimeArguments, /mcp_servers\.yukh-coordination/u);
+    assert.equal(
+      store.agent(managed.team.team_id, managed.manager.agent_id).completion?.outcome,
+      "succeeded",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
