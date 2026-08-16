@@ -101,7 +101,15 @@ const teamControlEnv = {
   YUKH_CALLER_TEAM_ID: agent.team_id,
   YUKH_CALLER_AGENT_ID: agent.agent_id,
   ...Object.fromEntries(
-    ["YUKH_CODEX_MODELS", "YUKH_COPILOT_MODELS", "YUKH_CODEX_SKILLS", "YUKH_COPILOT_SKILLS"]
+    [
+      "YUKH_CODEX_MODELS",
+      "YUKH_COPILOT_MODELS",
+      "YUKH_CODEX_MODEL_SOURCE",
+      "YUKH_COPILOT_MODEL_SOURCE",
+      "YUKH_CODEX_SKILLS",
+      "YUKH_COPILOT_SKILLS",
+      "YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS",
+    ]
       .filter((name) => process.env[name] !== undefined)
       .map((name) => [name, process.env[name]!] as const),
   ),
