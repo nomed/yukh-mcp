@@ -8,7 +8,11 @@ import test from "node:test";
 import { TeamStore } from "../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
 import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js";
-import { assertProfileAvailable, awaitAgent } from "../../apps/team-control/src/server.js";
+import {
+  assertProfileAvailable,
+  awaitAgent,
+  readTeamStatus,
+} from "../../apps/team-control/src/server.js";
 
 const workerMain = fileURLToPath(new URL("../../apps/team-worker/src/main.ts", import.meta.url));
 const tsxLoader = fileURLToPath(import.meta.resolve("tsx"));
@@ -268,6 +272,42 @@ test("managed team rejects a manager budget above the team budget", async () => 
           required_actions: [],
         }),
       /invalid manager definition/u,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("accounted manager receives the exact persisted team status receipt", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-manager-status-receipt-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Inspect exact state", "codex", 2, 1, 50_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Inspect one team",
+        model: "default",
+        skills: [],
+        instructions: "Use the returned receipt as evidence.",
+      },
+      task: "Call team.status",
+      token_budget: 40_000,
+      required_actions: ["team.status"],
+    });
+    const external = readTeamStatus(store, managed.team.team_id);
+    assert.equal("status" in external, false);
+    const accounted = readTeamStatus(store, managed.team.team_id, {
+      team_id: managed.team.team_id,
+      agent_id: managed.manager.agent_id,
+    });
+    assert.equal("status" in accounted, true);
+    if (!("status" in accounted)) throw new Error("missing accounted status");
+    assert.equal(accounted.receipt.action, "team.status");
+    assert.equal(accounted.receipt.actor_agent_id, managed.manager.agent_id);
+    assert.equal(
+      store.status(managed.team.team_id).receipts.at(-1)?.receipt_id,
+      accounted.receipt.receipt_id,
     );
   } finally {
     await rm(root, { recursive: true, force: true });
