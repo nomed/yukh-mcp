@@ -125,10 +125,17 @@ more context.
 
 The tool-free planning profile measured 14,382 total tokens: 13,735 input,
 including 9,984 cached, and 647 output. The 20,000-token allocation provides a
-bounded margin; it is not a universal estimate. Every operational tool call is
-a separate context round and needs its own justified budget. Deterministic plan
-execution adds no manager context rounds; only useful workers and the explicit
-final synthesis consume additional model tokens.
+bounded margin; it is not a universal estimate. A zero-command worker using two
+small context files measured 15,652 total tokens against an 8,000-token
+allocation and failed closed after preserving its summary for review. Use at
+least an 18,000-token worker budget for similar review/planning workers and at
+least a 10,000-token synthesis budget unless fresh qualification evidence
+justifies less. Every operational tool call is a separate context round and
+needs its own justified budget. Deterministic plan execution adds no manager
+context rounds; only useful workers and the explicit final synthesis consume
+additional model tokens. If a worker returns useful text but exceeds budget, the
+plan fails before synthesis; inspect the worker summary as a review artifact and
+approve a fresh plan rather than retrying blindly.
 
 Codex managers run without inherited user configuration. Yukh injects only the
 tools required by the manager record; a pure planning turn receives no

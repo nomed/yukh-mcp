@@ -175,6 +175,7 @@ export function readTeamStatus(
           readonly timeout_ms: number;
           readonly observed_tokens: number;
           readonly completion: string;
+          readonly review_summary_available: boolean;
         }[];
         readonly tokens: ReturnType<TeamStore["status"]>["tokens"];
       };
@@ -202,11 +203,19 @@ export function readTeamStatus(
         timeout_ms: agent.timeout_ms ?? 300_000,
         observed_tokens: agent.usage?.total_tokens ?? 0,
         completion: agent.completion?.outcome ?? "pending",
+        review_summary_available: reviewSummaryAvailable(agent),
       })),
       tokens: status.tokens,
     },
     receipt,
   };
+}
+
+function reviewSummaryAvailable(agent: AgentRecord): boolean {
+  return (
+    agent.completion?.outcome === "token_budget_exceeded" &&
+    agent.completion.summary.trim().length > 0
+  );
 }
 
 export function createTeamControlServer(
