@@ -179,7 +179,7 @@ test("role profile policy maps specialists to allowlisted runtime models skills 
       runtime: "copilot",
       model: "default",
       skills: ["frontend"],
-      token_budget: 120_000,
+      token_budget: 80_000,
       tool_mode: "none",
       max_commands: 8,
       runtime_timeout_ms: 300_000,
@@ -259,7 +259,7 @@ test("engage preflight composes a worker without launching a provider runtime", 
       role: "frontend-developer",
       workProfile: "implementation",
       preferredRuntime: "copilot",
-      teamBudget: 340_000,
+      teamBudget: 260_000,
       managerBudget: 180_000,
       codexModels: ["default"],
       copilotModels: ["default", "claude-sonnet-5"],
@@ -277,7 +277,7 @@ test("engage preflight composes a worker without launching a provider runtime", 
     assert.equal(output.planned_worker.profile?.mission, "Preflight frontend worker");
     assert.equal(output.planned_worker.parent_agent_id, output.manager.agent_id);
     assert.equal(output.planned_worker.model_tool_mode, "none");
-    assert.equal(output.budget.allocated, 300_000);
+    assert.equal(output.budget.allocated, 260_000);
     assert.equal(output.budget.observed, 0);
     assert.equal(output.budget.pending_agents, 2);
   } finally {
@@ -1608,7 +1608,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
       runtime: "codex",
       role: "documentation-worker",
       task: "Make one bounded documentation edit",
-      token_budget: 120_000,
+      token_budget: 80_000,
     });
     const child = spawn(
       process.execPath,

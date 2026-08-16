@@ -178,7 +178,7 @@ function budgetFor(workProfile: TeamWorkProfile): {
   if (workProfile === "synthesis")
     return { token_budget: 16_000, tool_mode: "none", max_commands: 0, runtime_timeout_ms: 60_000 };
   return {
-    token_budget: 120_000,
+    token_budget: 80_000,
     tool_mode: "none",
     max_commands: 8,
     runtime_timeout_ms: 300_000,
