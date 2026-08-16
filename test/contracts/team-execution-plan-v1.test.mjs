@@ -21,7 +21,25 @@ const agent = {
   token_budget: 20_000,
 };
 
-test("team execution plan contract accepts a closed bounded proposal", () => {
+test("team execution plan response schema uses the supported closed subset", () => {
+  const unsupported = new Set([
+    "uniqueItems",
+    "pattern",
+    "minLength",
+    "maxLength",
+    "minimum",
+    "maximum",
+    "minItems",
+    "maxItems",
+  ]);
+  const visit = (value) => {
+    if (!value || typeof value !== "object") return;
+    for (const [key, child] of Object.entries(value)) {
+      assert.equal(unsupported.has(key), false, `unsupported response-schema keyword: ${key}`);
+      visit(child);
+    }
+  };
+  visit(schema);
   assert.equal(
     validate({
       schema: 1,
@@ -33,15 +51,14 @@ test("team execution plan contract accepts a closed bounded proposal", () => {
   );
 });
 
-test("team execution plan contract rejects unknown fields and unbounded allocations", () => {
+test("team execution plan response schema rejects unknown fields", () => {
   assert.equal(
     validate({
       schema: 1,
       workers: [{ ...agent, shell: "unrestricted" }],
-      synthesis: { ...agent, role: "delivery-synthesizer", token_budget: 2_000_001 },
+      synthesis: { ...agent, role: "delivery-synthesizer" },
     }),
     false,
   );
   assert.ok(validate.errors?.some((error) => error.keyword === "additionalProperties"));
-  assert.ok(validate.errors?.some((error) => error.keyword === "maximum"));
 });

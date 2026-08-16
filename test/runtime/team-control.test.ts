@@ -1133,6 +1133,17 @@ test("deterministic executor fails before worker creation for malformed, stale a
         ),
       /invalid team plan/u,
     );
+    const duplicateSkills = planDocument();
+    (duplicateSkills.workers[0]!.skills as string[]).push("testing", "testing");
+    assert.throws(
+      () =>
+        store.proposePlan(
+          managed.team.team_id,
+          managed.manager.agent_id,
+          JSON.stringify(duplicateSkills),
+        ),
+      /invalid team plan/u,
+    );
     store.transition(managed.team.team_id, managed.manager.agent_id, "running");
     const unavailable = planDocument();
     unavailable.workers[0]!.model = "unavailable";
