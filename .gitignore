@@ -4,4 +4,5 @@ coverage/
 site/
 .audit-test-scratch/
 .yukh/runtime/
+.yukh/teams/
 *.log

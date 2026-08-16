@@ -1174,6 +1174,8 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
     assert.match(runtimeArguments, /Prefer model "default"/u);
     assert.match(runtimeArguments, /each file at most 4096 bytes/u);
     assert.match(runtimeArguments, /worker pack at most 12288 bytes/u);
+    assert.match(runtimeArguments, /completion summary below 4096 UTF-8 bytes/u);
+    assert.match(runtimeArguments, /prefer 3500 bytes or less/u);
     assert.doesNotMatch(runtimeArguments, /When engaging a child/u);
     assert.doesNotMatch(runtimeArguments, /Coordination model tools are omitted/u);
     assert.doesNotMatch(runtimeArguments, /mcp_servers\.yukh-team-control/u);
