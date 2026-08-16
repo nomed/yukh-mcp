@@ -11,9 +11,16 @@ import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js
 import {
   assertProfileAvailable,
   awaitAgent,
+  dynamicExecutionEnabled,
   executePlan,
   readTeamStatus,
 } from "../../apps/team-control/src/server.js";
+
+test("real dynamic execution can fail closed without changing deterministic helpers", () => {
+  assert.equal(dynamicExecutionEnabled({ dynamicExecution: false }), false);
+  assert.equal(dynamicExecutionEnabled({ dynamicExecution: true }), true);
+  assert.equal(dynamicExecutionEnabled({}), true);
+});
 
 const usage = {
   schema: 1 as const,

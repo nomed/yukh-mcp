@@ -40,6 +40,7 @@ const allowlist = (name: string, fallback: readonly string[] = []): ReadonlySet<
 serveStdio(
   () =>
     createTeamControlServer(store, supervisor, {
+      dynamicExecution: process.env.YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS === "1",
       models: {
         codex: allowlist("YUKH_CODEX_MODELS", ["default"]),
         copilot: allowlist("YUKH_COPILOT_MODELS", ["default"]),
