@@ -1,10 +1,10 @@
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
-import { fileURLToPath } from "node:url";
 import {
   discoverCodexModels,
   discoverCopilotModelCatalog,
   runtimeModelCatalog,
 } from "../../../packages/team-control/src/model-discovery.js";
+import { teamRuntimeEntrypoints } from "../../../packages/team-control/src/entrypoints.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
 import { createTeamControlServer } from "./server.js";
@@ -37,13 +37,12 @@ const profileEnvironment = {
       .map((name) => [name, process.env[name]!] as const),
   ),
 };
+const entrypoints = teamRuntimeEntrypoints();
 const supervisor = new TeamSupervisor({
   node: process.execPath,
-  worker: fileURLToPath(new URL("../../team-worker/src/main.js", import.meta.url)),
-  coordinationMcp: fileURLToPath(
-    new URL("../../coordination-preview/src/main.js", import.meta.url),
-  ),
-  teamControlMcp: fileURLToPath(new URL("./main.js", import.meta.url)),
+  worker: entrypoints.worker,
+  coordinationMcp: entrypoints.coordinationMcp,
+  teamControlMcp: entrypoints.teamControlMcp,
   launcher,
   codex,
   copilot,

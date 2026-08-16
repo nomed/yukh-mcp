@@ -1,11 +1,9 @@
 import { readFileSync, realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { teamRuntimeEntrypoints } from "../../../packages/team-control/src/entrypoints.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
 import type { AgentRecord } from "../../../packages/team-control/src/store.js";
 import { preflightApprovalDigest, type EngagePreflightOutput } from "./preflight.js";
-
-const runtimeExtension = fileURLToPath(import.meta.url).endsWith(".ts") ? "ts" : "js";
 
 export interface ApprovedRunArguments {
   readonly preflightPath: string;
@@ -70,17 +68,12 @@ export async function runApprovedPreflight(args: ApprovedRunArguments) {
   if (team.state !== "active") throw new Error("team_not_active");
   if (worker.state !== "defined") throw new Error("worker_not_defined");
 
+  const entrypoints = teamRuntimeEntrypoints();
   const supervisor = new TeamSupervisor({
     node: process.execPath,
-    worker: fileURLToPath(
-      new URL(`../../team-worker/src/main.${runtimeExtension}`, import.meta.url),
-    ),
-    coordinationMcp: fileURLToPath(
-      new URL(`../../coordination-preview/src/main.${runtimeExtension}`, import.meta.url),
-    ),
-    teamControlMcp: fileURLToPath(
-      new URL(`../../team-control/src/main.${runtimeExtension}`, import.meta.url),
-    ),
+    worker: entrypoints.worker,
+    coordinationMcp: entrypoints.coordinationMcp,
+    teamControlMcp: entrypoints.teamControlMcp,
     launcher: realpathSync(args.launcher),
     codex: realpathSync(args.codex),
     copilot: realpathSync(args.copilot),
