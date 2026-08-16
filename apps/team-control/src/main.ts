@@ -1,5 +1,10 @@
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { fileURLToPath } from "node:url";
+import {
+  discoverCodexModels,
+  discoverCopilotModels,
+  runtimeModels,
+} from "../../../packages/team-control/src/model-discovery.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
 import { createTeamControlServer } from "./server.js";
@@ -15,6 +20,21 @@ const callerTeamId = process.env.YUKH_CALLER_TEAM_ID;
 const callerAgentId = process.env.YUKH_CALLER_AGENT_ID;
 if ((callerTeamId && !callerAgentId) || (!callerTeamId && callerAgentId))
   throw new TypeError("invalid team control caller");
+const codexModels = runtimeModels(process.env.YUKH_CODEX_MODELS, ["default"], () =>
+  discoverCodexModels(codex),
+);
+const copilotModels = runtimeModels(process.env.YUKH_COPILOT_MODELS, ["default"], () =>
+  discoverCopilotModels(copilot),
+);
+const profileEnvironment = {
+  YUKH_CODEX_MODELS: codexModels.join(","),
+  YUKH_COPILOT_MODELS: copilotModels.join(","),
+  ...Object.fromEntries(
+    ["YUKH_CODEX_SKILLS", "YUKH_COPILOT_SKILLS"]
+      .filter((name) => process.env[name] !== undefined)
+      .map((name) => [name, process.env[name]!] as const),
+  ),
+};
 const supervisor = new TeamSupervisor({
   node: process.execPath,
   worker: fileURLToPath(new URL("../../team-worker/src/main.js", import.meta.url)),
@@ -26,11 +46,7 @@ const supervisor = new TeamSupervisor({
   codex,
   copilot,
   workspace,
-  profileEnvironment: Object.fromEntries(
-    ["YUKH_CODEX_MODELS", "YUKH_COPILOT_MODELS", "YUKH_CODEX_SKILLS", "YUKH_COPILOT_SKILLS"]
-      .filter((name) => process.env[name] !== undefined)
-      .map((name) => [name, process.env[name]!] as const),
-  ),
+  profileEnvironment,
 });
 const allowlist = (name: string, fallback: readonly string[] = []): ReadonlySet<string> => {
   const raw = process.env[name];
@@ -42,8 +58,8 @@ serveStdio(
     createTeamControlServer(store, supervisor, {
       dynamicExecution: process.env.YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS === "1",
       models: {
-        codex: allowlist("YUKH_CODEX_MODELS", ["default"]),
-        copilot: allowlist("YUKH_COPILOT_MODELS", ["default"]),
+        codex: new Set(codexModels),
+        copilot: new Set(copilotModels),
       },
       skills: {
         codex: allowlist("YUKH_CODEX_SKILLS"),

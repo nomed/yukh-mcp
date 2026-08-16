@@ -9,6 +9,11 @@ import { TeamStore } from "../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
 import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js";
 import {
+  parseCodexModelCatalog,
+  parseCopilotConfigModels,
+  runtimeModels,
+} from "../../packages/team-control/src/model-discovery.js";
+import {
   assertProfileAvailable,
   awaitAgent,
   costSafeDeterministicPlan,
@@ -98,6 +103,35 @@ test("composed profiles require allowlisted runtime models and skills", () => {
   assert.throws(
     () => assertProfileAvailable(options, "copilot", "fast-model", ["api-design"]),
     /agent_skill_unavailable/u,
+  );
+});
+
+test("runtime model discovery parses CLI catalogs and keeps explicit env authoritative", () => {
+  assert.deepEqual(
+    parseCodexModelCatalog(
+      'warning\n{"models":[{"slug":"gpt-5.6-sol"},{"slug":"bad value"},{"slug":"gpt-5.6-terra"}]}\n',
+    ),
+    ["gpt-5.6-sol", "gpt-5.6-terra"],
+  );
+  assert.deepEqual(
+    parseCopilotConfigModels(`
+  \`model\`: AI model to use for Copilot CLI.
+    - "claude-sonnet-5"
+    - "gpt-5.6-sol"
+
+  \`contextTier\`: context window tier
+`),
+    ["claude-sonnet-5", "gpt-5.6-sol"],
+  );
+  assert.deepEqual(
+    runtimeModels("default,approved-model", ["fallback"], () => ["ignored"]),
+    ["default", "approved-model"],
+  );
+  assert.deepEqual(
+    runtimeModels(undefined, ["fallback-model"], () => {
+      throw new Error("missing cli");
+    }),
+    ["default", "fallback-model"],
   );
 });
 
@@ -1120,6 +1154,8 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
           YUKH_TEAM_CONTROL_MCP_MAIN: support,
           YUKH_CODEX_EXECUTABLE: executable,
           YUKH_COPILOT_EXECUTABLE: executable,
+          YUKH_CODEX_MODELS: "default,reasoning-approved",
+          YUKH_COPILOT_MODELS: "default",
         },
       },
     );
@@ -1134,6 +1170,10 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
     assert.match(runtimeArguments, /--output-schema/u);
     assert.match(runtimeArguments, /Every role must be a lowercase slug/u);
     assert.match(runtimeArguments, /token-efficiency-auditor/u);
+    assert.match(runtimeArguments, /Codex models: default, reasoning-approved/u);
+    assert.match(runtimeArguments, /Prefer model "default"/u);
+    assert.match(runtimeArguments, /each file at most 4096 bytes/u);
+    assert.match(runtimeArguments, /worker pack at most 12288 bytes/u);
     assert.doesNotMatch(runtimeArguments, /When engaging a child/u);
     assert.doesNotMatch(runtimeArguments, /Coordination model tools are omitted/u);
     assert.doesNotMatch(runtimeArguments, /mcp_servers\.yukh-team-control/u);

@@ -62,7 +62,10 @@ enabled_tools = ["manager.start", "team.status", "plan.status", "plan.execute", 
 default_tools_approval_mode = "writes"
 ```
 
-Add comma-separated local allowlists when using composed profiles:
+At startup, `yukh-team-control` discovers callable model IDs from the configured
+agent CLIs. Codex uses `codex debug models`; Copilot currently exposes its local
+catalog through `copilot help config`. Set model environment variables only to
+override or narrow that discovered list. Skills remain explicit local policy:
 
 ```toml
 env = { YUKH_CODEX_MODELS = "default,approved-codex-model", YUKH_COPILOT_MODELS = "default,approved-copilot-model", YUKH_CODEX_SKILLS = "api-design,testing,review", YUKH_COPILOT_SKILLS = "frontend,testing,product" }
@@ -74,8 +77,9 @@ server receipt plus the manager agent ID. Use `agent.await` from the controlling
 session to retrieve its terminal completion. For efficient automatic work, set
 `output_contract` to `team-plan-v1`: the manager returns one structured proposal
 without tools. Read its plan ID and digest from status, then call `plan.execute`
-with that exact digest. Model and skill values outside these allowlists fail
-before process launch. The
+with that exact digest. Model values outside the discovered or overridden model
+set fail before process launch; skill values outside the explicit skill
+allowlists fail the same way. The
 worker must bootstrap and join Coordination before its agent CLI starts. Set
 explicit token, command and runtime bounds: `team_token_budget`,
 `manager_token_budget`, `max_commands` and `runtime_timeout_ms`. Every planned
