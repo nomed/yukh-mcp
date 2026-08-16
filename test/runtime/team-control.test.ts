@@ -1087,6 +1087,66 @@ sleep 30
   }
 });
 
+test("worker terminates the provider process group at its runtime deadline", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-runtime-deadline-")));
+  try {
+    const executable = join(root, "agent-cli");
+    const launcher = join(root, "launcher");
+    const support = join(root, "support.mjs");
+    await writeFile(executable, "#!/bin/sh\nsleep 30 &\nwait\n", { mode: 0o700 });
+    await writeFile(
+      launcher,
+      '#!/bin/sh\ncat >/dev/null\nprintf \'{"schema":1,"status":"ok","command":"test"}\\n\'\n',
+      { mode: 0o700 },
+    );
+    await writeFile(support, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Bound runtime", "codex", 2, 1, 5_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Prove deadline preemption",
+        model: "default",
+        skills: [],
+        instructions: "Stay bounded.",
+      },
+      task: "Wait for the deadline",
+      token_budget: 2_000,
+      required_actions: [],
+      max_commands: 8,
+      timeout_ms: 5_000,
+    });
+    const started = Date.now();
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxLoader, workerMain, managed.team.team_id, managed.manager.agent_id],
+      {
+        cwd: root,
+        stdio: "ignore",
+        env: {
+          HOME: process.env.HOME ?? "",
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          YUKH_TEAM_WORKSPACE: root,
+          YUKH_COORDINATION_LAUNCHER: launcher,
+          YUKH_COORDINATION_MCP_MAIN: support,
+          YUKH_TEAM_CONTROL_MCP_MAIN: support,
+          YUKH_CODEX_EXECUTABLE: executable,
+          YUKH_COPILOT_EXECUTABLE: executable,
+        },
+      },
+    );
+    assert.notEqual(await new Promise<number | null>((resolve) => child.once("close", resolve)), 0);
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed >= 4_500 && elapsed < 12_000, `unexpected deadline duration: ${elapsed}`);
+    assert.equal(
+      store.agent(managed.team.team_id, managed.manager.agent_id).completion?.outcome,
+      "runtime_deadline_exceeded",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("deterministic executor reserves, runs, awaits and synthesizes without manager relaunch", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-executor-")));
   try {
