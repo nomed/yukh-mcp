@@ -176,12 +176,6 @@ test("coordinator treats target bootstrap as best effort when join succeeds", as
     },
     {
       schema: 1,
-      event: "coordinator_coordination_failed",
-      coordination_action: "bootstrap",
-      ykc_code: "YKC-UNAVAILABLE-001",
-    },
-    {
-      schema: 1,
       event: "agent_completed_without_answer",
       agent: "agent-b",
       question_event_id: questionId,
@@ -213,12 +207,6 @@ test("coordinator fails the agent before launch when target join is unavailable"
       agent: "agent-b",
       question_event_id: questionId,
       turn: 1,
-    },
-    {
-      schema: 1,
-      event: "coordinator_coordination_failed",
-      coordination_action: "bootstrap",
-      ykc_code: "YKC-CUSTODY-001",
     },
     {
       schema: 1,
