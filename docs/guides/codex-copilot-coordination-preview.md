@@ -22,6 +22,11 @@ validation command for `nomed.github.io`, `yukh-mcp`, `yukh-projects` and
 `yukh-coordination`. Detached checkouts are warnings; missing repositories or
 tracked-file drift are errors.
 
+Operator note: a warning means inspect the checkout before development; an
+error means stop and fix the checkout before continuing.
+
+This command is the gate before starting a Yukh-managed implementation worker.
+
 Use absolute paths below. Configure Codex as `agent-a`:
 
 ```toml
@@ -144,6 +149,9 @@ including 9,984 cached, and 647 output. The 20,000-token allocation provides a
 bounded margin; it is not a universal estimate. A one-command suite readonly
 probe on the VPS measured 82,240 total tokens, mostly fixed Codex input context,
 so the official readonly verifier allocation is 90,000 tokens and one command.
+A tiny documentation implementation worker measured 90,893 total tokens, so the
+default implementation allocation is 120,000 tokens and the generic team
+preflight default is 340,000 tokens.
 A zero-command worker using two small context files measured 15,652 total tokens
 against an 8,000-token allocation and failed closed after preserving its summary
 for review. Use at least an 18,000-token worker budget for similar

@@ -179,7 +179,7 @@ test("role profile policy maps specialists to allowlisted runtime models skills 
       runtime: "copilot",
       model: "default",
       skills: ["frontend"],
-      token_budget: 50_000,
+      token_budget: 120_000,
       tool_mode: "team",
       max_commands: 8,
       runtime_timeout_ms: 300_000,
@@ -259,7 +259,7 @@ test("engage preflight composes a worker without launching a provider runtime", 
       role: "frontend-developer",
       workProfile: "implementation",
       preferredRuntime: "copilot",
-      teamBudget: 260_000,
+      teamBudget: 340_000,
       managerBudget: 180_000,
       codexModels: ["default"],
       copilotModels: ["default", "claude-sonnet-5"],
@@ -276,7 +276,7 @@ test("engage preflight composes a worker without launching a provider runtime", 
     assert.equal(output.planned_worker.task, "Preflight frontend worker");
     assert.equal(output.planned_worker.profile?.mission, "Preflight frontend worker");
     assert.equal(output.planned_worker.parent_agent_id, output.manager.agent_id);
-    assert.equal(output.budget.allocated, 230_000);
+    assert.equal(output.budget.allocated, 300_000);
     assert.equal(output.budget.observed, 0);
     assert.equal(output.budget.pending_agents, 2);
   } finally {

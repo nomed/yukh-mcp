@@ -98,7 +98,7 @@ export function parsePreflightArguments(
     role: values.get("role") ?? preset?.role ?? "backend-reviewer",
     workProfile: workProfile as TeamWorkProfile,
     ...(preferredRuntime ? { preferredRuntime: preferredRuntime as AgentRuntime } : {}),
-    teamBudget: integer(values.get("team-budget"), preset?.teamBudget ?? 260_000),
+    teamBudget: integer(values.get("team-budget"), preset?.teamBudget ?? 340_000),
     managerBudget: integer(values.get("manager-budget"), preset?.managerBudget ?? 180_000),
     codexModels: list(values.get("codex-models") ?? process.env.YUKH_CODEX_MODELS, ["default"]),
     copilotModels: list(values.get("copilot-models") ?? process.env.YUKH_COPILOT_MODELS, [
