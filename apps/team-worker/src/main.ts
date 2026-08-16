@@ -26,20 +26,26 @@ const mcpEnv = {
   YUKH_COORDINATION_LAUNCHER: launcher,
 };
 const profile = agent.profile;
-const modelToolsDisabled = agent.model_tool_mode === "none";
+const modelToolMode = agent.model_tool_mode ?? "default";
 const requiredActions = agent.required_actions.join(", ") || "none";
 const modelUsesCoordination =
-  !modelToolsDisabled &&
-  (agent.kind === "worker" || agent.required_actions.some((action) => action !== "team.status"));
+  modelToolMode === "coordination" ||
+  modelToolMode === "team" ||
+  (modelToolMode === "default" &&
+    (agent.kind === "worker" || agent.required_actions.some((action) => action !== "team.status")));
 const modelTeamTools = [
   ...new Set(
-    modelToolsDisabled
+    modelToolMode === "none" || modelToolMode === "coordination"
       ? []
-      : agent.kind === "manager"
-        ? agent.required_actions
-        : agent.can_spawn
+      : modelToolMode === "team"
+        ? agent.can_spawn
           ? ["team.status", "agent.status", "agent.engage", "agent.await"]
-          : ["team.status", "agent.status"],
+          : ["team.status", "agent.status"]
+        : agent.kind === "manager"
+          ? agent.required_actions
+          : agent.can_spawn
+            ? ["team.status", "agent.status", "agent.engage", "agent.await"]
+            : ["team.status", "agent.status"],
   ),
 ];
 const modelUsesTeamControl = modelTeamTools.length > 0;
@@ -53,7 +59,7 @@ const outputInstruction =
   agent.output_contract === "team-plan-v1"
     ? "Return only the JSON team execution plan required by the supplied output schema. Include the minimum specialists needed and one concise delivery synthesizer. Do not wrap JSON in Markdown."
     : "End with one concise public-safe completion summary of at most 4096 UTF-8 bytes; the wrapper persists that final response.";
-const prompt = `You are ${agent.role}, ${agent.kind} ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nToken budget: ${agent.token_budget} total input plus output tokens. Keep inspection and tool output bounded. The team already exists: do not call team.create. ${teamControlInstruction} When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. ${coordinationInstruction} ${outputInstruction} You may create a bounded child only when explicitly delegated.`;
+const prompt = `You are ${agent.role}, ${agent.kind} ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nToken budget: ${agent.token_budget} total input plus output tokens. Runtime bounds: at most ${agent.max_commands ?? 8} command executions and ${agent.timeout_ms ?? 300_000} milliseconds. Keep inspection and tool output bounded. The team already exists: do not call team.create. ${teamControlInstruction} When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. ${coordinationInstruction} ${outputInstruction} You may create a bounded child only when explicitly delegated.`;
 const planSchema = fileURLToPath(
   new URL("../../../contracts/team-execution-plan-v1.schema.json", import.meta.url),
 );
@@ -222,11 +228,13 @@ const outcome = !joined
   : await new Promise<{
       readonly exitCode: number;
       readonly stopped: boolean;
+      readonly bound?: "commands" | "deadline";
       readonly output: RuntimeOutput;
     }>((resolve) => {
       const output = new RuntimeOutput(agent.runtime);
       const child = spawn(command, args, {
         cwd: workspace,
+        detached: process.platform !== "win32",
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
         env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
@@ -237,18 +245,48 @@ const outcome = !joined
       const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
       lines.on("line", (line) => output.line(line));
       let stopped = false;
+      let bound: "commands" | "deadline" | undefined;
+      let terminating = false;
       let killTimer: NodeJS.Timeout | undefined;
+      const terminate = (): void => {
+        if (terminating || !child.pid) return;
+        terminating = true;
+        try {
+          if (process.platform !== "win32") process.kill(-child.pid, "SIGTERM");
+          else child.kill("SIGTERM");
+        } catch {
+          child.kill("SIGTERM");
+        }
+        killTimer = setTimeout(() => {
+          try {
+            if (child.pid && process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
+            else child.kill("SIGKILL");
+          } catch {
+            child.kill("SIGKILL");
+          }
+        }, 5_000);
+      };
+      lines.on("line", () => {
+        if (bound || output.commandsStarted() <= (agent.max_commands ?? 8)) return;
+        bound = "commands";
+        terminate();
+      });
+      const deadlineTimer = setTimeout(() => {
+        if (bound) return;
+        bound = "deadline";
+        terminate();
+      }, agent.timeout_ms ?? 300_000);
       const monitor = setInterval(() => {
         if (stopped || store.status(teamID).team.state !== "stopped") return;
         stopped = true;
-        child.kill("SIGTERM");
-        killTimer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+        terminate();
       }, 500);
       const finish = (exitCode: number): void => {
         clearInterval(monitor);
+        clearTimeout(deadlineTimer);
         if (killTimer) clearTimeout(killTimer);
         lines.close();
-        resolve({ exitCode, stopped, output });
+        resolve({ exitCode, stopped, ...(bound ? { bound } : {}), output });
       };
       child.once("error", () => finish(1));
       child.once("close", (code) => finish(code ?? 1));
@@ -277,32 +315,36 @@ if (joined && "output" in outcome) {
       }
     }
     const completion =
-      outcome.exitCode !== 0
-        ? { schema: 1 as const, outcome: "agent_exit_nonzero" as const, summary }
-        : !usage
-          ? { schema: 1 as const, outcome: "token_accounting_unavailable" as const, summary }
-          : usage.budget_outcome === "exceeded"
-            ? { schema: 1 as const, outcome: "token_budget_exceeded" as const, summary }
-            : missingActions.length > 0
-              ? {
-                  schema: 1 as const,
-                  outcome: "required_action_missing" as const,
-                  summary: `Missing required action receipts: ${missingActions.join(", ")}`,
-                }
-              : !summary
-                ? { schema: 1 as const, outcome: "completion_missing" as const, summary: "" }
-                : planInvalid
+      outcome.bound === "commands"
+        ? { schema: 1 as const, outcome: "command_budget_exceeded" as const, summary }
+        : outcome.bound === "deadline"
+          ? { schema: 1 as const, outcome: "runtime_deadline_exceeded" as const, summary }
+          : outcome.exitCode !== 0
+            ? { schema: 1 as const, outcome: "agent_exit_nonzero" as const, summary }
+            : !usage
+              ? { schema: 1 as const, outcome: "token_accounting_unavailable" as const, summary }
+              : usage.budget_outcome === "exceeded"
+                ? { schema: 1 as const, outcome: "token_budget_exceeded" as const, summary }
+                : missingActions.length > 0
                   ? {
                       schema: 1 as const,
-                      outcome: "team_plan_invalid" as const,
-                      summary: "Structured team plan validation failed",
+                      outcome: "required_action_missing" as const,
+                      summary: `Missing required action receipts: ${missingActions.join(", ")}`,
                     }
-                  : {
-                      schema: 1 as const,
-                      outcome: "succeeded" as const,
-                      summary,
-                      ...(proposedPlan ? { plan_id: proposedPlan.plan_id } : {}),
-                    };
+                  : !summary
+                    ? { schema: 1 as const, outcome: "completion_missing" as const, summary: "" }
+                    : planInvalid
+                      ? {
+                          schema: 1 as const,
+                          outcome: "team_plan_invalid" as const,
+                          summary: "Structured team plan validation failed",
+                        }
+                      : {
+                          schema: 1 as const,
+                          outcome: "succeeded" as const,
+                          summary,
+                          ...(proposedPlan ? { plan_id: proposedPlan.plan_id } : {}),
+                        };
     store.finish(teamID, agentID, completion, usage);
     if (completion.outcome !== "succeeded") wrapperExitCode = 1;
   }

@@ -76,12 +76,14 @@ session to retrieve its terminal completion. For efficient automatic work, set
 without tools. Read its plan ID and digest from status, then call `plan.execute`
 with that exact digest. Model and skill values outside these allowlists fail
 before process launch. The
-worker must bootstrap and join Coordination before its agent CLI starts. Set an
-explicit `team_token_budget` and `manager_token_budget` in `manager.start`, then
-a smaller `token_budget` for every planned worker and for synthesis. All
-allocations are validated together before a worker starts. Teams created by an older
-preview remain readable but an external unaccounted session cannot engage
-workers. Stop and recreate them with `manager.start`.
+worker must bootstrap and join Coordination before its agent CLI starts. Set
+explicit token, command and runtime bounds: `team_token_budget`,
+`manager_token_budget`, `max_commands` and `runtime_timeout_ms`. Every planned
+agent must also declare `token_budget`, `max_commands`, `timeout_ms` and
+`tool_mode`; use `none` unless Coordination or delegation is necessary.
+Allocations are validated before launch. Older preview teams remain readable,
+but an external unaccounted session cannot engage workers; recreate them with
+`manager.start`.
 
 `plan.execute` reserves every worker plus one synthesizer, starts and awaits the
 workers without another manager model turn, then gives their bounded completion
@@ -97,11 +99,12 @@ the manager:
 
 ```text
 Use yukh-team-control. Call manager.start with a 120000-token team budget and a
-20000-token Codex planning-manager budget, no required actions and
+20000-token Codex planning-manager budget, max_commands 2, runtime_timeout_ms
+120000, no required actions and
 output_contract team-plan-v1. Ask for the minimum specialists needed, explicit
-worker budgets and one small synthesis budget. Show me the proposed plan and its
-digest. After I approve that exact digest, call plan.execute once and report its
-terminal state and exact usage.
+token, command, timeout and tool-mode bounds, plus one small tool-free synthesis
+budget. Show me the proposed plan and digest. After I approve that exact digest,
+call plan.execute once and report terminal state and exact usage.
 Do not use team.create and do not engage a runtime that cannot provide token
 accounting.
 ```

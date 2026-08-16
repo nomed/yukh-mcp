@@ -26,6 +26,9 @@
         "skills",
         "instructions",
         "task",
+        "tool_mode",
+        "max_commands",
+        "timeout_ms",
         "token_budget"
       ],
       "properties": {
@@ -39,6 +42,9 @@
         },
         "instructions": { "type": "string" },
         "task": { "type": "string" },
+        "tool_mode": { "type": "string", "enum": ["none", "coordination", "team"] },
+        "max_commands": { "type": "integer" },
+        "timeout_ms": { "type": "integer" },
         "token_budget": { "type": "integer" }
       }
     }

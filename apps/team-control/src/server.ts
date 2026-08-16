@@ -71,19 +71,21 @@ export async function executePlan(
 ) {
   let plan = store.plan(teamId, planId);
   if (plan.digest !== digest) throw new Error("team_plan_digest_mismatch");
-  if (["running", "synthesizing", "completed", "failed", "reserved"].includes(plan.state))
-    return plan;
+  if (["completed", "failed"].includes(plan.state)) return plan;
   for (const profile of [...plan.document.workers, plan.document.synthesis])
     assertProfileAvailable(options, profile.runtime, profile.model, profile.skills);
-  plan = store.reservePlan(teamId, planId, digest);
+  if (plan.state === "proposed") plan = store.reservePlan(teamId, planId, digest);
   const deadline = Date.now() + timeoutMs;
   try {
-    for (const agentId of plan.worker_agent_ids) {
-      const agent = store.agent(teamId, agentId);
-      supervisor.launch(agent);
-      store.receipt(teamId, "plan.execute", undefined, agentId);
+    if (plan.state === "reserved") {
+      for (const agentId of plan.worker_agent_ids) {
+        const agent = store.agent(teamId, agentId);
+        if (agent.state !== "defined") continue;
+        supervisor.launch(agent);
+        store.receipt(teamId, "plan.execute", undefined, agentId);
+      }
+      plan = store.updatePlan(teamId, planId, { state: "running" });
     }
-    plan = store.updatePlan(teamId, planId, { state: "running" });
     const completed: AgentRecord[] = [];
     for (const agentId of plan.worker_agent_ids) {
       const terminal = await awaitAgent(store, teamId, agentId, Math.max(0, deadline - Date.now()));
@@ -108,11 +110,15 @@ export async function executePlan(
     const synthesisTask = `${synthesis.task}\n\nUse only these verified worker completion artifacts:\n${synthesisInput}`;
     if (Buffer.byteLength(synthesisTask, "utf8") > 4_096)
       throw new Error("team_plan_synthesis_input_too_large");
-    store.assign(teamId, synthesisAgentId, synthesisTask);
-    plan = store.updatePlan(teamId, planId, { state: "synthesizing" });
-    const synthesizer = store.agent(teamId, synthesisAgentId);
-    supervisor.launch(synthesizer);
-    store.receipt(teamId, "plan.synthesize", undefined, synthesizer.agent_id);
+    let synthesizer = store.agent(teamId, synthesisAgentId);
+    if (plan.state === "running") {
+      if (synthesizer.state !== "defined") throw new Error("team_plan_state_invalid");
+      store.assign(teamId, synthesisAgentId, synthesisTask);
+      plan = store.updatePlan(teamId, planId, { state: "synthesizing" });
+      synthesizer = store.agent(teamId, synthesisAgentId);
+      supervisor.launch(synthesizer);
+      store.receipt(teamId, "plan.synthesize", undefined, synthesizer.agent_id);
+    }
     const terminal = await awaitAgent(
       store,
       teamId,
@@ -151,6 +157,8 @@ export function readTeamStatus(
           readonly role: string;
           readonly state: "defined" | "running" | "completed" | "failed" | "stopped";
           readonly token_budget: number;
+          readonly max_commands: number;
+          readonly timeout_ms: number;
           readonly observed_tokens: number;
           readonly completion: string;
         }[];
@@ -176,6 +184,8 @@ export function readTeamStatus(
         role: agent.role,
         state: agent.state,
         token_budget: agent.token_budget,
+        max_commands: agent.max_commands ?? 8,
+        timeout_ms: agent.timeout_ms ?? 300_000,
         observed_tokens: agent.usage?.total_tokens ?? 0,
         completion: agent.completion?.outcome ?? "pending",
       })),
@@ -230,6 +240,8 @@ export function createTeamControlServer(
           max_depth: z.number().int().min(1).max(5).default(3),
           team_token_budget: z.number().int().min(1_000).max(10_000_000),
           manager_token_budget: z.number().int().min(1_000).max(2_000_000),
+          max_commands: z.number().int().min(0).max(32).default(8),
+          runtime_timeout_ms: z.number().int().min(5_000).max(900_000).default(300_000),
         })
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
@@ -258,6 +270,8 @@ export function createTeamControlServer(
             token_budget: input.manager_token_budget,
             required_actions: input.required_actions,
             output_contract: input.output_contract,
+            max_commands: input.max_commands,
+            timeout_ms: input.runtime_timeout_ms,
           },
         );
         const runtime = supervisor.launch(managed.manager);
@@ -431,6 +445,9 @@ export function createTeamControlServer(
           task: z.string().min(1).max(4_096),
           can_spawn: z.boolean().default(false),
           token_budget: z.number().int().min(1_000).max(2_000_000),
+          tool_mode: z.enum(["none", "coordination", "team"]).default("team"),
+          max_commands: z.number().int().min(0).max(32).default(8),
+          runtime_timeout_ms: z.number().int().min(5_000).max(900_000).default(300_000),
         })
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
@@ -472,6 +489,9 @@ export function createTeamControlServer(
           task: input.task,
           can_spawn: input.can_spawn,
           token_budget: input.token_budget,
+          model_tool_mode: input.tool_mode,
+          max_commands: input.max_commands,
+          timeout_ms: input.runtime_timeout_ms,
         });
         const runtime = supervisor.launch(agent);
         const receipt = store.receipt(
@@ -517,6 +537,8 @@ export function createTeamControlServer(
           task: z.string().min(1).max(4_096),
           can_spawn: z.boolean().default(false),
           token_budget: z.number().int().min(1_000).max(2_000_000),
+          max_commands: z.number().int().min(0).max(32).default(8),
+          runtime_timeout_ms: z.number().int().min(5_000).max(900_000).default(300_000),
         })
         .strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
@@ -541,6 +563,8 @@ export function createTeamControlServer(
         task: input.task,
         can_spawn: input.can_spawn,
         token_budget: input.token_budget,
+        max_commands: input.max_commands,
+        timeout_ms: input.runtime_timeout_ms,
       });
       const runtime = supervisor.launch(agent);
       return result({ agent, ...runtime });

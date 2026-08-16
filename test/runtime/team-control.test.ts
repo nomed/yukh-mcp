@@ -37,6 +37,9 @@ const planDocument = (workerBudget = 2_000, synthesisBudget = 2_000) => ({
       skills: [],
       instructions: "Inspect only relevant files, implement and test the requested increment.",
       task: "Implement and verify the backend increment.",
+      tool_mode: "none" as const,
+      max_commands: 4,
+      timeout_ms: 60_000,
       token_budget: workerBudget,
     },
   ],
@@ -48,6 +51,9 @@ const planDocument = (workerBudget = 2_000, synthesisBudget = 2_000) => ({
     skills: [],
     instructions: "Use only supplied verified completion artifacts and remain concise.",
     task: "Synthesize outcome, remaining gaps and the next action.",
+    tool_mode: "none" as const,
+    max_commands: 0,
+    timeout_ms: 60_000,
     token_budget: synthesisBudget,
   },
 });
@@ -384,6 +390,9 @@ test("accounted manager receives the exact persisted team status receipt", async
 test("runtime output extracts Codex completion and refuses invented Copilot token usage", () => {
   const codex = new RuntimeOutput("codex");
   codex.line(
+    JSON.stringify({ type: "item.started", item: { type: "command_execution", command: "pwd" } }),
+  );
+  codex.line(
     JSON.stringify({
       type: "item.completed",
       item: { type: "agent_message", text: "Concise completion" },
@@ -401,6 +410,7 @@ test("runtime output extracts Codex completion and refuses invented Copilot toke
     }),
   );
   assert.equal(codex.summary(), "Concise completion");
+  assert.equal(codex.commandsStarted(), 1);
   assert.deepEqual(codex.usage(10_000), {
     schema: 1,
     source: "codex-json-v1",
@@ -1011,6 +1021,72 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
   }
 });
 
+test("worker preempts the provider when its command budget is exceeded", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-command-bound-")));
+  try {
+    const executable = join(root, "agent-cli");
+    const launcher = join(root, "launcher");
+    const support = join(root, "support.mjs");
+    await writeFile(
+      executable,
+      `#!/bin/sh
+printf '%s\n' '{"type":"item.started","item":{"type":"command_execution","command":"sleep 30"}}'
+sleep 30
+`,
+      { mode: 0o700 },
+    );
+    await writeFile(
+      launcher,
+      '#!/bin/sh\ncat >/dev/null\nprintf \'{"schema":1,"status":"ok","command":"test"}\\n\'\n',
+      { mode: 0o700 },
+    );
+    await writeFile(support, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Bound commands", "codex", 2, 1, 5_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Prove command preemption",
+        model: "default",
+        skills: [],
+        instructions: "Stay bounded.",
+      },
+      task: "Attempt one command",
+      token_budget: 2_000,
+      required_actions: [],
+      max_commands: 0,
+      timeout_ms: 60_000,
+    });
+    const started = Date.now();
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxLoader, workerMain, managed.team.team_id, managed.manager.agent_id],
+      {
+        cwd: root,
+        stdio: "ignore",
+        env: {
+          HOME: process.env.HOME ?? "",
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          YUKH_TEAM_WORKSPACE: root,
+          YUKH_COORDINATION_LAUNCHER: launcher,
+          YUKH_COORDINATION_MCP_MAIN: support,
+          YUKH_TEAM_CONTROL_MCP_MAIN: support,
+          YUKH_CODEX_EXECUTABLE: executable,
+          YUKH_COPILOT_EXECUTABLE: executable,
+        },
+      },
+    );
+    assert.notEqual(await new Promise<number | null>((resolve) => child.once("close", resolve)), 0);
+    assert.ok(Date.now() - started < 10_000);
+    assert.equal(
+      store.agent(managed.team.team_id, managed.manager.agent_id).completion?.outcome,
+      "command_budget_exceeded",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("deterministic executor reserves, runs, awaits and synthesizes without manager relaunch", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-executor-")));
   try {
@@ -1106,6 +1182,80 @@ test("deterministic executor reserves, runs, awaits and synthesizes without mana
   }
 });
 
+test("deterministic executor resumes reserved state and suppresses synthesis after worker failure", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-resume-failure-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Resume failed work", "codex", 4, 1, 10_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Plan one bounded increment",
+        model: "default",
+        skills: [],
+        instructions: "Return a closed plan.",
+      },
+      task: "Plan",
+      token_budget: 2_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    store.transition(managed.team.team_id, managed.manager.agent_id, "running");
+    const proposed = store.proposePlan(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      JSON.stringify(planDocument()),
+    );
+    store.finish(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      {
+        schema: 1,
+        outcome: "succeeded",
+        summary: JSON.stringify(planDocument()),
+        plan_id: proposed.plan_id,
+      },
+      usage,
+    );
+    const reserved = store.reservePlan(managed.team.team_id, proposed.plan_id, proposed.digest);
+    const failedWorker = reserved.worker_agent_ids[0]!;
+    store.transition(managed.team.team_id, failedWorker, "running");
+    store.finish(
+      managed.team.team_id,
+      failedWorker,
+      { schema: 1, outcome: "command_budget_exceeded", summary: "bounded" },
+      undefined,
+    );
+    const launches: string[] = [];
+    const options = {
+      models: { codex: new Set(["default"]), copilot: new Set(["default"]) },
+      skills: { codex: new Set<string>(), copilot: new Set<string>() },
+    };
+    await assert.rejects(
+      executePlan(
+        store,
+        { launch: (agent) => (launches.push(agent.agent_id), { pid: 1, log: "test" }) },
+        options,
+        managed.team.team_id,
+        proposed.plan_id,
+        proposed.digest,
+        2_000,
+      ),
+      /team_plan_worker_failed/u,
+    );
+    const failed = store.plan(managed.team.team_id, proposed.plan_id);
+    assert.equal(failed.state, "failed");
+    assert.equal(failed.failure_code, "team_plan_worker_failed");
+    assert.deepEqual(launches, []);
+    assert.equal(
+      store.agent(managed.team.team_id, failed.synthesis_agent_id ?? "invalid").state,
+      "defined",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("deterministic executor fails before worker creation for malformed, stale and unavailable plans", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-denials-")));
   try {
@@ -1141,6 +1291,28 @@ test("deterministic executor fails before worker creation for malformed, stale a
           managed.team.team_id,
           managed.manager.agent_id,
           JSON.stringify(duplicateSkills),
+        ),
+      /invalid team plan/u,
+    );
+    const unbounded = planDocument();
+    unbounded.workers[0]!.max_commands = 33;
+    assert.throws(
+      () =>
+        store.proposePlan(
+          managed.team.team_id,
+          managed.manager.agent_id,
+          JSON.stringify(unbounded),
+        ),
+      /invalid team plan/u,
+    );
+    const toolUsingSynthesis = planDocument();
+    (toolUsingSynthesis.synthesis as { tool_mode: string }).tool_mode = "coordination";
+    assert.throws(
+      () =>
+        store.proposePlan(
+          managed.team.team_id,
+          managed.manager.agent_id,
+          JSON.stringify(toolUsingSynthesis),
         ),
       /invalid team plan/u,
     );
