@@ -8,6 +8,7 @@ import test from "node:test";
 import { TeamStore } from "../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
 import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js";
+import { runEngagePreflight } from "../../apps/team-preflight/src/preflight.js";
 import {
   copilotModelCatalogFromDiscoveries,
   parseCodexModelCatalog,
@@ -147,6 +148,38 @@ test("role profile policy maps specialists to allowlisted runtime models skills 
   assert.deepEqual(roleProfilePolicy(options, "security-reviewer", "review").omitted_skills, [
     "security",
   ]);
+});
+
+test("engage preflight composes a worker without launching a provider runtime", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-engage-preflight-")));
+  try {
+    const output = runEngagePreflight({
+      workspace: root,
+      goal: "Preflight frontend worker",
+      role: "frontend-developer",
+      workProfile: "implementation",
+      preferredRuntime: "copilot",
+      teamBudget: 260_000,
+      managerBudget: 180_000,
+      codexModels: ["default"],
+      copilotModels: ["default", "claude-sonnet-5"],
+      codexSkills: ["api-design", "testing"],
+      copilotSkills: ["frontend", "testing"],
+    });
+    assert.equal(output.status, "ok");
+    assert.equal(output.provider_runtime_launched, false);
+    assert.equal(output.provider_tokens_observed, 0);
+    assert.equal(output.policy.recommendation.runtime, "copilot");
+    assert.equal(output.policy.recommendation.model, "default");
+    assert.deepEqual(output.policy.recommendation.skills, ["frontend"]);
+    assert.equal(output.planned_worker.state, "defined");
+    assert.equal(output.planned_worker.parent_agent_id, output.manager.agent_id);
+    assert.equal(output.budget.allocated, 230_000);
+    assert.equal(output.budget.observed, 0);
+    assert.equal(output.budget.pending_agents, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("runtime model discovery parses CLI catalogs and keeps explicit env authoritative", () => {
