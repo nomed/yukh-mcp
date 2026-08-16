@@ -134,7 +134,63 @@ test("coordinator records replay bootstrap failures with the Yukh code", async (
   ]);
 });
 
-test("coordinator fails the agent before launch when target bootstrap is unavailable", async () => {
+test("coordinator treats target bootstrap as best effort when join succeeds", async () => {
+  const lifecycle: unknown[] = [];
+  const commands: string[] = [];
+  const launcher: CoordinationLauncher = {
+    invoke: async (command) => {
+      commands.push(command);
+      if (command === "events replay") return replay(false);
+      if (command === "session bootstrap")
+        return { schema: 1, status: "error", command, code: "YKC-UNAVAILABLE-001" };
+      return { schema: 1, status: "ok", command, result: { event_id: answerId } };
+    },
+  };
+  let launched = false;
+  const coordinator = new ConversationCoordinator({
+    launchers: { "agent-a": launcher, "agent-b": launcher },
+    runner: {
+      run: async () => {
+        launched = true;
+      },
+    },
+    maxTurns: 1,
+    lifetimeMs: 10_000,
+    observe: (event) => lifecycle.push(event),
+  });
+  assert.equal(await coordinator.tick(), "handled");
+  assert.equal(launched, true);
+  assert.deepEqual(commands, [
+    "events replay",
+    "session bootstrap",
+    "session join",
+    "events replay",
+  ]);
+  assert.deepEqual(lifecycle, [
+    {
+      schema: 1,
+      event: "agent_started",
+      agent: "agent-b",
+      question_event_id: questionId,
+      turn: 1,
+    },
+    {
+      schema: 1,
+      event: "coordinator_coordination_failed",
+      coordination_action: "bootstrap",
+      ykc_code: "YKC-UNAVAILABLE-001",
+    },
+    {
+      schema: 1,
+      event: "agent_completed_without_answer",
+      agent: "agent-b",
+      question_event_id: questionId,
+      turn: 1,
+    },
+  ]);
+});
+
+test("coordinator fails the agent before launch when target join is unavailable", async () => {
   const lifecycle: unknown[] = [];
   const launcher: CoordinationLauncher = {
     invoke: async (command) =>
@@ -162,6 +218,12 @@ test("coordinator fails the agent before launch when target bootstrap is unavail
       schema: 1,
       event: "coordinator_coordination_failed",
       coordination_action: "bootstrap",
+      ykc_code: "YKC-CUSTODY-001",
+    },
+    {
+      schema: 1,
+      event: "coordinator_coordination_failed",
+      coordination_action: "join",
       ykc_code: "YKC-CUSTODY-001",
     },
     {
