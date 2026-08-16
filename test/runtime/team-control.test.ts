@@ -11,7 +11,11 @@ import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js
 import { teamRuntimeEntrypoints } from "../../packages/team-control/src/entrypoints.js";
 import { parsePreflightArguments } from "../../apps/team-preflight/src/arguments.js";
 import { runApprovedPreflight } from "../../apps/team-preflight/src/approved-run.js";
-import { formatApprovedRun, formatEngagePreflight } from "../../apps/team-preflight/src/format.js";
+import {
+  formatApprovedRun,
+  formatEngagePreflight,
+  formatTeamStatus,
+} from "../../apps/team-preflight/src/format.js";
 import { runEngagePreflight } from "../../apps/team-preflight/src/preflight.js";
 import {
   copilotModelCatalogFromDiscoveries,
@@ -74,12 +78,12 @@ test("suite readonly verifier preset allows bounded read-only inspection", () =>
   assert.equal(args.role, "suite-readonly-verifier");
   assert.equal(args.workProfile, "readonly");
   assert.equal(args.preferredRuntime, "codex");
-  assert.equal(args.teamBudget, 300_000);
+  assert.equal(args.teamBudget, 340_000);
   assert.equal(args.managerBudget, 180_000);
   assert.equal(args.format, "text");
-  assert.match(args.goal, /bounded read-only inspection/u);
+  assert.match(args.goal, /one compact read-only probe/u);
   assert.match(args.goal, /Do not modify files/u);
-  assert.match(args.goal, /Keep combined command output below 250 lines/u);
+  assert.doesNotMatch(args.goal, /250 lines/u);
 });
 
 const usage = {
@@ -196,15 +200,54 @@ test("role profile policy maps specialists to allowlisted runtime models skills 
       runtime: "codex",
       model: "default",
       skills: ["testing"],
-      token_budget: 50_000,
+      token_budget: 90_000,
       tool_mode: "none",
-      max_commands: 4,
+      max_commands: 1,
       runtime_timeout_ms: 120_000,
     },
   );
   assert.deepEqual(roleProfilePolicy(options, "security-reviewer", "review").omitted_skills, [
     "security",
   ]);
+});
+
+test("team status formatter exposes stop and token state without raw JSON", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-status-text-")));
+  try {
+    const store = new TeamStore(root);
+    const { team, manager } = store.createManaged("Inspect team status", "codex", 2, 1, 160_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Inspect local team state",
+        model: "default",
+        skills: ["testing"],
+        instructions: "Read compact team state and stop when requested.",
+      },
+      task: "Manage the local team.",
+      token_budget: 40_000,
+      required_actions: ["team.status"],
+    });
+    store.spawn(team.team_id, {
+      parent_agent_id: manager.agent_id,
+      runtime: "codex",
+      role: "suite-readonly-verifier",
+      task: "Probe the suite.",
+      token_budget: 90_000,
+      model_tool_mode: "none",
+      max_commands: 1,
+      timeout_ms: 120_000,
+    });
+    store.stop(team.team_id);
+    const text = formatTeamStatus(store.status(team.team_id));
+    assert.match(text, /Yukh team status/u);
+    assert.match(text, /State: stopped/u);
+    assert.match(text, /allocated: 130000/u);
+    assert.match(text, /suite-readonly-verifier/u);
+    assert.doesNotMatch(text, /"agents"/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("engage preflight composes a worker without launching a provider runtime", async () => {

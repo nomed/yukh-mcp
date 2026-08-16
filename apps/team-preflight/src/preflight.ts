@@ -48,7 +48,7 @@ function concise(value: string, maxLength: number): string {
 
 function workerInstructions(workProfile: TeamWorkProfile): string {
   if (workProfile === "readonly")
-    return "Execute only the approved read-only task. Use no model-facing tools. Do not mutate files, install dependencies, start services, call the network or traverse dependency/build/runtime artifact directories. Keep every command and final output compact; stop and summarize rather than dumping large listings.";
+    return "Run at most one compact read-only probe. Do not mutate files, install dependencies, start services, call the network, or list dependency/build/runtime trees. Keep command output and final summary short.";
   return "Execute only the approved task, stay within the approved runtime bounds, keep output concise, and report any missing context instead of guessing.";
 }
 
