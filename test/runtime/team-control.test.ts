@@ -449,6 +449,61 @@ test("accounted manager receives the exact persisted team status receipt", async
   }
 });
 
+test("compact status marks over-budget summaries as reviewable", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-reviewable-overbudget-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Inspect review artifact", "codex", 2, 1, 50_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Inspect one team",
+        model: "default",
+        skills: [],
+        instructions: "Read compact status.",
+      },
+      task: "Call team.status",
+      token_budget: 20_000,
+      required_actions: [],
+    });
+    const worker = store.spawn(managed.team.team_id, {
+      parent_agent_id: managed.manager.agent_id,
+      runtime: "codex",
+      role: "reviewable-worker",
+      task: "Return useful output but exceed budget",
+      token_budget: 2_000,
+    });
+    store.transition(managed.team.team_id, worker.agent_id, "running");
+    store.finish(
+      managed.team.team_id,
+      worker.agent_id,
+      { schema: 1, outcome: "token_budget_exceeded", summary: "Useful review artifact" },
+      {
+        schema: 1,
+        source: "codex-json-v1",
+        input_tokens: 2_500,
+        cached_input_tokens: 1_000,
+        output_tokens: 200,
+        reasoning_output_tokens: 50,
+        total_tokens: 2_700,
+        budget_outcome: "exceeded",
+      },
+    );
+    const accounted = readTeamStatus(store, managed.team.team_id, {
+      team_id: managed.team.team_id,
+      agent_id: managed.manager.agent_id,
+    });
+    if (!("status" in accounted)) throw new Error("missing accounted status");
+    const compactWorker = accounted.status.agents.find(
+      (agent) => agent.agent_id === worker.agent_id,
+    );
+    assert.equal(compactWorker?.completion, "token_budget_exceeded");
+    assert.equal(compactWorker?.review_summary_available, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("runtime output extracts Codex completion and refuses invented Copilot token usage", () => {
   const codex = new RuntimeOutput("codex");
   codex.line(
@@ -1346,11 +1401,25 @@ test("deterministic executor resumes reserved state and suppresses synthesis aft
     const reserved = store.reservePlan(managed.team.team_id, proposed.plan_id, proposed.digest);
     const failedWorker = reserved.worker_agent_ids[0]!;
     store.transition(managed.team.team_id, failedWorker, "running");
+    const overrunUsage = {
+      schema: 1 as const,
+      source: "codex-json-v1" as const,
+      input_tokens: 2_500,
+      cached_input_tokens: 1_000,
+      output_tokens: 200,
+      reasoning_output_tokens: 50,
+      total_tokens: 2_700,
+      budget_outcome: "exceeded" as const,
+    };
     store.finish(
       managed.team.team_id,
       failedWorker,
-      { schema: 1, outcome: "command_budget_exceeded", summary: "bounded" },
-      undefined,
+      {
+        schema: 1,
+        outcome: "token_budget_exceeded",
+        summary: "Useful but over-budget worker proposal",
+      },
+      overrunUsage,
     );
     const launches: string[] = [];
     const options = {
@@ -1373,6 +1442,10 @@ test("deterministic executor resumes reserved state and suppresses synthesis aft
     assert.equal(failed.state, "failed");
     assert.equal(failed.failure_code, "team_plan_worker_failed");
     assert.deepEqual(launches, []);
+    const reviewable = store.agent(managed.team.team_id, failedWorker);
+    assert.equal(reviewable.completion?.outcome, "token_budget_exceeded");
+    assert.equal(reviewable.completion?.summary, "Useful but over-budget worker proposal");
+    assert.equal(reviewable.usage?.total_tokens, 2_700);
     assert.equal(
       store.agent(managed.team.team_id, failed.synthesis_agent_id ?? "invalid").state,
       "defined",

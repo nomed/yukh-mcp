@@ -225,6 +225,74 @@ test("watch exposes manager accounting and receipt-backed actions", () => {
   assert.match(changes, /workers=1 synthesis=worker-4dc1c6d1/u);
 });
 
+test("watch marks over-budget summaries as reviewable", () => {
+  const changes = renderTeamChanges(
+    [
+      {
+        team: {
+          schema: 1,
+          team_id: "team-0eae0789-0d76-493a-9d89-2f44c9f819cd",
+          goal: "Review over-budget output",
+          workspace: "/tmp/project",
+          manager_runtime: "codex",
+          manager_role: "delivery-manager",
+          manager_mission: "Keep useful failed output visible",
+          max_agents: 2,
+          max_depth: 1,
+          token_budget: 20_000,
+          state: "active",
+        },
+        agents: [
+          {
+            schema: 1,
+            agent_id: "worker-3dc1c6d1-ac73-4f39-9d48-301123385534",
+            kind: "worker",
+            coordination_agent: "agent-suite-planner-61e1f378",
+            coordination_participant: "agent:suite-planner-61e1f378",
+            team_id: "team-0eae0789-0d76-493a-9d89-2f44c9f819cd",
+            runtime: "codex",
+            role: "suite-planner",
+            task: "Return a concise proposal",
+            depth: 1,
+            can_spawn: false,
+            token_budget: 8_000,
+            required_actions: [],
+            usage: {
+              schema: 1,
+              source: "codex-json-v1",
+              input_tokens: 14_869,
+              cached_input_tokens: 9_984,
+              output_tokens: 783,
+              reasoning_output_tokens: 143,
+              total_tokens: 15_652,
+              budget_outcome: "exceeded",
+            },
+            completion: {
+              schema: 1,
+              outcome: "token_budget_exceeded",
+              summary: "Useful proposal preserved for review",
+            },
+            state: "failed",
+          },
+        ],
+        receipts: [],
+        plans: [],
+        tokens: {
+          budget: 20_000,
+          allocated: 8_000,
+          observed: 15_652,
+          remaining: 4_348,
+          pending_agents: 0,
+          unaccounted_agents: 0,
+          exceeded_agents: 1,
+        },
+      },
+    ],
+    new Map(),
+  ).join("\n");
+  assert.match(changes, /completion=token_budget_exceeded review=summary_available/u);
+});
+
 test("watch accepts bounded dynamic team identities", () => {
   const dynamic = structuredClone(output);
   dynamic.result.records[0]!.event.participant.id = "agent:frontend-developer-a1b2c3d4";
