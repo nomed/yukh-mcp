@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yukh.dev/contracts/team-execution-plan-v1.schema.json",
+  "title": "Yukh deterministic team execution plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "workers", "synthesis"],
+  "properties": {
+    "schema": { "const": 1 },
+    "workers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/agent" }
+    },
+    "synthesis": { "$ref": "#/$defs/agent" }
+  },
+  "$defs": {
+    "token": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime",
+        "role",
+        "mission",
+        "model",
+        "skills",
+        "instructions",
+        "task",
+        "token_budget"
+      ],
+      "properties": {
+        "runtime": { "enum": ["codex", "copilot"] },
+        "role": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+        "mission": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "model": { "$ref": "#/$defs/token" },
+        "skills": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/token" }
+        },
+        "instructions": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "task": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "token_budget": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 2000000
+        }
+      }
+    }
+  }
+}

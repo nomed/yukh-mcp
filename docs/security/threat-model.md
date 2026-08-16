@@ -55,6 +55,18 @@ availability guarantees require later accepted provider profiles.
 
 ## Abuse cases and required response
 
+### Team plan substitution and model-loop exhaustion
+
+A caller may alter a manager proposal, replay execution, select unavailable
+profiles or induce repeated model tool turns. Executable team plans use a closed
+versioned schema, are persisted against the originating manager and team, and
+require their exact server-computed digest at execution. Profiles, agent slots
+and aggregate token allocations are validated before worker creation. Execution
+is single-use and deterministic: it launches and awaits reserved workers without
+calling the planning model again. Final synthesis is a separate tool-free,
+budgeted runtime over bounded public completion artifacts. Mismatch, replay,
+worker failure or incomplete accounting fails closed and remains observable.
+
 ### Prompt and content injection
 
 An inspected file, issue, target response, or tool result instructs the model to
@@ -834,3 +846,18 @@ claim successful collaboration without a bounded public-safe completion and
 accounted usage. Local runtime JSON logs may contain operational detail and
 remain private; only completion, usage counts and stable outcomes enter team
 state and the viewer.
+
+## Accepted deterministic team plan execution — 2026-08-16
+
+- Governing issue: #145
+- Accepted architecture: RFC-0023
+
+A tool-free planning manager may emit one closed plan that is persisted with a
+server-computed digest. Exact-digest execution validates every profile, agent
+slot and aggregate allocation before worker creation. The executor launches and
+awaits reserved workers without another planning-model turn; a separate
+tool-free synthesizer receives only bounded public completion artifacts and has
+its own token allocation. Digest substitution, replay, unavailable profiles,
+over-allocation, worker failure and incomplete accounting fail closed. The
+remaining cost risk is the provider's post-turn usage boundary described by
+RFC-0020.

@@ -11,8 +11,46 @@ import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js
 import {
   assertProfileAvailable,
   awaitAgent,
+  executePlan,
   readTeamStatus,
 } from "../../apps/team-control/src/server.js";
+
+const usage = {
+  schema: 1 as const,
+  source: "codex-json-v1" as const,
+  input_tokens: 100,
+  cached_input_tokens: 20,
+  output_tokens: 20,
+  reasoning_output_tokens: 5,
+  total_tokens: 120,
+  budget_outcome: "within" as const,
+};
+
+const planDocument = (workerBudget = 2_000, synthesisBudget = 2_000) => ({
+  schema: 1,
+  workers: [
+    {
+      runtime: "codex",
+      role: "backend-developer",
+      mission: "Implement the bounded backend increment",
+      model: "default",
+      skills: [],
+      instructions: "Inspect only relevant files, implement and test the requested increment.",
+      task: "Implement and verify the backend increment.",
+      token_budget: workerBudget,
+    },
+  ],
+  synthesis: {
+    runtime: "codex",
+    role: "delivery-synthesizer",
+    mission: "Produce the final evidence-based delivery summary",
+    model: "default",
+    skills: [],
+    instructions: "Use only supplied verified completion artifacts and remain concise.",
+    task: "Synthesize outcome, remaining gaps and the next action.",
+    token_budget: synthesisBudget,
+  },
+});
 
 const workerMain = fileURLToPath(new URL("../../apps/team-worker/src/main.ts", import.meta.url));
 const tsxLoader = fileURLToPath(import.meta.resolve("tsx"));
@@ -270,6 +308,33 @@ test("managed team rejects a manager budget above the team budget", async () => 
           task: "Plan",
           token_budget: 11_000,
           required_actions: [],
+        }),
+      /invalid manager definition/u,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("structured planning contract rejects model-facing manager actions", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-tools-denied-")));
+  try {
+    const store = new TeamStore(root);
+    assert.throws(
+      () =>
+        store.createManaged("Plan without tool loops", "codex", 3, 1, 10_000, {
+          role: "delivery-manager",
+          profile: {
+            schema: 1,
+            mission: "Return one structured plan",
+            model: "default",
+            skills: [],
+            instructions: "Do not invoke operational tools.",
+          },
+          task: "Plan",
+          token_budget: 2_000,
+          required_actions: ["team.status"],
+          output_contract: "team-plan-v1",
         }),
       /invalid manager definition/u,
     );
@@ -870,6 +935,300 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
       store.agent(managed.team.team_id, managed.manager.agent_id).completion?.outcome,
       "succeeded",
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("structured planning manager persists a closed digest-bound plan", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-structured-plan-")));
+  try {
+    const executable = join(root, "agent-cli");
+    const argumentsFile = join(root, "agent-arguments");
+    const launcher = join(root, "launcher");
+    const support = join(root, "support.mjs");
+    const document = JSON.stringify(planDocument());
+    await writeFile(
+      executable,
+      `#!/bin/sh
+printf '%s\n' "$@" >${argumentsFile}
+printf '%s\n' ${JSON.stringify(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: document } }))}
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":20,"reasoning_output_tokens":5}}'
+`,
+      { mode: 0o700 },
+    );
+    await writeFile(
+      launcher,
+      '#!/bin/sh\ncat >/dev/null\nprintf \'{"schema":1,"status":"ok","command":"test"}\\n\'\n',
+      { mode: 0o700 },
+    );
+    await writeFile(support, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Plan deterministically", "codex", 4, 1, 10_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Return one executable structured plan",
+        model: "default",
+        skills: [],
+        instructions: "Select only necessary specialists.",
+      },
+      task: "Plan one increment",
+      token_budget: 2_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxLoader, workerMain, managed.team.team_id, managed.manager.agent_id],
+      {
+        cwd: root,
+        stdio: "ignore",
+        env: {
+          HOME: process.env.HOME ?? "",
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          YUKH_TEAM_WORKSPACE: root,
+          YUKH_COORDINATION_LAUNCHER: launcher,
+          YUKH_COORDINATION_MCP_MAIN: support,
+          YUKH_TEAM_CONTROL_MCP_MAIN: support,
+          YUKH_CODEX_EXECUTABLE: executable,
+          YUKH_COPILOT_EXECUTABLE: executable,
+        },
+      },
+    );
+    assert.equal(await new Promise<number | null>((resolve) => child.once("close", resolve)), 0);
+    const manager = store.agent(managed.team.team_id, managed.manager.agent_id);
+    assert.equal(manager.completion?.outcome, "succeeded");
+    assert.match(manager.completion?.plan_id ?? "", /^plan-/u);
+    const plan = store.plan(managed.team.team_id, manager.completion?.plan_id ?? "invalid");
+    assert.match(plan.digest, /^sha-256:[0-9a-f]{64}$/u);
+    assert.equal(plan.state, "proposed");
+    const runtimeArguments = await readFile(argumentsFile, "utf8");
+    assert.match(runtimeArguments, /--output-schema/u);
+    assert.doesNotMatch(runtimeArguments, /mcp_servers\.yukh-team-control/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("deterministic executor reserves, runs, awaits and synthesizes without manager relaunch", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-executor-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Execute once", "codex", 4, 1, 10_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Plan a bounded increment",
+        model: "default",
+        skills: [],
+        instructions: "Return a closed plan.",
+      },
+      task: "Plan",
+      token_budget: 2_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    store.transition(managed.team.team_id, managed.manager.agent_id, "running");
+    const plan = store.proposePlan(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      JSON.stringify(planDocument()),
+    );
+    store.finish(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      {
+        schema: 1,
+        outcome: "succeeded",
+        summary: JSON.stringify(planDocument()),
+        plan_id: plan.plan_id,
+      },
+      usage,
+    );
+    const launches: string[] = [];
+    const supervisor = {
+      launch(agent: ReturnType<TeamStore["agent"]>) {
+        launches.push(agent.agent_id);
+        store.transition(agent.team_id, agent.agent_id, "running");
+        queueMicrotask(() =>
+          store.finish(
+            agent.team_id,
+            agent.agent_id,
+            { schema: 1, outcome: "succeeded", summary: `${agent.role} completed` },
+            usage,
+          ),
+        );
+        return { pid: 1, log: "test" };
+      },
+    };
+    const options = {
+      models: { codex: new Set(["default"]), copilot: new Set(["default"]) },
+      skills: { codex: new Set<string>(), copilot: new Set<string>() },
+    };
+    const completed = await executePlan(
+      store,
+      supervisor,
+      options,
+      managed.team.team_id,
+      plan.plan_id,
+      plan.digest,
+      2_000,
+    );
+    assert.equal(completed.state, "completed");
+    assert.equal(launches.length, 2);
+    assert.ok(!launches.includes(managed.manager.agent_id));
+    assert.equal(
+      store.agent(managed.team.team_id, completed.synthesis_agent_id ?? "invalid").model_tool_mode,
+      "none",
+    );
+    assert.deepEqual(
+      store
+        .status(managed.team.team_id)
+        .receipts.map((receipt) => receipt.action)
+        .sort(),
+      ["plan.execute", "plan.synthesize"],
+    );
+    assert.equal(store.status(managed.team.team_id).tokens.allocated, 6_000);
+    assert.equal(store.status(managed.team.team_id).tokens.observed, 360);
+    await executePlan(
+      store,
+      supervisor,
+      options,
+      managed.team.team_id,
+      plan.plan_id,
+      plan.digest,
+      2_000,
+    );
+    assert.equal(launches.length, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("deterministic executor fails before worker creation for malformed, stale and unavailable plans", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-denials-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Deny unsafe plan", "codex", 4, 1, 10_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Plan safely",
+        model: "default",
+        skills: [],
+        instructions: "Use a closed plan.",
+      },
+      task: "Plan",
+      token_budget: 2_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    assert.throws(
+      () =>
+        store.proposePlan(
+          managed.team.team_id,
+          managed.manager.agent_id,
+          JSON.stringify({ ...planDocument(), unexpected: true }),
+        ),
+      /invalid team plan/u,
+    );
+    store.transition(managed.team.team_id, managed.manager.agent_id, "running");
+    const unavailable = planDocument();
+    unavailable.workers[0]!.model = "unavailable";
+    const plan = store.proposePlan(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      JSON.stringify(unavailable),
+    );
+    store.finish(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      {
+        schema: 1,
+        outcome: "succeeded",
+        summary: JSON.stringify(unavailable),
+        plan_id: plan.plan_id,
+      },
+      usage,
+    );
+    const supervisor = { launch: () => ({ pid: 1, log: "test" }) };
+    const options = {
+      models: { codex: new Set(["default"]), copilot: new Set(["default"]) },
+      skills: { codex: new Set<string>(), copilot: new Set<string>() },
+    };
+    await assert.rejects(
+      executePlan(
+        store,
+        supervisor,
+        options,
+        managed.team.team_id,
+        plan.plan_id,
+        `sha-256:${"0".repeat(64)}`,
+        2_000,
+      ),
+      /team_plan_digest_mismatch/u,
+    );
+    await assert.rejects(
+      executePlan(
+        store,
+        supervisor,
+        options,
+        managed.team.team_id,
+        plan.plan_id,
+        plan.digest,
+        2_000,
+      ),
+      /agent_model_unavailable/u,
+    );
+    assert.equal(store.status(managed.team.team_id).agents.length, 1);
+    assert.equal(store.plan(managed.team.team_id, plan.plan_id).state, "proposed");
+
+    const overManaged = store.createManaged("Deny over-allocation", "codex", 4, 1, 10_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Plan within the aggregate budget",
+        model: "default",
+        skills: [],
+        instructions: "Reserve planning, work and synthesis.",
+      },
+      task: "Plan",
+      token_budget: 2_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    store.transition(overManaged.team.team_id, overManaged.manager.agent_id, "running");
+    const oversizedDocument = planDocument(5_000, 5_000);
+    const oversizedPlan = store.proposePlan(
+      overManaged.team.team_id,
+      overManaged.manager.agent_id,
+      JSON.stringify(oversizedDocument),
+    );
+    store.finish(
+      overManaged.team.team_id,
+      overManaged.manager.agent_id,
+      {
+        schema: 1,
+        outcome: "succeeded",
+        summary: JSON.stringify(oversizedDocument),
+        plan_id: oversizedPlan.plan_id,
+      },
+      usage,
+    );
+    await assert.rejects(
+      executePlan(
+        store,
+        supervisor,
+        options,
+        overManaged.team.team_id,
+        oversizedPlan.plan_id,
+        oversizedPlan.digest,
+        2_000,
+      ),
+      /team_token_budget_exceeded/u,
+    );
+    assert.equal(store.status(overManaged.team.team_id).agents.length, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

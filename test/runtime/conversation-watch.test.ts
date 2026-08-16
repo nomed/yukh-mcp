@@ -157,6 +157,43 @@ test("watch exposes manager accounting and receipt-backed actions", () => {
             outcome: "succeeded",
           },
         ],
+        plans: [
+          {
+            schema: 1,
+            plan_id: "plan-9776aa63-2b13-4d98-ab2b-5b0c8b0354aa",
+            team_id: teamID,
+            manager_agent_id: managerID,
+            digest: `sha-256:${"1".repeat(64)}`,
+            document: {
+              schema: 1,
+              workers: [
+                {
+                  runtime: "codex",
+                  role: "backend-developer",
+                  mission: "Implement",
+                  model: "default",
+                  skills: [],
+                  instructions: "Implement and test.",
+                  task: "Deliver one increment.",
+                  token_budget: 20_000,
+                },
+              ],
+              synthesis: {
+                runtime: "codex",
+                role: "delivery-synthesizer",
+                mission: "Summarize",
+                model: "default",
+                skills: [],
+                instructions: "Use verified evidence.",
+                task: "Summarize the delivery.",
+                token_budget: 5_000,
+              },
+            },
+            state: "running",
+            worker_agent_ids: ["worker-3dc1c6d1-ac73-4f39-9d48-301123385534"],
+            synthesis_agent_id: "worker-4dc1c6d1-ac73-4f39-9d48-301123385534",
+          },
+        ],
         tokens: {
           budget: 60_000,
           allocated: 20_000,
@@ -173,6 +210,8 @@ test("watch exposes manager accounting and receipt-backed actions", () => {
   assert.match(changes, /MANAGER  delivery-manager  COMPLETED/u);
   assert.match(changes, /input=5000 cached=3000 output=500 reasoning=100/u);
   assert.match(changes, /required=team.status receipts=team.status/u);
+  assert.match(changes, /PLAN  plan-9776aa63-2b13-4d98-ab2b-5b0c8b0354aa  RUNNING/u);
+  assert.match(changes, /workers=1 synthesis=worker-4dc1c6d1/u);
 });
 
 test("watch accepts bounded dynamic team identities", () => {

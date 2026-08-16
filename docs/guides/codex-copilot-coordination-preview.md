@@ -58,7 +58,7 @@ paths to the project workspace, Coordination launcher and both agent CLIs:
 command = "node"
 args = ["/path/to/yukh-mcp/dist/apps/team-control/src/main.js"]
 env = { YUKH_TEAM_WORKSPACE = "/path/to/project", YUKH_COORDINATION_LAUNCHER = "/path/to/yukh-local-agent.py", YUKH_CODEX_EXECUTABLE = "/absolute/path/to/codex", YUKH_COPILOT_EXECUTABLE = "/absolute/path/to/copilot" }
-enabled_tools = ["manager.start", "team.status", "agent.await", "agent.status", "team.stop"]
+enabled_tools = ["manager.start", "team.status", "plan.status", "plan.execute", "agent.status", "team.stop"]
 default_tools_approval_mode = "writes"
 ```
 
@@ -71,21 +71,24 @@ env = { YUKH_CODEX_MODELS = "default,approved-codex-model", YUKH_COPILOT_MODELS 
 Start work with `manager.start`, not `team.create`. It creates the team and a
 depth-zero manager runtime together, reserves the manager budget and returns a
 server receipt plus the manager agent ID. Use `agent.await` from the controlling
-session to retrieve its terminal completion. The manager uses `agent.engage`
-from inside its accounted runtime to compose bounded professional roles. Model
-and skill values outside these allowlists fail before process launch. The
+session to retrieve its terminal completion. For efficient automatic work, set
+`output_contract` to `team-plan-v1`: the manager returns one structured proposal
+without tools. Read its plan ID and digest from status, then call `plan.execute`
+with that exact digest. Model and skill values outside these allowlists fail
+before process launch. The
 worker must bootstrap and join Coordination before its agent CLI starts. Set an
 explicit `team_token_budget` and `manager_token_budget` in `manager.start`, then
-a smaller `token_budget` for every `agent.engage`. Manager and worker
-allocations above the team budget are rejected. Teams created by an older
+a smaller `token_budget` for every planned worker and for synthesis. All
+allocations are validated together before a worker starts. Teams created by an older
 preview remain readable but an external unaccounted session cannot engage
 workers. Stop and recreate them with `manager.start`.
 
-After engaging a child, use the returned `coordination_participant` exactly and
-call `agent.await`. A successful terminal record contains the child's bounded
-completion summary and structured usage. The viewer shows observed/team budget,
-accounting source and completion outcome. Codex currently supplies trustworthy
-token counts. Copilot exposes credits and duration but not tokens, so a
+`plan.execute` reserves every worker plus one synthesizer, starts and awaits the
+workers without another manager model turn, then gives their bounded completion
+artifacts to the separately budgeted tool-free synthesizer. Repeating the same
+plan does not duplicate workers. The viewer shows plan state, observed/team
+budget, accounting source and completion outcome. Codex currently supplies
+trustworthy token counts. Copilot exposes credits and duration but not tokens, so a
 token-strict Copilot worker terminates with `token_accounting_unavailable`
 rather than inventing a conversion.
 
@@ -94,12 +97,11 @@ the manager:
 
 ```text
 Use yukh-team-control. Call manager.start with a 120000-token team budget and a
-20000-token Codex planning-manager budget and no required actions. Ask it for a
-single-pass proposal using only supplied facts. After approving the proposal,
-start a separate operational manager that requires agent.engage and agent.await
-receipts.
-Ask the manager to engage one Codex backend developer with a 50000-token budget,
-wait for its completion, inspect its summary and usage, then report the result.
+20000-token Codex planning-manager budget, no required actions and
+output_contract team-plan-v1. Ask for the minimum specialists needed, explicit
+worker budgets and one small synthesis budget. Show me the proposed plan and its
+digest. After I approve that exact digest, call plan.execute once and report its
+terminal state and exact usage.
 Do not use team.create and do not engage a runtime that cannot provide token
 accounting.
 ```
@@ -107,9 +109,9 @@ accounting.
 The tool-free planning profile measured 14,382 total tokens: 13,735 input,
 including 9,984 cached, and 647 output. The 20,000-token allocation provides a
 bounded margin; it is not a universal estimate. Every operational tool call is
-a separate context round and needs its own justified budget. `team.status`
-returns its newly issued receipt directly to an accounted manager while also
-persisting it.
+a separate context round and needs its own justified budget. Deterministic plan
+execution adds no manager context rounds; only useful workers and the explicit
+final synthesis consume additional model tokens.
 
 Codex managers run without inherited user configuration. Yukh injects only the
 tools required by the manager record; a pure planning turn receives no

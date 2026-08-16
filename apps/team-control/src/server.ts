@@ -60,6 +60,76 @@ export async function awaitAgent(
   }
 }
 
+export async function executePlan(
+  store: TeamStore,
+  supervisor: Pick<TeamSupervisor, "launch">,
+  options: TeamControlOptions,
+  teamId: string,
+  planId: string,
+  digest: string,
+  timeoutMs: number,
+) {
+  let plan = store.plan(teamId, planId);
+  if (plan.digest !== digest) throw new Error("team_plan_digest_mismatch");
+  if (["running", "synthesizing", "completed", "failed", "reserved"].includes(plan.state))
+    return plan;
+  for (const profile of [...plan.document.workers, plan.document.synthesis])
+    assertProfileAvailable(options, profile.runtime, profile.model, profile.skills);
+  plan = store.reservePlan(teamId, planId, digest);
+  const deadline = Date.now() + timeoutMs;
+  try {
+    for (const agentId of plan.worker_agent_ids) {
+      const agent = store.agent(teamId, agentId);
+      supervisor.launch(agent);
+      store.receipt(teamId, "plan.execute", undefined, agentId);
+    }
+    plan = store.updatePlan(teamId, planId, { state: "running" });
+    const completed: AgentRecord[] = [];
+    for (const agentId of plan.worker_agent_ids) {
+      const terminal = await awaitAgent(store, teamId, agentId, Math.max(0, deadline - Date.now()));
+      if (!terminal) throw new Error("team_plan_wait_timeout");
+      if (terminal.state !== "completed" || terminal.completion?.outcome !== "succeeded")
+        throw new Error("team_plan_worker_failed");
+      completed.push(terminal);
+    }
+    const synthesisInput = JSON.stringify({
+      schema: 1,
+      worker_completions: completed.map((agent) => ({
+        agent_id: agent.agent_id,
+        role: agent.role,
+        summary: agent.completion?.summary,
+      })),
+    });
+    if (Buffer.byteLength(synthesisInput, "utf8") > 4_096)
+      throw new Error("team_plan_synthesis_input_too_large");
+    if (!plan.synthesis_agent_id) throw new Error("team_plan_state_invalid");
+    const synthesisAgentId = plan.synthesis_agent_id;
+    const synthesis = plan.document.synthesis;
+    const synthesisTask = `${synthesis.task}\n\nUse only these verified worker completion artifacts:\n${synthesisInput}`;
+    if (Buffer.byteLength(synthesisTask, "utf8") > 4_096)
+      throw new Error("team_plan_synthesis_input_too_large");
+    store.assign(teamId, synthesisAgentId, synthesisTask);
+    plan = store.updatePlan(teamId, planId, { state: "synthesizing" });
+    const synthesizer = store.agent(teamId, synthesisAgentId);
+    supervisor.launch(synthesizer);
+    store.receipt(teamId, "plan.synthesize", undefined, synthesizer.agent_id);
+    const terminal = await awaitAgent(
+      store,
+      teamId,
+      synthesizer.agent_id,
+      Math.max(0, deadline - Date.now()),
+    );
+    if (!terminal) throw new Error("team_plan_wait_timeout");
+    if (terminal.state !== "completed" || terminal.completion?.outcome !== "succeeded")
+      throw new Error("team_plan_synthesis_failed");
+    return store.updatePlan(teamId, planId, { state: "completed" });
+  } catch (error) {
+    const failureCode = error instanceof Error ? error.message : "team_plan_execution_failed";
+    store.updatePlan(teamId, planId, { state: "failed", failure_code: failureCode });
+    throw error;
+  }
+}
+
 export function readTeamStatus(
   store: TeamStore,
   teamId: string,
@@ -155,6 +225,7 @@ export function createTeamControlServer(
             .array(z.enum(["team.status", "agent.engage", "agent.await"]))
             .max(3)
             .default([]),
+          output_contract: z.enum(["summary", "team-plan-v1"]).default("summary"),
           max_agents: z.number().int().min(1).max(32).default(16),
           max_depth: z.number().int().min(1).max(5).default(3),
           team_token_budget: z.number().int().min(1_000).max(10_000_000),
@@ -186,6 +257,7 @@ export function createTeamControlServer(
             task: input.task,
             token_budget: input.manager_token_budget,
             required_actions: input.required_actions,
+            output_contract: input.output_contract,
           },
         );
         const runtime = supervisor.launch(managed.manager);
@@ -207,6 +279,77 @@ export function createTeamControlServer(
           error,
           new Set(["agent_model_unavailable", "agent_skill_unavailable", "agent_spawn_failed"]),
           "manager_start_failed",
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "plan.status",
+    {
+      title: "Inspect a deterministic team plan",
+      description: "Read the persisted proposal, digest, execution state and assigned agents",
+      inputSchema: z
+        .object({
+          team_id: id,
+          plan_id: z.string().regex(/^plan-[0-9a-f-]{36}$/u),
+        })
+        .strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+    },
+    ({ team_id, plan_id }) => {
+      if (options.caller) throw new Error("agent_delegation_denied");
+      return result(store.plan(team_id, plan_id));
+    },
+  );
+
+  server.registerTool(
+    "plan.execute",
+    {
+      title: "Execute an approved deterministic team plan",
+      description:
+        "Validate the exact proposed digest, run and await all workers, then run one tool-free synthesis",
+      inputSchema: z
+        .object({
+          team_id: id,
+          plan_id: z.string().regex(/^plan-[0-9a-f-]{36}$/u),
+          approved_digest: z.string().regex(/^sha-256:[0-9a-f]{64}$/u),
+          timeout_ms: z.number().int().min(1_000).max(300_000).default(300_000),
+        })
+        .strict(),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    async ({ team_id, plan_id, approved_digest, timeout_ms }) => {
+      if (options.caller) throw new Error("agent_delegation_denied");
+      try {
+        return result(
+          await executePlan(
+            store,
+            supervisor,
+            options,
+            team_id,
+            plan_id,
+            approved_digest,
+            timeout_ms,
+          ),
+        );
+      } catch (error) {
+        return stableFailure(
+          error,
+          new Set([
+            "team_plan_digest_mismatch",
+            "team_plan_manager_incomplete",
+            "agent_model_unavailable",
+            "agent_skill_unavailable",
+            "team_agent_limit",
+            "team_token_budget_exceeded",
+            "team_plan_wait_timeout",
+            "team_plan_worker_failed",
+            "team_plan_synthesis_input_too_large",
+            "team_plan_synthesis_failed",
+            "agent_spawn_failed",
+          ]),
+          "team_plan_execution_failed",
         );
       }
     },

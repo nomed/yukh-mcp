@@ -1,5 +1,10 @@
 import type { CoordinationOutput } from "../../coordination-preview/src/launcher.js";
-import type { AgentRecord, TeamActionReceipt, TeamRecord } from "../../team-control/src/store.js";
+import type {
+  AgentRecord,
+  TeamActionReceipt,
+  TeamExecutionPlanRecord,
+  TeamRecord,
+} from "../../team-control/src/store.js";
 
 export interface WatchRecord {
   readonly sequence: number;
@@ -26,6 +31,7 @@ export interface TeamSnapshot {
   readonly team: TeamRecord;
   readonly agents: readonly AgentRecord[];
   readonly receipts: readonly TeamActionReceipt[];
+  readonly plans?: readonly TeamExecutionPlanRecord[];
   readonly tokens: {
     readonly budget: number;
     readonly allocated: number;
@@ -177,6 +183,15 @@ export function renderTeamChanges(
             .map((receipt) => receipt.action)
             .join(",") || "none"
         }\n        coordination=${agent.coordination_participant} id=${agent.agent_id} parent=${agent.parent_agent_id ?? (agent.kind === "manager" ? "root" : "manager")}`,
+      );
+    }
+    for (const plan of snapshot.plans ?? []) {
+      const key = `plan:${plan.plan_id}`;
+      const value = `${plan.state}:${plan.worker_agent_ids.join(",")}:${plan.synthesis_agent_id ?? "pending"}:${plan.failure_code ?? "none"}`;
+      if (previous.get(key) === value) continue;
+      previous.set(key, value);
+      lines.push(
+        `PLAN  ${plan.plan_id}  ${plan.state.toUpperCase()}  workers=${plan.worker_agent_ids.length} synthesis=${plan.synthesis_agent_id ?? "pending"}\n      digest=${plan.digest} manager=${plan.manager_agent_id}${plan.failure_code ? ` failure=${plan.failure_code}` : ""}`,
       );
     }
   }
