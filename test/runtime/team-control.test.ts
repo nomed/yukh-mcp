@@ -12,10 +12,12 @@ import { teamRuntimeEntrypoints } from "../../packages/team-control/src/entrypoi
 import { parsePreflightArguments } from "../../apps/team-preflight/src/arguments.js";
 import { runApprovedPreflight } from "../../apps/team-preflight/src/approved-run.js";
 import {
+  formatApprovedPlanRun,
   formatApprovedRun,
   formatEngagePreflight,
   formatTeamStatus,
 } from "../../apps/team-preflight/src/format.js";
+import { runApprovedPlanWithDependencies } from "../../apps/team-preflight/src/plan-execute.js";
 import { runEngagePreflight } from "../../apps/team-preflight/src/preflight.js";
 import {
   copilotModelCatalogFromDiscoveries,
@@ -2220,6 +2222,155 @@ test("deterministic executor reserves, runs, awaits and synthesizes without mana
       2_000,
     );
     assert.equal(launches.length, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("approved plan CLI runner executes workers and synthesis through the deterministic executor", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-cli-runner-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Execute plan from CLI", "codex", 4, 1, 10_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Plan one bounded increment",
+        model: "default",
+        skills: [],
+        instructions: "Return a closed plan.",
+      },
+      task: "Plan",
+      token_budget: 2_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    store.transition(managed.team.team_id, managed.manager.agent_id, "running");
+    const plan = store.proposePlan(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      JSON.stringify(planDocument()),
+    );
+    store.finish(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      {
+        schema: 1,
+        outcome: "succeeded",
+        summary: JSON.stringify(planDocument()),
+        plan_id: plan.plan_id,
+      },
+      usage,
+    );
+    const launches: string[] = [];
+    const supervisor = {
+      launch(agent: ReturnType<TeamStore["agent"]>) {
+        launches.push(agent.agent_id);
+        store.transition(agent.team_id, agent.agent_id, "running");
+        queueMicrotask(() =>
+          store.finish(
+            agent.team_id,
+            agent.agent_id,
+            { schema: 1, outcome: "succeeded", summary: `${agent.role} completed` },
+            usage,
+          ),
+        );
+        return { pid: 1, log: "test" };
+      },
+    };
+    const output = await runApprovedPlanWithDependencies(
+      {
+        workspace: root,
+        teamId: managed.team.team_id,
+        planId: plan.plan_id,
+        approvedDigest: plan.digest,
+        launcher: process.execPath,
+        codex: process.execPath,
+        copilot: process.execPath,
+        waitMs: 2_000,
+      },
+      {
+        store,
+        supervisor,
+        options: {
+          dynamicExecution: true,
+          models: { codex: new Set(["default"]), copilot: new Set(["default"]) },
+          skills: { codex: new Set<string>(), copilot: new Set<string>() },
+        },
+      },
+    );
+    assert.equal(output.status, "ok");
+    assert.equal(output.plan.state, "completed");
+    assert.equal(launches.length, 2);
+    assert.equal(output.team.tokens.observed, 360);
+    assert.match(formatApprovedPlanRun(output), /Yukh approved plan run/u);
+    assert.match(formatApprovedPlanRun(output), /Plan state: completed/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("approved plan CLI runner keeps the deterministic cost boundary", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-plan-cli-boundary-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Reject unsafe plan from CLI", "codex", 4, 1, 10_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Plan one bounded increment",
+        model: "default",
+        skills: [],
+        instructions: "Return a closed plan.",
+      },
+      task: "Plan",
+      token_budget: 2_000,
+      required_actions: [],
+      output_contract: "team-plan-v1",
+    });
+    store.transition(managed.team.team_id, managed.manager.agent_id, "running");
+    const unsafe = planDocument();
+    unsafe.workers[0]!.max_commands = 1;
+    const plan = store.proposePlan(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      JSON.stringify(unsafe),
+    );
+    store.finish(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      {
+        schema: 1,
+        outcome: "succeeded",
+        summary: JSON.stringify(unsafe),
+        plan_id: plan.plan_id,
+      },
+      usage,
+    );
+    await assert.rejects(
+      runApprovedPlanWithDependencies(
+        {
+          workspace: root,
+          teamId: managed.team.team_id,
+          planId: plan.plan_id,
+          approvedDigest: plan.digest,
+          launcher: process.execPath,
+          codex: process.execPath,
+          copilot: process.execPath,
+          waitMs: 2_000,
+        },
+        {
+          store,
+          supervisor: { launch: () => ({ pid: 1, log: "test" }) },
+          options: {
+            dynamicExecution: false,
+            models: { codex: new Set(["default"]), copilot: new Set(["default"]) },
+            skills: { codex: new Set<string>(), copilot: new Set<string>() },
+          },
+        },
+      ),
+      /dynamic_worker_cost_boundary_unavailable/u,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
