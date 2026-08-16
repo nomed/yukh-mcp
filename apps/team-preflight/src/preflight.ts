@@ -15,6 +15,9 @@ export interface EngagePreflightArguments {
   readonly preferredRuntime?: AgentRuntime;
   readonly teamBudget: number;
   readonly managerBudget: number;
+  readonly workerBudget?: number;
+  readonly workerMaxCommands?: number;
+  readonly workerTimeoutMs?: number;
   readonly codexModels: readonly string[];
   readonly copilotModels: readonly string[];
   readonly codexSkills: readonly string[];
@@ -120,7 +123,7 @@ export function runEngagePreflight(args: EngagePreflightArguments): EngagePrefli
     max_commands: 0,
     timeout_ms: 60_000,
   });
-  const policy = roleProfilePolicy(
+  const basePolicy = roleProfilePolicy(
     {
       models: {
         codex: runtimeSet(args.codexModels),
@@ -136,6 +139,15 @@ export function runEngagePreflight(args: EngagePreflightArguments): EngagePrefli
     args.workProfile,
     args.preferredRuntime,
   );
+  const policy = {
+    ...basePolicy,
+    recommendation: {
+      ...basePolicy.recommendation,
+      ...(args.workerBudget !== undefined ? { token_budget: args.workerBudget } : {}),
+      ...(args.workerMaxCommands !== undefined ? { max_commands: args.workerMaxCommands } : {}),
+      ...(args.workerTimeoutMs !== undefined ? { runtime_timeout_ms: args.workerTimeoutMs } : {}),
+    },
+  };
   const worker = store.spawn(managed.team.team_id, {
     parent_agent_id: managed.manager.agent_id,
     runtime: policy.recommendation.runtime,

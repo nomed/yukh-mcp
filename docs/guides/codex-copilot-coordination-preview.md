@@ -27,6 +27,17 @@ error means stop and fix the checkout before continuing.
 
 This command is the gate before starting a Yukh-managed implementation worker.
 
+For a small documentation change, start with the `micro-doc-edit` preset instead
+of the generic implementation profile:
+
+```sh
+yukh team propose --preset micro-doc-edit --goal "Edit one named doc file for issue #..."
+```
+
+It budgets one non-delegating Codex worker at 35,000 tokens, `tool_mode: none`,
+one command and a 120-second runtime. Use it only when the target file and issue
+are already known; otherwise run a read-only verifier first.
+
 Use absolute paths below. Configure Codex as `agent-a`:
 
 ```toml

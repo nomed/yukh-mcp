@@ -9,6 +9,9 @@ export interface PreflightArguments {
   readonly preferredRuntime?: AgentRuntime;
   readonly teamBudget: number;
   readonly managerBudget: number;
+  readonly workerBudget?: number;
+  readonly workerMaxCommands?: number;
+  readonly workerTimeoutMs?: number;
   readonly codexModels: readonly string[];
   readonly copilotModels: readonly string[];
   readonly codexSkills: readonly string[];
@@ -24,6 +27,9 @@ interface PreflightPreset {
   readonly preferredRuntime: AgentRuntime;
   readonly teamBudget: number;
   readonly managerBudget: number;
+  readonly workerBudget?: number;
+  readonly workerMaxCommands?: number;
+  readonly workerTimeoutMs?: number;
 }
 
 const presets: Readonly<Record<string, PreflightPreset>> = {
@@ -42,6 +48,17 @@ const presets: Readonly<Record<string, PreflightPreset>> = {
     preferredRuntime: "codex",
     teamBudget: 340_000,
     managerBudget: 180_000,
+  },
+  "micro-doc-edit": {
+    goal: "Perform one small documentation edit in one explicitly named file. Inspect only the target file and the governing issue. Do not read broad repository context, do not delegate, and run at most one focused validation command.",
+    role: "documentation-developer",
+    workProfile: "implementation",
+    preferredRuntime: "codex",
+    teamBudget: 80_000,
+    managerBudget: 20_000,
+    workerBudget: 35_000,
+    workerMaxCommands: 1,
+    workerTimeoutMs: 120_000,
   },
 };
 
@@ -100,6 +117,25 @@ export function parsePreflightArguments(
     ...(preferredRuntime ? { preferredRuntime: preferredRuntime as AgentRuntime } : {}),
     teamBudget: integer(values.get("team-budget"), preset?.teamBudget ?? 260_000),
     managerBudget: integer(values.get("manager-budget"), preset?.managerBudget ?? 180_000),
+    ...(values.has("worker-budget") || preset?.workerBudget !== undefined
+      ? { workerBudget: integer(values.get("worker-budget"), preset?.workerBudget ?? 80_000) }
+      : {}),
+    ...(values.has("worker-max-commands") || preset?.workerMaxCommands !== undefined
+      ? {
+          workerMaxCommands: integer(
+            values.get("worker-max-commands"),
+            preset?.workerMaxCommands ?? 8,
+          ),
+        }
+      : {}),
+    ...(values.has("worker-timeout-ms") || preset?.workerTimeoutMs !== undefined
+      ? {
+          workerTimeoutMs: integer(
+            values.get("worker-timeout-ms"),
+            preset?.workerTimeoutMs ?? 300_000,
+          ),
+        }
+      : {}),
     codexModels: list(values.get("codex-models") ?? process.env.YUKH_CODEX_MODELS, ["default"]),
     copilotModels: list(values.get("copilot-models") ?? process.env.YUKH_COPILOT_MODELS, [
       "default",

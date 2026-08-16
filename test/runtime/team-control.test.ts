@@ -88,6 +88,24 @@ test("suite readonly verifier preset allows bounded read-only inspection", () =>
   assert.doesNotMatch(args.goal, /250 lines/u);
 });
 
+test("micro documentation edit preset uses a narrow worker profile", () => {
+  const args = parsePreflightArguments(["--preset", "micro-doc-edit"], {
+    defaultFormat: "text",
+    defaultWorkspace: "/tmp",
+  });
+  assert.equal(args.role, "documentation-developer");
+  assert.equal(args.workProfile, "implementation");
+  assert.equal(args.preferredRuntime, "codex");
+  assert.equal(args.teamBudget, 80_000);
+  assert.equal(args.managerBudget, 20_000);
+  assert.equal(args.workerBudget, 35_000);
+  assert.equal(args.workerMaxCommands, 1);
+  assert.equal(args.workerTimeoutMs, 120_000);
+  assert.match(args.goal, /one small documentation edit/u);
+  assert.match(args.goal, /one explicitly named file/u);
+  assert.match(args.goal, /at most one focused validation command/u);
+});
+
 const usage = {
   schema: 1 as const,
   source: "codex-json-v1" as const,
@@ -211,6 +229,30 @@ test("role profile policy maps specialists to allowlisted runtime models skills 
   assert.deepEqual(roleProfilePolicy(options, "security-reviewer", "review").omitted_skills, [
     "security",
   ]);
+});
+
+test("micro documentation edit preflight overrides implementation bounds", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-micro-doc-edit-")));
+  try {
+    const args = parsePreflightArguments(["--preset", "micro-doc-edit"], {
+      defaultWorkspace: root,
+    });
+    const output = runEngagePreflight(args);
+    assert.equal(output.policy.work_profile, "implementation");
+    assert.equal(output.policy.recommendation.runtime, "codex");
+    assert.deepEqual(output.policy.recommendation.skills, ["documentation"]);
+    assert.equal(output.policy.recommendation.token_budget, 35_000);
+    assert.equal(output.policy.recommendation.tool_mode, "none");
+    assert.equal(output.policy.recommendation.max_commands, 1);
+    assert.equal(output.policy.recommendation.runtime_timeout_ms, 120_000);
+    assert.equal(output.planned_worker.token_budget, 35_000);
+    assert.equal(output.planned_worker.max_commands, 1);
+    assert.equal(output.planned_worker.timeout_ms, 120_000);
+    assert.equal(output.provider_runtime_launched, false);
+    assert.equal(output.budget.allocated, 55_000);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("team status formatter exposes stop and token state without raw JSON", async () => {
