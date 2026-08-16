@@ -7,11 +7,12 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 
 export type AgentRuntime = "codex" | "copilot";
 export type AgentKind = "manager" | "worker";
+export type ManagerOutputContract = "summary" | "team-plan-v1";
 export type TeamState = "active" | "stopped";
 export type AgentState = "defined" | "running" | "completed" | "failed" | "stopped";
 
@@ -32,10 +33,12 @@ export interface AgentCompletion {
     | "succeeded"
     | "agent_exit_nonzero"
     | "completion_missing"
+    | "team_plan_invalid"
     | "required_action_missing"
     | "token_accounting_unavailable"
     | "token_budget_exceeded";
   readonly summary: string;
+  readonly plan_id?: string;
 }
 
 export interface ComposedAgentProfile {
@@ -76,12 +79,50 @@ export interface AgentRecord {
   readonly can_spawn: boolean;
   readonly token_budget: number;
   readonly required_actions: readonly TeamAction[];
+  readonly output_contract?: ManagerOutputContract;
+  readonly model_tool_mode?: "default" | "none";
   readonly usage?: AgentUsage;
   readonly completion?: AgentCompletion;
   readonly state: AgentState;
 }
 
-export type TeamAction = "manager.start" | "team.status" | "agent.engage" | "agent.await";
+export type TeamAction =
+  | "manager.start"
+  | "team.status"
+  | "agent.engage"
+  | "agent.await"
+  | "plan.execute"
+  | "plan.synthesize";
+
+export interface PlannedAgent {
+  readonly runtime: AgentRuntime;
+  readonly role: string;
+  readonly mission: string;
+  readonly model: string;
+  readonly skills: readonly string[];
+  readonly instructions: string;
+  readonly task: string;
+  readonly token_budget: number;
+}
+
+export interface TeamExecutionPlanDocument {
+  readonly schema: 1;
+  readonly workers: readonly PlannedAgent[];
+  readonly synthesis: PlannedAgent;
+}
+
+export interface TeamExecutionPlanRecord {
+  readonly schema: 1;
+  readonly plan_id: string;
+  readonly team_id: string;
+  readonly manager_agent_id: string;
+  readonly digest: `sha-256:${string}`;
+  readonly document: TeamExecutionPlanDocument;
+  readonly state: "proposed" | "reserved" | "running" | "synthesizing" | "completed" | "failed";
+  readonly worker_agent_ids: readonly string[];
+  readonly synthesis_agent_id?: string;
+  readonly failure_code?: string;
+}
 
 export interface TeamActionReceipt {
   readonly schema: 1;
@@ -177,6 +218,7 @@ export class TeamStore {
       readonly task: string;
       readonly token_budget: number;
       readonly required_actions: readonly TeamAction[];
+      readonly output_contract?: ManagerOutputContract;
     },
   ): {
     readonly team: TeamRecord;
@@ -189,6 +231,7 @@ export class TeamStore {
       manager.token_budget > tokenBudget ||
       manager.required_actions.length > 3 ||
       new Set(manager.required_actions).size !== manager.required_actions.length ||
+      (manager.output_contract === "team-plan-v1" && manager.required_actions.length > 0) ||
       manager.required_actions.some(
         (action) => !["team.status", "agent.engage", "agent.await"].includes(action),
       )
@@ -216,6 +259,7 @@ export class TeamStore {
       can_spawn: true,
       token_budget: manager.token_budget,
       required_actions: manager.required_actions,
+      output_contract: manager.output_contract ?? "summary",
       state: "defined",
     };
     this.#write(
@@ -236,6 +280,7 @@ export class TeamStore {
       readonly task: string;
       readonly can_spawn?: boolean;
       readonly token_budget: number;
+      readonly model_tool_mode?: "default" | "none";
     },
   ): AgentRecord {
     const team = this.#readTeam(id);
@@ -287,6 +332,7 @@ export class TeamStore {
       can_spawn: input.can_spawn ?? false,
       token_budget: input.token_budget,
       required_actions: [],
+      model_tool_mode: input.model_tool_mode ?? "default",
       state: "defined",
     };
     this.#write(join(this.#teamDirectory(id), "agents", `${record.agent_id}.json`), record, true);
@@ -297,6 +343,7 @@ export class TeamStore {
     readonly team: TeamRecord;
     readonly agents: readonly AgentRecord[];
     readonly receipts: readonly TeamActionReceipt[];
+    readonly plans: readonly TeamExecutionPlanRecord[];
     readonly tokens: {
       readonly budget: number;
       readonly allocated: number;
@@ -310,12 +357,14 @@ export class TeamStore {
     const team = this.#readTeam(id);
     const agents = this.#readAgents(id);
     const receipts = this.#readReceipts(id);
+    const plans = this.#readPlans(id);
     const allocated = agents.reduce((total, agent) => total + agent.token_budget, 0);
     const observed = agents.reduce((total, agent) => total + (agent.usage?.total_tokens ?? 0), 0);
     return {
       team,
       agents,
       receipts,
+      plans,
       tokens: {
         budget: team.token_budget,
         allocated,
@@ -342,6 +391,120 @@ export class TeamStore {
 
   agent(id: string, worker: string): AgentRecord {
     return this.#readAgent(id, worker);
+  }
+
+  proposePlan(id: string, managerAgentId: string, raw: string): TeamExecutionPlanRecord {
+    const manager = this.#readAgent(id, managerAgentId);
+    if (manager.kind !== "manager" || manager.output_contract !== "team-plan-v1")
+      throw new Error("team_plan_not_expected");
+    if (this.#readPlans(id).some((plan) => plan.manager_agent_id === managerAgentId))
+      throw new Error("team_plan_already_exists");
+    let value: unknown;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      throw new TypeError("invalid team plan");
+    }
+    const document = this.#validatePlanDocument(value);
+    const digest =
+      `sha-256:${createHash("sha256").update(JSON.stringify(document)).digest("hex")}` as const;
+    const plan: TeamExecutionPlanRecord = {
+      schema: 1,
+      plan_id: `plan-${randomUUID()}`,
+      team_id: id,
+      manager_agent_id: managerAgentId,
+      digest,
+      document,
+      state: "proposed",
+      worker_agent_ids: [],
+    };
+    const directory = join(this.#teamDirectory(id), "plans");
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    this.#write(join(directory, `${plan.plan_id}.json`), plan, true);
+    return plan;
+  }
+
+  plan(id: string, planId: string): TeamExecutionPlanRecord {
+    if (!/^plan-[0-9a-f-]{36}$/u.test(planId)) throw new TypeError("invalid plan id");
+    return this.#read(
+      join(this.#teamDirectory(id), "plans", `${planId}.json`),
+    ) as TeamExecutionPlanRecord;
+  }
+
+  reservePlan(id: string, planId: string, digest: string): TeamExecutionPlanRecord {
+    const plan = this.plan(id, planId);
+    if (plan.digest !== digest) throw new Error("team_plan_digest_mismatch");
+    if (plan.state !== "proposed") return plan;
+    const manager = this.#readAgent(id, plan.manager_agent_id);
+    if (
+      manager.state !== "completed" ||
+      manager.completion?.outcome !== "succeeded" ||
+      manager.completion.plan_id !== planId
+    )
+      throw new Error("team_plan_manager_incomplete");
+    const status = this.status(id);
+    const allocations = [
+      ...plan.document.workers.map((worker) => worker.token_budget),
+      plan.document.synthesis.token_budget,
+    ];
+    if (status.agents.length + allocations.length > status.team.max_agents)
+      throw new Error("team_agent_limit");
+    if (
+      status.tokens.allocated + allocations.reduce((total, value) => total + value, 0) >
+      status.team.token_budget
+    )
+      throw new Error("team_token_budget_exceeded");
+    const workers = plan.document.workers.map((worker) =>
+      this.spawn(id, {
+        parent_agent_id: plan.manager_agent_id,
+        runtime: worker.runtime,
+        role: worker.role,
+        profile: {
+          schema: 1,
+          mission: worker.mission,
+          model: worker.model,
+          skills: worker.skills,
+          instructions: worker.instructions,
+        },
+        task: worker.task,
+        token_budget: worker.token_budget,
+      }),
+    );
+    const synthesis = plan.document.synthesis;
+    const synthesizer = this.spawn(id, {
+      parent_agent_id: plan.manager_agent_id,
+      runtime: synthesis.runtime,
+      role: synthesis.role,
+      profile: {
+        schema: 1,
+        mission: synthesis.mission,
+        model: synthesis.model,
+        skills: synthesis.skills,
+        instructions: synthesis.instructions,
+      },
+      task: "Awaiting deterministic worker completion artifacts.",
+      token_budget: synthesis.token_budget,
+      model_tool_mode: "none",
+    });
+    return this.updatePlan(id, planId, {
+      state: "reserved",
+      worker_agent_ids: workers.map((worker) => worker.agent_id),
+      synthesis_agent_id: synthesizer.agent_id,
+    });
+  }
+
+  updatePlan(
+    id: string,
+    planId: string,
+    change: Pick<TeamExecutionPlanRecord, "state"> &
+      Partial<
+        Pick<TeamExecutionPlanRecord, "worker_agent_ids" | "synthesis_agent_id" | "failure_code">
+      >,
+  ): TeamExecutionPlanRecord {
+    const current = this.plan(id, planId);
+    const updated: TeamExecutionPlanRecord = { ...current, ...change };
+    this.#write(join(this.#teamDirectory(id), "plans", `${planId}.json`), updated, false);
+    return updated;
   }
 
   transition(id: string, worker: string, state: AgentState): AgentRecord {
@@ -389,7 +552,16 @@ export class TeamStore {
     subjectAgentId?: string,
   ): TeamActionReceipt {
     this.#readTeam(id);
-    if (!["manager.start", "team.status", "agent.engage", "agent.await"].includes(action))
+    if (
+      ![
+        "manager.start",
+        "team.status",
+        "agent.engage",
+        "agent.await",
+        "plan.execute",
+        "plan.synthesize",
+      ].includes(action)
+    )
       throw new TypeError("invalid team action");
     if (actorAgentId) this.#readAgent(id, actorAgentId);
     if (subjectAgentId) this.#readAgent(id, subjectAgentId);
@@ -456,14 +628,79 @@ export class TeamStore {
         "succeeded",
         "agent_exit_nonzero",
         "completion_missing",
+        "team_plan_invalid",
         "required_action_missing",
         "token_accounting_unavailable",
         "token_budget_exceeded",
       ].includes(completion.outcome) ||
       completion.summary.trim() !== completion.summary ||
-      Buffer.byteLength(completion.summary, "utf8") > 4_096
+      Buffer.byteLength(completion.summary, "utf8") > 4_096 ||
+      (completion.plan_id !== undefined && !/^plan-[0-9a-f-]{36}$/u.test(completion.plan_id))
     )
       throw new TypeError("invalid agent completion");
+  }
+
+  #validatePlanDocument(value: unknown): TeamExecutionPlanDocument {
+    const exact = (
+      candidate: unknown,
+      keys: readonly string[],
+    ): candidate is Record<string, unknown> =>
+      typeof candidate === "object" &&
+      candidate !== null &&
+      !Array.isArray(candidate) &&
+      Object.keys(candidate).sort().join("\n") === [...keys].sort().join("\n");
+    if (!exact(value, ["schema", "workers", "synthesis"]) || value.schema !== 1)
+      throw new TypeError("invalid team plan");
+    if (!Array.isArray(value.workers) || value.workers.length < 1 || value.workers.length > 8)
+      throw new TypeError("invalid team plan");
+    const normalize = (candidate: unknown): PlannedAgent => {
+      const keys = [
+        "runtime",
+        "role",
+        "mission",
+        "model",
+        "skills",
+        "instructions",
+        "task",
+        "token_budget",
+      ];
+      if (!exact(candidate, keys)) throw new TypeError("invalid team plan");
+      const profile = {
+        schema: 1 as const,
+        mission: candidate.mission,
+        model: candidate.model,
+        skills: candidate.skills,
+        instructions: candidate.instructions,
+      };
+      if (
+        !["codex", "copilot"].includes(String(candidate.runtime)) ||
+        typeof candidate.role !== "string" ||
+        !roleName.test(candidate.role) ||
+        typeof candidate.task !== "string" ||
+        candidate.task.trim() !== candidate.task ||
+        candidate.task.length < 1 ||
+        candidate.task.length > 4_096 ||
+        !Number.isSafeInteger(candidate.token_budget) ||
+        Number(candidate.token_budget) < 1_000 ||
+        Number(candidate.token_budget) > 2_000_000
+      )
+        throw new TypeError("invalid team plan");
+      this.#validateProfile(profile as ComposedAgentProfile);
+      return {
+        runtime: candidate.runtime as AgentRuntime,
+        role: candidate.role,
+        mission: candidate.mission as string,
+        model: candidate.model as string,
+        skills: candidate.skills as readonly string[],
+        instructions: candidate.instructions as string,
+        task: candidate.task,
+        token_budget: candidate.token_budget as number,
+      };
+    };
+    const workers = value.workers.map(normalize);
+    if (new Set(workers.map((worker) => worker.role)).size !== workers.length)
+      throw new TypeError("invalid team plan");
+    return { schema: 1, workers, synthesis: normalize(value.synthesis) };
   }
 
   #validateUsage(agent: AgentRecord, usage: AgentUsage): void {
@@ -530,9 +767,22 @@ export class TeamStore {
     }
   }
 
+  #readPlans(id: string): readonly TeamExecutionPlanRecord[] {
+    const directory = join(this.#teamDirectory(id), "plans");
+    try {
+      return readdirSync(directory)
+        .filter((name) => /^plan-[0-9a-f-]{36}\.json$/u.test(name))
+        .sort()
+        .map((name) => this.#read(join(directory, name)) as TeamExecutionPlanRecord);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
   #read(path: string): unknown {
     const raw = readFileSync(path, "utf8");
-    if (raw.length < 2 || raw.length > 16_384) throw new Error("invalid team state");
+    if (raw.length < 2 || raw.length > 65_536) throw new Error("invalid team state");
     return JSON.parse(raw) as unknown;
   }
 

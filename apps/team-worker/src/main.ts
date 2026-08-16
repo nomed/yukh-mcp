@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { RuntimeOutput } from "../../../packages/team-control/src/runtime-output.js";
 
@@ -25,16 +26,20 @@ const mcpEnv = {
   YUKH_COORDINATION_LAUNCHER: launcher,
 };
 const profile = agent.profile;
+const modelToolsDisabled = agent.model_tool_mode === "none";
 const requiredActions = agent.required_actions.join(", ") || "none";
 const modelUsesCoordination =
-  agent.kind === "worker" || agent.required_actions.some((action) => action !== "team.status");
+  !modelToolsDisabled &&
+  (agent.kind === "worker" || agent.required_actions.some((action) => action !== "team.status"));
 const modelTeamTools = [
   ...new Set(
-    agent.kind === "manager"
-      ? agent.required_actions
-      : agent.can_spawn
-        ? ["team.status", "agent.status", "agent.engage", "agent.await"]
-        : ["team.status", "agent.status"],
+    modelToolsDisabled
+      ? []
+      : agent.kind === "manager"
+        ? agent.required_actions
+        : agent.can_spawn
+          ? ["team.status", "agent.status", "agent.engage", "agent.await"]
+          : ["team.status", "agent.status"],
   ),
 ];
 const modelUsesTeamControl = modelTeamTools.length > 0;
@@ -44,7 +49,14 @@ const coordinationInstruction = modelUsesCoordination
 const teamControlInstruction = modelUsesTeamControl
   ? `Required receipt-backed actions before success: ${requiredActions}. A textual claim is not evidence; invoke each required yukh-team-control tool successfully.`
   : "No model-facing team-control tools are required or exposed for this single-pass turn; the controller verifies manager.start and terminal state.";
-const prompt = `You are ${agent.role}, ${agent.kind} ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nToken budget: ${agent.token_budget} total input plus output tokens. Keep inspection and tool output bounded. The team already exists: do not call team.create. ${teamControlInstruction} When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. ${coordinationInstruction} End with one concise public-safe completion summary of at most 4096 UTF-8 bytes; the wrapper persists that final response. You may create a bounded child only when explicitly delegated.`;
+const outputInstruction =
+  agent.output_contract === "team-plan-v1"
+    ? "Return only the JSON team execution plan required by the supplied output schema. Include the minimum specialists needed and one concise delivery synthesizer. Do not wrap JSON in Markdown."
+    : "End with one concise public-safe completion summary of at most 4096 UTF-8 bytes; the wrapper persists that final response.";
+const prompt = `You are ${agent.role}, ${agent.kind} ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nToken budget: ${agent.token_budget} total input plus output tokens. Keep inspection and tool output bounded. The team already exists: do not call team.create. ${teamControlInstruction} When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. ${coordinationInstruction} ${outputInstruction} You may create a bounded child only when explicitly delegated.`;
+const planSchema = fileURLToPath(
+  new URL("../../../contracts/team-execution-plan-v1.schema.json", import.meta.url),
+);
 const teamControlEnv = {
   YUKH_TEAM_WORKSPACE: workspace,
   YUKH_COORDINATION_LAUNCHER: launcher,
@@ -71,6 +83,7 @@ const args =
         "--json",
         "--ignore-user-config",
         "--dangerously-bypass-approvals-and-sandbox",
+        ...(agent.output_contract === "team-plan-v1" ? ["--output-schema", planSchema] : []),
         ...(profile && profile.model !== "default" ? ["--model", profile.model] : []),
         ...(modelUsesCoordination
           ? [
@@ -248,6 +261,21 @@ if (joined && "output" in outcome) {
     const summary = outcome.output.summary();
     const usage = outcome.output.usage(agent.token_budget);
     const missingActions = store.missingRequiredActions(teamID, agentID);
+    let proposedPlan: ReturnType<TeamStore["proposePlan"]> | undefined;
+    let planInvalid = false;
+    if (
+      outcome.exitCode === 0 &&
+      usage?.budget_outcome === "within" &&
+      missingActions.length === 0 &&
+      summary &&
+      agent.output_contract === "team-plan-v1"
+    ) {
+      try {
+        proposedPlan = store.proposePlan(teamID, agentID, summary);
+      } catch {
+        planInvalid = true;
+      }
+    }
     const completion =
       outcome.exitCode !== 0
         ? { schema: 1 as const, outcome: "agent_exit_nonzero" as const, summary }
@@ -263,7 +291,18 @@ if (joined && "output" in outcome) {
                 }
               : !summary
                 ? { schema: 1 as const, outcome: "completion_missing" as const, summary: "" }
-                : { schema: 1 as const, outcome: "succeeded" as const, summary };
+                : planInvalid
+                  ? {
+                      schema: 1 as const,
+                      outcome: "team_plan_invalid" as const,
+                      summary: "Structured team plan validation failed",
+                    }
+                  : {
+                      schema: 1 as const,
+                      outcome: "succeeded" as const,
+                      summary,
+                      ...(proposedPlan ? { plan_id: proposedPlan.plan_id } : {}),
+                    };
     store.finish(teamID, agentID, completion, usage);
     if (completion.outcome !== "succeeded") wrapperExitCode = 1;
   }
