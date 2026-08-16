@@ -1483,6 +1483,81 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
   }
 });
 
+test("manager engage-only prompt does not force agent await", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-manager-engage-only-")));
+  try {
+    const executable = join(root, "agent-cli");
+    const argumentsFile = join(root, "agent-arguments");
+    const launcher = join(root, "launcher");
+    const support = join(root, "support.mjs");
+    await writeFile(
+      executable,
+      `#!/bin/sh
+printf '%s\n' "$@" >${argumentsFile}
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"engage receipt persisted"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20,"reasoning_output_tokens":5}}'
+`,
+      { mode: 0o700 },
+    );
+    await writeFile(
+      launcher,
+      '#!/bin/sh\ncat >/dev/null\nprintf \'{"schema":1,"status":"ok","command":"test"}\\n\'\n',
+      { mode: 0o700 },
+    );
+    await writeFile(support, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Engage child only", "codex", 2, 1, 10_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Engage one worker without awaiting it",
+        model: "default",
+        skills: [],
+        instructions: "Call agent.engage and stop.",
+      },
+      task: "Call agent.engage only",
+      token_budget: 5_000,
+      required_actions: ["agent.engage"],
+    });
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxLoader, workerMain, managed.team.team_id, managed.manager.agent_id],
+      {
+        cwd: root,
+        stdio: "ignore",
+        env: {
+          HOME: process.env.HOME ?? "",
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          YUKH_TEAM_WORKSPACE: root,
+          YUKH_COORDINATION_LAUNCHER: launcher,
+          YUKH_COORDINATION_MCP_MAIN: support,
+          YUKH_TEAM_CONTROL_MCP_MAIN: support,
+          YUKH_CODEX_EXECUTABLE: executable,
+          YUKH_COPILOT_EXECUTABLE: executable,
+          YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS: "1",
+        },
+      },
+    );
+    assert.equal(await new Promise<number | null>((resolve) => child.once("close", resolve)), 1);
+    const runtimeArguments = await readFile(argumentsFile, "utf8");
+    assert.match(
+      runtimeArguments,
+      /Required receipt-backed actions before success: agent\.engage/u,
+    );
+    assert.match(
+      runtimeArguments,
+      /Do not wait for the child unless the task explicitly requires agent\.await/u,
+    );
+    assert.doesNotMatch(runtimeArguments, /Wait for each child with agent\.await/u);
+    assert.match(
+      runtimeArguments,
+      /mcp_servers\.yukh-team-control\.enabled_tools=\["agent\.engage"\]/u,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("pure planning manager receives no model-facing MCP configuration", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-manager-tool-free-")));
   try {

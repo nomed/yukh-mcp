@@ -58,7 +58,9 @@ const teamControlInstruction = modelUsesTeamControl
   : "";
 const delegationInstruction =
   agent.can_spawn && modelUsesTeamControl
-    ? "When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. You may create a bounded child only when explicitly delegated."
+    ? agent.required_actions.includes("agent.await")
+      ? "When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. You may create a bounded child only when explicitly delegated."
+      : "When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Do not wait for the child unless the task explicitly requires agent.await. You may create a bounded child only when explicitly delegated."
     : "";
 const allowlist = (name: string, fallback: readonly string[]): readonly string[] => {
   const raw = process.env[name];
