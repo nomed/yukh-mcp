@@ -43,6 +43,18 @@ Before approving the generated run command, check four lines in the proposal:
 the worker is broader than the issue, if `provider launched` is `yes`, or if the
 budget is not appropriate for the edit, stop and create a narrower proposal.
 
+For a small code fix, use `micro-code-edit` only after naming the files and the
+single validation command:
+
+```sh
+yukh team propose --preset micro-code-edit --goal "Edit path/to/file.ts for issue #... and run node --test path/to/test.ts"
+```
+
+It budgets one non-delegating Codex worker at 45,000 tokens, one command and a
+180-second runtime. If the fix needs broader discovery, multiple test commands
+or dependency installation, do not use the micro preset; create an explicit
+implementation proposal instead.
+
 Use absolute paths below. Configure Codex as `agent-a`:
 
 ```toml

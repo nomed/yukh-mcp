@@ -106,6 +106,25 @@ test("micro documentation edit preset uses a narrow worker profile", () => {
   assert.match(args.goal, /at most one focused validation command/u);
 });
 
+test("micro code edit preset requires a narrow code path and one validation command", () => {
+  const args = parsePreflightArguments(["--preset", "micro-code-edit"], {
+    defaultFormat: "text",
+    defaultWorkspace: "/tmp",
+  });
+  assert.equal(args.role, "backend-developer");
+  assert.equal(args.workProfile, "implementation");
+  assert.equal(args.preferredRuntime, "codex");
+  assert.equal(args.teamBudget, 90_000);
+  assert.equal(args.managerBudget, 20_000);
+  assert.equal(args.workerBudget, 45_000);
+  assert.equal(args.workerMaxCommands, 1);
+  assert.equal(args.workerTimeoutMs, 180_000);
+  assert.match(args.goal, /one small code edit/u);
+  assert.match(args.goal, /explicitly named files/u);
+  assert.match(args.goal, /exactly one focused validation command/u);
+  assert.match(args.goal, /Do not read broad repository context/u);
+});
+
 const usage = {
   schema: 1 as const,
   source: "codex-json-v1" as const,
@@ -250,6 +269,30 @@ test("micro documentation edit preflight overrides implementation bounds", async
     assert.equal(output.planned_worker.timeout_ms, 120_000);
     assert.equal(output.provider_runtime_launched, false);
     assert.equal(output.budget.allocated, 55_000);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("micro code edit preflight keeps implementation bounded to one command", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-micro-code-edit-")));
+  try {
+    const args = parsePreflightArguments(["--preset", "micro-code-edit"], {
+      defaultWorkspace: root,
+    });
+    const output = runEngagePreflight(args);
+    assert.equal(output.policy.work_profile, "implementation");
+    assert.equal(output.policy.recommendation.runtime, "codex");
+    assert.deepEqual(output.policy.recommendation.skills, ["api-design", "testing"]);
+    assert.equal(output.policy.recommendation.token_budget, 45_000);
+    assert.equal(output.policy.recommendation.tool_mode, "none");
+    assert.equal(output.policy.recommendation.max_commands, 1);
+    assert.equal(output.policy.recommendation.runtime_timeout_ms, 180_000);
+    assert.equal(output.planned_worker.token_budget, 45_000);
+    assert.equal(output.planned_worker.max_commands, 1);
+    assert.equal(output.planned_worker.timeout_ms, 180_000);
+    assert.equal(output.provider_runtime_launched, false);
+    assert.equal(output.budget.allocated, 65_000);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
