@@ -190,10 +190,7 @@ export class ConversationCoordinator {
     const launcher = this.#options.launchers[agent];
     if (!launcher) throw new Error("agent_coordination_failed");
     const bootstrap = await launcher.invoke("session bootstrap");
-    if (bootstrap.status !== "ok") {
-      this.#observeCoordinationFailure("bootstrap", bootstrap.code);
-      throw new Error("agent_coordination_failed");
-    }
+    if (bootstrap.status !== "ok") this.#observeCoordinationFailure("bootstrap", bootstrap.code);
     const join = await launcher.invoke("session join", {
       capabilities: ["publish", "replay"],
       session_label: agent,
