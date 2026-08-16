@@ -1,5 +1,7 @@
+import { writeFileSync } from "node:fs";
 import type { AgentRuntime } from "../../../packages/team-control/src/store.js";
 import type { TeamWorkProfile } from "../../team-control/src/server.js";
+import { formatEngagePreflight } from "./format.js";
 import { runEngagePreflight } from "./preflight.js";
 
 interface Arguments {
@@ -14,6 +16,8 @@ interface Arguments {
   readonly copilotModels: readonly string[];
   readonly codexSkills: readonly string[];
   readonly copilotSkills: readonly string[];
+  readonly format: "json" | "text";
+  readonly outputPath?: string;
 }
 
 function list(value: string | undefined, fallback: readonly string[]): readonly string[] {
@@ -42,7 +46,10 @@ function parseArguments(argv: readonly string[]): Arguments {
   const workProfile = values.get("work-profile") ?? "implementation";
   if (!["review", "implementation", "synthesis"].includes(workProfile))
     throw new TypeError("invalid work profile");
+  const format = values.get("format") ?? "json";
+  if (!["json", "text"].includes(format)) throw new TypeError("invalid output format");
   const workspace = values.get("workspace");
+  const outputPath = values.get("output");
   return {
     ...(workspace ? { workspace } : {}),
     goal: values.get("goal") ?? "Preflight one dynamic Yukh worker engagement.",
@@ -66,12 +73,19 @@ function parseArguments(argv: readonly string[]): Arguments {
       "frontend",
       "testing",
     ]),
+    format: format as "json" | "text",
+    ...(outputPath ? { outputPath } : {}),
   };
 }
 
 try {
-  const output = runEngagePreflight(parseArguments(process.argv.slice(2)));
-  process.stdout.write(`${JSON.stringify(output)}\n`);
+  const args = parseArguments(process.argv.slice(2));
+  const output = runEngagePreflight(args);
+  if (args.outputPath)
+    writeFileSync(args.outputPath, `${JSON.stringify(output)}\n`, { mode: 0o600 });
+  process.stdout.write(
+    `${args.format === "json" ? JSON.stringify(output) : formatEngagePreflight(output)}\n`,
+  );
 } catch (error) {
   process.stdout.write(
     `${JSON.stringify({

@@ -14,7 +14,7 @@ if (process.argv[2] === "conversation" && process.argv[3] === "watch") {
   await import("../dist/apps/team-preflight/src/run-approved-main.js");
 } else {
   process.stderr.write(
-    "usage: yukh conversation watch [--full] [--verbose]\n       yukh team serve\n       yukh team preflight-engage [--role backend-reviewer] [--work-profile implementation]\n       yukh team run-approved --preflight file --approved-digest sha-256:...\n",
+    "usage: yukh conversation watch [--full] [--verbose]\n       yukh team serve\n       yukh team preflight-engage [--role backend-reviewer] [--work-profile implementation] [--format json|text] [--output preflight.json]\n       yukh team run-approved --preflight file --approved-digest sha-256:... [--format json|text]\n",
   );
   process.exitCode = 2;
 }
