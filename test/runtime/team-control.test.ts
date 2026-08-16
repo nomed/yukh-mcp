@@ -1015,6 +1015,8 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
     assert.equal(plan.state, "proposed");
     const runtimeArguments = await readFile(argumentsFile, "utf8");
     assert.match(runtimeArguments, /--output-schema/u);
+    assert.match(runtimeArguments, /Every role must be a lowercase slug/u);
+    assert.match(runtimeArguments, /token-efficiency-auditor/u);
     assert.doesNotMatch(runtimeArguments, /mcp_servers\.yukh-team-control/u);
   } finally {
     await rm(root, { recursive: true, force: true });
