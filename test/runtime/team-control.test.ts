@@ -8,6 +8,7 @@ import test from "node:test";
 import { TeamStore } from "../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
 import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js";
+import { teamRuntimeEntrypoints } from "../../packages/team-control/src/entrypoints.js";
 import { runApprovedPreflight } from "../../apps/team-preflight/src/approved-run.js";
 import { runEngagePreflight } from "../../apps/team-preflight/src/preflight.js";
 import {
@@ -95,6 +96,16 @@ const planDocument = (workerBudget = 2_000, synthesisBudget = 2_000) => ({
 
 const workerMain = fileURLToPath(new URL("../../apps/team-worker/src/main.ts", import.meta.url));
 const tsxLoader = fileURLToPath(import.meta.resolve("tsx"));
+
+test("team runtime entrypoints are resolved centrally for source execution", () => {
+  assert.deepEqual(teamRuntimeEntrypoints(), {
+    worker: fileURLToPath(new URL("../../apps/team-worker/src/main.ts", import.meta.url)),
+    coordinationMcp: fileURLToPath(
+      new URL("../../apps/coordination-preview/src/main.ts", import.meta.url),
+    ),
+    teamControlMcp: fileURLToPath(new URL("../../apps/team-control/src/main.ts", import.meta.url)),
+  });
+});
 
 test("composed profiles require allowlisted runtime models and skills", () => {
   const options = {
