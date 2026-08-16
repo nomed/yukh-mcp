@@ -685,7 +685,11 @@ export class TeamStore {
         Number(candidate.token_budget) > 2_000_000
       )
         throw new TypeError("invalid team plan");
-      this.#validateProfile(profile as ComposedAgentProfile);
+      try {
+        this.#validateProfile(profile as ComposedAgentProfile);
+      } catch {
+        throw new TypeError("invalid team plan");
+      }
       return {
         runtime: candidate.runtime as AgentRuntime,
         role: candidate.role,
