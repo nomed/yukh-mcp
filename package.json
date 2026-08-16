@@ -26,6 +26,7 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@github/copilot-sdk": "^1.0.11",
     "@modelcontextprotocol/server": "2.0.0",
     "ajv": "8.20.0",
     "zod": "4.4.3"

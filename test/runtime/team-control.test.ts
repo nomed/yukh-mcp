@@ -11,7 +11,9 @@ import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js
 import {
   parseCodexModelCatalog,
   parseCopilotConfigModels,
+  parseCopilotSdkModels,
   runtimeModels,
+  runtimeModelsAsync,
 } from "../../packages/team-control/src/model-discovery.js";
 import {
   assertProfileAvailable,
@@ -132,6 +134,56 @@ test("runtime model discovery parses CLI catalogs and keeps explicit env authori
       throw new Error("missing cli");
     }),
     ["default", "fallback-model"],
+  );
+});
+
+test("runtime model discovery accepts Copilot SDK model metadata", () => {
+  assert.deepEqual(
+    parseCopilotSdkModels([
+      {
+        id: "claude-sonnet-5",
+        name: "Claude Sonnet 5",
+        capabilities: {},
+      },
+      {
+        id: "bad value",
+        name: "Rejected",
+        capabilities: {},
+      },
+      {
+        id: "gpt-5.6-sol",
+        name: "GPT 5.6 Sol",
+        capabilities: {},
+      },
+      {
+        id: "claude-sonnet-5",
+        name: "Duplicate",
+        capabilities: {},
+      },
+    ]),
+    ["claude-sonnet-5", "gpt-5.6-sol"],
+  );
+});
+
+test("async runtime model discovery keeps env authoritative and falls back safely", async () => {
+  assert.deepEqual(
+    await runtimeModelsAsync("default,approved-model", ["fallback"], async () => {
+      throw new Error("must not discover");
+    }),
+    ["default", "approved-model"],
+  );
+  assert.deepEqual(
+    await runtimeModelsAsync(undefined, ["fallback-model"], async () => {
+      throw new Error("sdk unavailable");
+    }),
+    ["default", "fallback-model"],
+  );
+  assert.deepEqual(
+    await runtimeModelsAsync(undefined, ["fallback-model"], async () => [
+      "claude-sonnet-5",
+      "bad value",
+    ]),
+    ["default", "claude-sonnet-5"],
   );
 });
 
