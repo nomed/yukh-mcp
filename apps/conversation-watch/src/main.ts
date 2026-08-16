@@ -30,6 +30,7 @@ const present = new Set<string>();
 const teamView = new Map<string, string>();
 const teamStore = workspace ? new TeamStore(workspace) : undefined;
 let unavailable = false;
+let lastReplayFailure = "";
 
 process.stdout.write(
   "Yukh conversation — watching verified transcript\nPress Ctrl+C to stop. Use --full for complete message bodies.\n\n",
@@ -39,13 +40,32 @@ for (;;) {
   let output;
   try {
     output = await launcher.invoke("events replay");
-    if (output.status === "error" && output.code === "YKC-AUTH-001") {
+    if (output.status === "error" && output.code !== "YKC-UNAVAILABLE-001") {
       const bootstrap = await launcher.invoke("session bootstrap");
-      if (bootstrap.status !== "ok") throw new Error("coordination_unavailable");
+      if (bootstrap.status !== "ok") {
+        const key = `bootstrap:${bootstrap.code}`;
+        if (lastReplayFailure !== key) {
+          process.stdout.write(
+            `WATCHER  COORDINATION BOOTSTRAP FAILED code=${bootstrap.code ?? "unknown"} — RETRYING\n\n`,
+          );
+          lastReplayFailure = key;
+        }
+        throw new Error("coordination_unavailable");
+      }
       output = await launcher.invoke("events replay");
     }
     if (output.status === "error" && output.code === "YKC-UNAVAILABLE-001")
       throw new Error("coordination_unavailable");
+    if (output.status === "error") {
+      const key = `replay:${output.code}`;
+      if (lastReplayFailure !== key) {
+        process.stdout.write(
+          `WATCHER  COORDINATION REPLAY FAILED code=${output.code ?? "unknown"} — RETRYING\n\n`,
+        );
+        lastReplayFailure = key;
+      }
+      throw new Error("coordination_unavailable");
+    }
   } catch (error) {
     if (!(error instanceof Error) || error.message !== "coordination_unavailable") throw error;
     if (!unavailable)
@@ -56,6 +76,7 @@ for (;;) {
   }
   if (unavailable) process.stdout.write("WATCHER  COORDINATION RECOVERED\n\n");
   unavailable = false;
+  lastReplayFailure = "";
   if (!output) {
     await new Promise((resolve) => setTimeout(resolve, 2_000));
     continue;
