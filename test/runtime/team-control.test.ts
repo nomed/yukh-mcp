@@ -25,6 +25,7 @@ import {
   dynamicExecutionEnabled,
   executePlan,
   readTeamStatus,
+  roleProfilePolicy,
 } from "../../apps/team-control/src/server.js";
 
 test("real dynamic execution can fail closed without changing deterministic helpers", () => {
@@ -109,6 +110,43 @@ test("composed profiles require allowlisted runtime models and skills", () => {
     () => assertProfileAvailable(options, "copilot", "fast-model", ["api-design"]),
     /agent_skill_unavailable/u,
   );
+});
+
+test("role profile policy maps specialists to allowlisted runtime models skills and budgets", () => {
+  const options = {
+    models: {
+      codex: new Set(["default", "gpt-5.6-sol"]),
+      copilot: new Set(["default", "claude-sonnet-5"]),
+    },
+    skills: {
+      codex: new Set(["api-design", "testing", "product"]),
+      copilot: new Set(["frontend"]),
+    },
+  };
+  assert.deepEqual(
+    roleProfilePolicy(options, "frontend-developer", "implementation").recommendation,
+    {
+      runtime: "copilot",
+      model: "default",
+      skills: ["frontend"],
+      token_budget: 50_000,
+      tool_mode: "team",
+      max_commands: 8,
+      runtime_timeout_ms: 300_000,
+    },
+  );
+  assert.deepEqual(roleProfilePolicy(options, "backend-developer", "review").recommendation, {
+    runtime: "codex",
+    model: "default",
+    skills: ["api-design", "testing"],
+    token_budget: 18_000,
+    tool_mode: "none",
+    max_commands: 0,
+    runtime_timeout_ms: 60_000,
+  });
+  assert.deepEqual(roleProfilePolicy(options, "security-reviewer", "review").omitted_skills, [
+    "security",
+  ]);
 });
 
 test("runtime model discovery parses CLI catalogs and keeps explicit env authoritative", () => {
@@ -492,6 +530,52 @@ test("managed team rejects a manager budget above the team budget", async () => 
         }),
       /invalid manager definition/u,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("managed teams can require a role policy receipt before completion", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-policy-receipt-")));
+  try {
+    const store = new TeamStore(root);
+    const managed = store.createManaged("Choose a bounded frontend worker", "codex", 2, 1, 50_000, {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Inspect policy before engaging specialists",
+        model: "default",
+        skills: [],
+        instructions: "Use policy.profile before claiming completion.",
+      },
+      task: "Resolve a worker profile",
+      token_budget: 20_000,
+      required_actions: ["policy.profile"],
+    });
+    store.transition(managed.team.team_id, managed.manager.agent_id, "running");
+    assert.throws(
+      () =>
+        store.finish(
+          managed.team.team_id,
+          managed.manager.agent_id,
+          { schema: 1, outcome: "succeeded", summary: "Skipped policy lookup" },
+          usage,
+        ),
+      /required_action_missing/u,
+    );
+    store.receipt(
+      managed.team.team_id,
+      "policy.profile",
+      managed.manager.agent_id,
+      managed.manager.agent_id,
+    );
+    const completed = store.finish(
+      managed.team.team_id,
+      managed.manager.agent_id,
+      { schema: 1, outcome: "succeeded", summary: "Policy checked" },
+      usage,
+    );
+    assert.equal(completed.state, "completed");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

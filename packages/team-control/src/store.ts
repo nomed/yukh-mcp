@@ -105,6 +105,7 @@ export interface ContextPackDocument extends ContextPackMetadata {
 
 export type TeamAction =
   | "manager.start"
+  | "policy.profile"
   | "team.status"
   | "agent.engage"
   | "agent.await"
@@ -273,12 +274,13 @@ export class TeamStore {
       manager.token_budget < 1_000 ||
       manager.token_budget > 2_000_000 ||
       manager.token_budget > tokenBudget ||
-      manager.required_actions.length > 3 ||
+      manager.required_actions.length > 4 ||
       new Set(manager.required_actions).size !== manager.required_actions.length ||
       (manager.output_contract === "team-plan-v1" && manager.required_actions.length > 0) ||
       !this.#validRuntimeBounds(manager.max_commands ?? 8, manager.timeout_ms ?? 300_000) ||
       manager.required_actions.some(
-        (action) => !["team.status", "agent.engage", "agent.await"].includes(action),
+        (action) =>
+          !["policy.profile", "team.status", "agent.engage", "agent.await"].includes(action),
       )
     )
       throw new TypeError("invalid manager definition");
@@ -692,6 +694,7 @@ export class TeamStore {
     if (
       ![
         "manager.start",
+        "policy.profile",
         "team.status",
         "agent.engage",
         "agent.await",
