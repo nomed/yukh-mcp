@@ -35,6 +35,14 @@ const presets: Readonly<Record<string, PreflightPreset>> = {
     teamBudget: 260_000,
     managerBudget: 180_000,
   },
+  "suite-readonly-verifier": {
+    goal: "Verify the Yukh suite baseline for self-development with bounded read-only inspection only. Inspect minimal repository metadata under /home/codex/repos/nomed/yukh-workspace for nomed.github.io, yukh-mcp, yukh-projects and yukh-coordination: git status/log, README, package/go module metadata and workflow files when present. Use safe read-only commands only. Do not modify files, install dependencies, start services, run network calls or write outside runtime logs. Produce a concise baseline, concrete blockers and the first safe implementation increment.",
+    role: "suite-readonly-verifier",
+    workProfile: "readonly",
+    preferredRuntime: "codex",
+    teamBudget: 300_000,
+    managerBudget: 180_000,
+  },
 };
 
 function list(value: string | undefined, fallback: readonly string[]): readonly string[] {
@@ -78,7 +86,7 @@ export function parsePreflightArguments(
   if (preferredRuntime !== undefined && !["codex", "copilot"].includes(preferredRuntime))
     throw new TypeError("invalid preferred runtime");
   const workProfile = values.get("work-profile") ?? preset?.workProfile ?? "implementation";
-  if (!["review", "implementation", "synthesis"].includes(workProfile))
+  if (!["review", "readonly", "implementation", "synthesis"].includes(workProfile))
     throw new TypeError("invalid work profile");
   const format = values.get("format") ?? options?.defaultFormat ?? "json";
   if (!["json", "text"].includes(format)) throw new TypeError("invalid output format");

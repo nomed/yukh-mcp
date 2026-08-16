@@ -45,7 +45,7 @@ export interface TeamControlOptions {
   readonly dynamicExecution?: boolean;
 }
 
-export type TeamWorkProfile = "review" | "implementation" | "synthesis";
+export type TeamWorkProfile = "review" | "readonly" | "implementation" | "synthesis";
 
 export interface RoleProfilePolicy {
   readonly schema: 1;
@@ -168,6 +168,13 @@ function budgetFor(workProfile: TeamWorkProfile): {
 } {
   if (workProfile === "review")
     return { token_budget: 18_000, tool_mode: "none", max_commands: 0, runtime_timeout_ms: 60_000 };
+  if (workProfile === "readonly")
+    return {
+      token_budget: 40_000,
+      tool_mode: "none",
+      max_commands: 8,
+      runtime_timeout_ms: 180_000,
+    };
   if (workProfile === "synthesis")
     return { token_budget: 16_000, tool_mode: "none", max_commands: 0, runtime_timeout_ms: 60_000 };
   return {
@@ -608,7 +615,9 @@ export function createTeamControlServer(
         .object({
           team_id: id.optional(),
           role: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/u),
-          work_profile: z.enum(["review", "implementation", "synthesis"]).default("implementation"),
+          work_profile: z
+            .enum(["review", "readonly", "implementation", "synthesis"])
+            .default("implementation"),
           preferred_runtime: z.enum(["codex", "copilot"]).optional(),
         })
         .strict(),

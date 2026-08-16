@@ -66,6 +66,21 @@ test("suite qualification preset defines the official read-only reviewer profile
   assert.match(args.goal, /Do not modify repositories/u);
 });
 
+test("suite readonly verifier preset allows bounded read-only inspection", () => {
+  const args = parsePreflightArguments(["--preset", "suite-readonly-verifier"], {
+    defaultFormat: "text",
+    defaultWorkspace: "/tmp",
+  });
+  assert.equal(args.role, "suite-readonly-verifier");
+  assert.equal(args.workProfile, "readonly");
+  assert.equal(args.preferredRuntime, "codex");
+  assert.equal(args.teamBudget, 300_000);
+  assert.equal(args.managerBudget, 180_000);
+  assert.equal(args.format, "text");
+  assert.match(args.goal, /bounded read-only inspection/u);
+  assert.match(args.goal, /Do not modify files/u);
+});
+
 const usage = {
   schema: 1 as const,
   source: "codex-json-v1" as const,
@@ -174,6 +189,18 @@ test("role profile policy maps specialists to allowlisted runtime models skills 
     max_commands: 0,
     runtime_timeout_ms: 60_000,
   });
+  assert.deepEqual(
+    roleProfilePolicy(options, "suite-readonly-verifier", "readonly").recommendation,
+    {
+      runtime: "codex",
+      model: "default",
+      skills: ["testing"],
+      token_budget: 40_000,
+      tool_mode: "none",
+      max_commands: 8,
+      runtime_timeout_ms: 180_000,
+    },
+  );
   assert.deepEqual(roleProfilePolicy(options, "security-reviewer", "review").omitted_skills, [
     "security",
   ]);
