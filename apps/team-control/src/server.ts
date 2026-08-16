@@ -3,6 +3,7 @@ import { z } from "zod";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
 import type { AgentRecord } from "../../../packages/team-control/src/store.js";
+import type { TeamExecutionPlanRecord } from "../../../packages/team-control/src/store.js";
 
 const id = z.string().regex(/^team-[0-9a-f-]{36}$/u);
 
@@ -36,6 +37,14 @@ export interface TeamControlOptions {
 
 export function dynamicExecutionEnabled(options: TeamControlOptions): boolean {
   return options.dynamicExecution !== false;
+}
+
+export function costSafeDeterministicPlan(
+  plan: Pick<TeamExecutionPlanRecord, "document">,
+): boolean {
+  return [...plan.document.workers, plan.document.synthesis].every(
+    (agent) => agent.tool_mode === "none" && agent.max_commands === 0,
+  );
 }
 
 export function assertProfileAvailable(
@@ -340,7 +349,10 @@ export function createTeamControlServer(
     },
     async ({ team_id, plan_id, approved_digest, timeout_ms }) => {
       if (options.caller) throw new Error("agent_delegation_denied");
-      if (!dynamicExecutionEnabled(options))
+      if (
+        !dynamicExecutionEnabled(options) &&
+        !costSafeDeterministicPlan(store.plan(team_id, plan_id))
+      )
         return failure("dynamic_worker_cost_boundary_unavailable");
       try {
         return result(

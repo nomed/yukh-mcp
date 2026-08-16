@@ -51,15 +51,32 @@ const modelTeamTools = [
 const modelUsesTeamControl = modelTeamTools.length > 0;
 const coordinationInstruction = modelUsesCoordination
   ? "Your Coordination session is already bootstrapped and joined. Use yukh-coordination only for necessary team communication."
-  : "Coordination model tools are omitted for this bounded turn because no communication action is required.";
+  : "";
 const teamControlInstruction = modelUsesTeamControl
   ? `Required receipt-backed actions before success: ${requiredActions}. A textual claim is not evidence; invoke each required yukh-team-control tool successfully.`
-  : "No model-facing team-control tools are required or exposed for this single-pass turn; the controller verifies manager.start and terminal state.";
+  : "";
+const delegationInstruction =
+  agent.can_spawn && modelUsesTeamControl
+    ? "When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. You may create a bounded child only when explicitly delegated."
+    : "";
 const outputInstruction =
   agent.output_contract === "team-plan-v1"
     ? "Return only the JSON team execution plan required by the supplied output schema. Include the minimum specialists needed and one concise delivery synthesizer. Every role must be a lowercase slug matching ^[a-z][a-z0-9-]{0,31}$, for example token-efficiency-auditor; spaces are invalid. Do not wrap JSON in Markdown."
     : "End with one concise public-safe completion summary of at most 4096 UTF-8 bytes; the wrapper persists that final response.";
-const prompt = `You are ${agent.role}, ${agent.kind} ${agent.agent_id} in team ${agent.team_id}.${profile ? ` Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.` : ""}\nComplete this task: ${agent.task}\nToken budget: ${agent.token_budget} total input plus output tokens. Runtime bounds: at most ${agent.max_commands ?? 8} command executions and ${agent.timeout_ms ?? 300_000} milliseconds. Keep inspection and tool output bounded. The team already exists: do not call team.create. ${teamControlInstruction} When engaging a child, use the returned coordination_participant exactly and never add another agent: prefix. Wait for each child with agent.await and inspect its completion before synthesizing. ${coordinationInstruction} ${outputInstruction} You may create a bounded child only when explicitly delegated.`;
+const prompt = [
+  `You are ${agent.role}, ${agent.kind} ${agent.agent_id} in team ${agent.team_id}.`,
+  profile
+    ? `Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.`
+    : "",
+  `Complete this task: ${agent.task}`,
+  `Token budget: ${agent.token_budget} total input plus output tokens. Runtime bounds: at most ${agent.max_commands ?? 8} command executions and ${agent.timeout_ms ?? 300_000} milliseconds. Keep inspection and tool output bounded.`,
+  teamControlInstruction,
+  delegationInstruction,
+  coordinationInstruction,
+  outputInstruction,
+]
+  .filter(Boolean)
+  .join(" ");
 const planSchema = fileURLToPath(
   new URL("../../../contracts/team-execution-plan-v1.schema.json", import.meta.url),
 );
