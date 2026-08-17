@@ -57,6 +57,7 @@ function profileEnvironment(args: ApprovedRunArguments): Readonly<Record<string,
   if (args.copilotModels) env.YUKH_COPILOT_MODELS = args.copilotModels;
   if (args.codexSkills) env.YUKH_CODEX_SKILLS = args.codexSkills;
   if (args.copilotSkills) env.YUKH_COPILOT_SKILLS = args.copilotSkills;
+  if (process.env.YUKH_COPILOT_WORKER_PROVIDER === "sdk") env.YUKH_COPILOT_WORKER_PROVIDER = "sdk";
   return env;
 }
 

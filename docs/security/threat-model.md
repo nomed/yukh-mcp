@@ -837,6 +837,9 @@ usage is accepted only from its structured runtime event and is persisted with
 the bounded completion artifact. Missing accounting, missing completion,
 runtime failure and post-turn budget overrun are distinct fail-closed outcomes.
 Copilot credit or duration metadata is never represented as token usage.
+Issue #218 adds an opt-in Copilot SDK worker runner for tool-free workers only:
+SDK shutdown metrics may be persisted as `copilot-sdk-v1`, while absent or
+malformed SDK usage still fails closed as unavailable accounting.
 
 The current boundary cannot interrupt a model exactly at the token limit
 because the CLI reports usage at turn completion. It therefore detects and
