@@ -6,6 +6,7 @@ import { roleProfilePolicy } from "../../team-control/src/server.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import type { AgentRuntime } from "../../../packages/team-control/src/store.js";
 import type { TeamWorkProfile } from "../../team-control/src/server.js";
+import { runtimeTokenFloor, type RuntimeTokenFloor } from "./runtime-floor.js";
 
 export interface EngagePreflightArguments {
   readonly workspace?: string;
@@ -36,6 +37,7 @@ export interface EngagePreflightOutput {
   readonly manager: ReturnType<TeamStore["createManaged"]>["manager"];
   readonly policy: ReturnType<typeof roleProfilePolicy>;
   readonly planned_worker: ReturnType<TeamStore["spawn"]>;
+  readonly runtime_token_floor?: RuntimeTokenFloor;
   readonly budget: ReturnType<TeamStore["status"]>["tokens"];
   readonly next_real_action: string;
 }
@@ -166,6 +168,7 @@ export function runEngagePreflight(args: EngagePreflightArguments): EngagePrefli
     max_commands: policy.recommendation.max_commands,
     timeout_ms: policy.recommendation.runtime_timeout_ms,
   });
+  const floor = runtimeTokenFloor(worker);
   const budget = store.status(managed.team.team_id).tokens;
   const output = {
     schema: 1 as const,
@@ -179,6 +182,7 @@ export function runEngagePreflight(args: EngagePreflightArguments): EngagePrefli
     manager: managed.manager,
     policy,
     planned_worker: worker,
+    ...(floor ? { runtime_token_floor: floor } : {}),
     budget,
     next_real_action:
       "Run a managed manager or agent.engage from Team Control only after approving this policy and budget.",

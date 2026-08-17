@@ -39,13 +39,20 @@ export function formatEngagePreflight(
     `- tool mode: ${policy.tool_mode}`,
     `- max commands: ${policy.max_commands}`,
     `- timeout ms: ${policy.runtime_timeout_ms}`,
+  ];
+  if (output.runtime_token_floor)
+    lines.push(
+      `- runtime token floor: ${output.runtime_token_floor.minimum_token_budget}`,
+      `- floor reason: ${compact(output.runtime_token_floor.reason, 180)}`,
+    );
+  lines.push(
     "",
     "Budget",
     `- team budget: ${output.budget.budget}`,
     `- allocated: ${output.budget.allocated}`,
     `- observed provider tokens: ${output.provider_tokens_observed}`,
     `- provider launched: ${output.provider_runtime_launched ? "yes" : "no"}`,
-  ];
+  );
   const runCommand =
     options?.runCommand === undefined
       ? `yukh team run-approved --preflight <preflight.json> --approved-digest ${output.approval_digest}`

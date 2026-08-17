@@ -4,6 +4,7 @@ import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
 import type { AgentRecord } from "../../../packages/team-control/src/store.js";
 import { preflightApprovalDigest, type EngagePreflightOutput } from "./preflight.js";
+import { assertRuntimeTokenFloor } from "./runtime-floor.js";
 
 export interface ApprovedRunArguments {
   readonly preflightPath: string;
@@ -76,6 +77,7 @@ export async function runApprovedPreflight(args: ApprovedRunArguments) {
   if (worker.state !== "defined") throw new Error("worker_not_defined");
   if (microWorkerRequiresExplicitAllow(worker) && args.allowMicroLaunch !== true)
     throw new Error("micro_worker_launch_requires_explicit_allow");
+  assertRuntimeTokenFloor(worker);
 
   const entrypoints = teamRuntimeEntrypoints();
   const supervisor = new TeamSupervisor({
