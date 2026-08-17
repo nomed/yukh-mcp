@@ -19,7 +19,7 @@ export type AgentState = "defined" | "running" | "completed" | "failed" | "stopp
 
 export interface AgentUsage {
   readonly schema: 1;
-  readonly source: "codex-json-v1";
+  readonly source: "codex-json-v1" | "copilot-sdk-v1";
   readonly input_tokens: number;
   readonly cached_input_tokens: number;
   readonly output_tokens: number;
@@ -938,7 +938,7 @@ export class TeamStore {
     ];
     if (
       usage.schema !== 1 ||
-      usage.source !== "codex-json-v1" ||
+      !["codex-json-v1", "copilot-sdk-v1"].includes(usage.source) ||
       counts.some((value) => !Number.isSafeInteger(value) || value < 0) ||
       usage.total_tokens !== usage.input_tokens + usage.output_tokens ||
       usage.cached_input_tokens > usage.input_tokens ||

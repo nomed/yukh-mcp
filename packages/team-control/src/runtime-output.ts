@@ -7,6 +7,8 @@ interface MutableUsage {
   reasoning_output_tokens: number;
 }
 
+type UsageSource = AgentUsage["source"];
+
 export class RuntimeOutput {
   readonly #runtime: "codex" | "copilot";
   #summary = "";
@@ -18,6 +20,7 @@ export class RuntimeOutput {
   };
   #usageObserved = false;
   #commandsStarted = 0;
+  #usageSource: UsageSource = "codex-json-v1";
 
   constructor(runtime: "codex" | "copilot") {
     this.#runtime = runtime;
@@ -46,12 +49,34 @@ export class RuntimeOutput {
     return this.#commandsStarted;
   }
 
+  setSummary(summary: string): void {
+    this.#summary = summary;
+  }
+
+  addUsage(source: UsageSource, usage: MutableUsage): void {
+    const counts = [
+      usage.input_tokens,
+      usage.cached_input_tokens,
+      usage.output_tokens,
+      usage.reasoning_output_tokens,
+    ];
+    if (counts.some((count) => !Number.isSafeInteger(count) || count < 0)) return;
+    if (usage.cached_input_tokens > usage.input_tokens) return;
+    if (usage.reasoning_output_tokens > usage.output_tokens) return;
+    this.#usageSource = source;
+    this.#usage.input_tokens += usage.input_tokens;
+    this.#usage.cached_input_tokens += usage.cached_input_tokens;
+    this.#usage.output_tokens += usage.output_tokens;
+    this.#usage.reasoning_output_tokens += usage.reasoning_output_tokens;
+    this.#usageObserved = true;
+  }
+
   usage(budget: number): AgentUsage | undefined {
     if (!this.#usageObserved) return undefined;
     const total = this.#usage.input_tokens + this.#usage.output_tokens;
     return {
       schema: 1,
-      source: "codex-json-v1",
+      source: this.#usageSource,
       ...this.#usage,
       total_tokens: total,
       budget_outcome: total <= budget ? "within" : "exceeded",
@@ -78,11 +103,12 @@ export class RuntimeOutput {
       usage.reasoning_output_tokens,
     ];
     if (counts.some((count) => !Number.isSafeInteger(count) || Number(count) < 0)) return;
-    this.#usage.input_tokens += Number(usage.input_tokens);
-    this.#usage.cached_input_tokens += Number(usage.cached_input_tokens);
-    this.#usage.output_tokens += Number(usage.output_tokens);
-    this.#usage.reasoning_output_tokens += Number(usage.reasoning_output_tokens);
-    this.#usageObserved = true;
+    this.addUsage("codex-json-v1", {
+      input_tokens: Number(usage.input_tokens),
+      cached_input_tokens: Number(usage.cached_input_tokens),
+      output_tokens: Number(usage.output_tokens),
+      reasoning_output_tokens: Number(usage.reasoning_output_tokens),
+    });
   }
 
   #copilot(event: Record<string, unknown>): void {

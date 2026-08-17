@@ -32,7 +32,7 @@ const profileEnvironment = {
   YUKH_CODEX_MODEL_SOURCE: codexCatalog.source,
   YUKH_COPILOT_MODEL_SOURCE: copilotCatalog.source,
   ...Object.fromEntries(
-    ["YUKH_CODEX_SKILLS", "YUKH_COPILOT_SKILLS"]
+    ["YUKH_CODEX_SKILLS", "YUKH_COPILOT_SKILLS", "YUKH_COPILOT_WORKER_PROVIDER"]
       .filter((name) => process.env[name] !== undefined)
       .map((name) => [name, process.env[name]!] as const),
   ),

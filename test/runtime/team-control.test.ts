@@ -20,6 +20,7 @@ import {
 import { runApprovedPlanWithDependencies } from "../../apps/team-preflight/src/plan-execute.js";
 import { runEngagePreflight } from "../../apps/team-preflight/src/preflight.js";
 import { buildWorkerPrompt, isMicroWorker } from "../../apps/team-worker/src/prompt.js";
+import { runCopilotSdkWorker } from "../../apps/team-worker/src/copilot-sdk-runner.js";
 import {
   copilotModelCatalogFromDiscoveries,
   parseCodexModelCatalog,
@@ -1565,6 +1566,25 @@ test("runtime output extracts Codex completion and refuses invented Copilot toke
   );
   assert.equal(copilot.usage(50_000), undefined);
 
+  copilot.setSummary("SDK completion");
+  copilot.addUsage("copilot-sdk-v1", {
+    input_tokens: 120,
+    cached_input_tokens: 30,
+    output_tokens: 40,
+    reasoning_output_tokens: 10,
+  });
+  assert.equal(copilot.summary(), "SDK completion");
+  assert.deepEqual(copilot.usage(200), {
+    schema: 1,
+    source: "copilot-sdk-v1",
+    input_tokens: 120,
+    cached_input_tokens: 30,
+    output_tokens: 40,
+    reasoning_output_tokens: 10,
+    total_tokens: 160,
+    budget_outcome: "within",
+  });
+
   const malformed = new RuntimeOutput("codex");
   malformed.line(
     JSON.stringify({
@@ -1585,6 +1605,102 @@ test("runtime output extracts Codex completion and refuses invented Copilot toke
   );
   assert.equal(malformed.usage(50_000), undefined);
   assert.equal(malformed.summary(), "");
+});
+
+test("copilot sdk worker runs tool-free empty sessions with shutdown token accounting", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-copilot-sdk-worker-")));
+  try {
+    const store = new TeamStore(root);
+    const team = store.create("SDK probe", "copilot");
+    const agent = store.spawn(team.team_id, {
+      runtime: "copilot",
+      role: "sdk-reviewer",
+      task: "Summarize only",
+      profile: {
+        schema: 1,
+        mission: "Review",
+        model: "copilot-test-model",
+        skills: [],
+        instructions: "Be brief",
+      },
+      model_tool_mode: "none",
+      token_budget: 1_000,
+    });
+    const createdClients: Record<string, unknown>[] = [];
+    const createdSessions: Record<string, unknown>[] = [];
+    const sdk = {
+      RuntimeConnection: {
+        forStdio(options: unknown) {
+          return { kind: "stdio", options };
+        },
+      },
+      CopilotClient: class {
+        constructor(options: Record<string, unknown>) {
+          createdClients.push(options);
+        }
+        async start(): Promise<void> {}
+        async stop(): Promise<readonly Error[]> {
+          return [];
+        }
+        async forceStop(): Promise<void> {}
+        async createSession(config: Record<string, unknown>) {
+          createdSessions.push(config);
+          let handler: (event: unknown) => void = () => undefined;
+          return {
+            on(next: (event: unknown) => void) {
+              handler = next;
+              return () => undefined;
+            },
+            async sendAndWait() {
+              handler({
+                type: "session.shutdown",
+                data: {
+                  modelMetrics: {
+                    "copilot-test-model": {
+                      usage: {
+                        inputTokens: 80,
+                        cacheReadTokens: 20,
+                        cacheWriteTokens: 5,
+                        outputTokens: 30,
+                        reasoningTokens: 7,
+                      },
+                    },
+                  },
+                },
+              });
+              return { data: { content: "SDK worker complete" } };
+            },
+            async disconnect(): Promise<void> {},
+          };
+        }
+      },
+    };
+    const outcome = await runCopilotSdkWorker({
+      executable: "/bin/copilot",
+      workspace: root,
+      prompt: "Do the task",
+      agent,
+      timeoutMs: 1_000,
+      sdk,
+    });
+    assert.equal(outcome.exitCode, 0);
+    assert.equal(outcome.output.summary(), "SDK worker complete");
+    assert.deepEqual(outcome.output.usage(1_000), {
+      schema: 1,
+      source: "copilot-sdk-v1",
+      input_tokens: 80,
+      cached_input_tokens: 20,
+      output_tokens: 30,
+      reasoning_output_tokens: 7,
+      total_tokens: 110,
+      budget_outcome: "within",
+    });
+    assert.deepEqual(createdClients[0]?.mode, "empty");
+    assert.deepEqual(createdSessions[0]?.availableTools, []);
+    assert.equal(createdSessions[0]?.model, "copilot-test-model");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("legacy teams stay readable but cannot bypass explicit token allocation", async () => {
