@@ -904,3 +904,8 @@ turns. Python app-server reuse improved latency but did not eliminate per-turn
 token overhead, and the minimal probe does not supersede the real Yukh worker
 floor. The Codex worker floor therefore remains conservative until a
 runner-level qualification uses the actual Yukh worker prompt.
+
+Issue #222 adds a guarded Codex Python app-server qualification for the real
+Yukh worker prompt. It is inert unless explicitly enabled and sends no
+repository file content by default. Optional context paths are bounded to the
+same small-file shape used by zero-command workers.
