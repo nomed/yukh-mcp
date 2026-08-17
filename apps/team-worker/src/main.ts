@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { RuntimeOutput } from "../../../packages/team-control/src/runtime-output.js";
 import { buildWorkerPrompt } from "./prompt.js";
+import { runCodexPythonWorker } from "./codex-python-runner.js";
 import { runCopilotSdkWorker } from "./copilot-sdk-runner.js";
 
 const required = (name: string): string => {
@@ -105,6 +106,8 @@ const teamControlEnv = {
       "YUKH_COPILOT_MODEL_SOURCE",
       "YUKH_CODEX_SKILLS",
       "YUKH_COPILOT_SKILLS",
+      "YUKH_CODEX_WORKER_PROVIDER",
+      "YUKH_CODEX_PYTHON_EXECUTABLE",
       "YUKH_ENABLE_UNSAFE_DYNAMIC_WORKERS",
     ]
       .filter((name) => process.env[name] !== undefined)
@@ -120,6 +123,10 @@ const useCopilotSdk =
   agent.runtime === "copilot" &&
   modelToolMode === "none" &&
   process.env.YUKH_COPILOT_WORKER_PROVIDER === "sdk";
+const useCodexPython =
+  agent.runtime === "codex" &&
+  modelToolMode === "none" &&
+  process.env.YUKH_CODEX_WORKER_PROVIDER === "python-app-server";
 const args =
   agent.runtime === "codex"
     ? [
@@ -264,80 +271,89 @@ if (!joined) {
 
 const outcome = !joined
   ? { exitCode: 1, stopped: false }
-  : useCopilotSdk
-    ? await runCopilotSdkWorker({
+  : useCodexPython
+    ? await runCodexPythonWorker({
         executable: command,
+        python: process.env.YUKH_CODEX_PYTHON_EXECUTABLE ?? "python3",
         workspace,
         prompt,
         agent,
         timeoutMs: agent.timeout_ms ?? 300_000,
       })
-    : await new Promise<{
-        readonly exitCode: number;
-        readonly stopped: boolean;
-        readonly bound?: "commands" | "deadline";
-        readonly output: RuntimeOutput;
-      }>((resolve) => {
-        const output = new RuntimeOutput(agent.runtime);
-        const child = spawn(command, args, {
-          cwd: workspace,
-          detached: process.platform !== "win32",
-          shell: false,
-          stdio: ["ignore", "pipe", "pipe"],
-          env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
-        });
-        if (!child.stdout || !child.stderr) throw new Error("agent_output_unavailable");
-        child.stdout.pipe(process.stdout);
-        child.stderr.pipe(process.stderr);
-        const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
-        lines.on("line", (line) => output.line(line));
-        let stopped = false;
-        let bound: "commands" | "deadline" | undefined;
-        let terminating = false;
-        let killTimer: NodeJS.Timeout | undefined;
-        const terminate = (): void => {
-          if (terminating || !child.pid) return;
-          terminating = true;
-          try {
-            if (process.platform !== "win32") process.kill(-child.pid, "SIGTERM");
-            else child.kill("SIGTERM");
-          } catch {
-            child.kill("SIGTERM");
-          }
-          killTimer = setTimeout(() => {
+    : useCopilotSdk
+      ? await runCopilotSdkWorker({
+          executable: command,
+          workspace,
+          prompt,
+          agent,
+          timeoutMs: agent.timeout_ms ?? 300_000,
+        })
+      : await new Promise<{
+          readonly exitCode: number;
+          readonly stopped: boolean;
+          readonly bound?: "commands" | "deadline";
+          readonly output: RuntimeOutput;
+        }>((resolve) => {
+          const output = new RuntimeOutput(agent.runtime);
+          const child = spawn(command, args, {
+            cwd: workspace,
+            detached: process.platform !== "win32",
+            shell: false,
+            stdio: ["ignore", "pipe", "pipe"],
+            env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
+          });
+          if (!child.stdout || !child.stderr) throw new Error("agent_output_unavailable");
+          child.stdout.pipe(process.stdout);
+          child.stderr.pipe(process.stderr);
+          const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+          lines.on("line", (line) => output.line(line));
+          let stopped = false;
+          let bound: "commands" | "deadline" | undefined;
+          let terminating = false;
+          let killTimer: NodeJS.Timeout | undefined;
+          const terminate = (): void => {
+            if (terminating || !child.pid) return;
+            terminating = true;
             try {
-              if (child.pid && process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
-              else child.kill("SIGKILL");
+              if (process.platform !== "win32") process.kill(-child.pid, "SIGTERM");
+              else child.kill("SIGTERM");
             } catch {
-              child.kill("SIGKILL");
+              child.kill("SIGTERM");
             }
-          }, 5_000);
-        };
-        lines.on("line", () => {
-          if (bound || output.commandsStarted() <= (agent.max_commands ?? 8)) return;
-          bound = "commands";
-          terminate();
+            killTimer = setTimeout(() => {
+              try {
+                if (child.pid && process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
+                else child.kill("SIGKILL");
+              } catch {
+                child.kill("SIGKILL");
+              }
+            }, 5_000);
+          };
+          lines.on("line", () => {
+            if (bound || output.commandsStarted() <= (agent.max_commands ?? 8)) return;
+            bound = "commands";
+            terminate();
+          });
+          const deadlineTimer = setTimeout(() => {
+            if (bound) return;
+            bound = "deadline";
+            terminate();
+          }, agent.timeout_ms ?? 300_000);
+          const monitor = setInterval(() => {
+            if (stopped || store.status(teamID).team.state !== "stopped") return;
+            stopped = true;
+            terminate();
+          }, 500);
+          const finish = (exitCode: number): void => {
+            clearInterval(monitor);
+            clearTimeout(deadlineTimer);
+            if (killTimer) clearTimeout(killTimer);
+            lines.close();
+            resolve({ exitCode, stopped, ...(bound ? { bound } : {}), output });
+          };
+          child.once("error", () => finish(1));
+          child.once("close", (code) => finish(code ?? 1));
         });
-        const deadlineTimer = setTimeout(() => {
-          if (bound) return;
-          bound = "deadline";
-          terminate();
-        }, agent.timeout_ms ?? 300_000);
-        const monitor = setInterval(() => {
-          if (stopped || store.status(teamID).team.state !== "stopped") return;
-          stopped = true;
-          terminate();
-        }, 500);
-        const finish = (exitCode: number): void => {
-          clearInterval(monitor);
-          clearTimeout(deadlineTimer);
-          if (killTimer) clearTimeout(killTimer);
-          lines.close();
-          resolve({ exitCode, stopped, ...(bound ? { bound } : {}), output });
-        };
-        child.once("error", () => finish(1));
-        child.once("close", (code) => finish(code ?? 1));
-      });
 let wrapperExitCode = outcome.stopped ? 0 : outcome.exitCode;
 if (joined && "output" in outcome) {
   if (outcome.stopped) {

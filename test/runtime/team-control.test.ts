@@ -10,6 +10,7 @@ import { TeamSupervisor } from "../../packages/team-control/src/supervisor.js";
 import { RuntimeOutput } from "../../packages/team-control/src/runtime-output.js";
 import { teamRuntimeEntrypoints } from "../../packages/team-control/src/entrypoints.js";
 import { parsePreflightArguments } from "../../apps/team-preflight/src/arguments.js";
+import { runCodexPythonWorker } from "../../apps/team-worker/src/codex-python-runner.js";
 import { runApprovedPreflight } from "../../apps/team-preflight/src/approved-run.js";
 import {
   formatApprovedPlanRun,
@@ -19,6 +20,7 @@ import {
 } from "../../apps/team-preflight/src/format.js";
 import { runApprovedPlanWithDependencies } from "../../apps/team-preflight/src/plan-execute.js";
 import { runEngagePreflight } from "../../apps/team-preflight/src/preflight.js";
+import { runtimeTokenFloor } from "../../apps/team-preflight/src/runtime-floor.js";
 import { buildWorkerPrompt, isMicroWorker } from "../../apps/team-worker/src/prompt.js";
 import { runCopilotSdkWorker } from "../../apps/team-worker/src/copilot-sdk-runner.js";
 import {
@@ -687,6 +689,42 @@ test("approved preflight blocks measured Codex CLI token floors before provider 
     assert.equal(worker.state, "defined");
     assert.equal(store.status(preflight.team.team_id).tokens.observed, 0);
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Codex Python app-server opt-in uses the qualified lower token floor", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-codex-python-floor-")));
+  const previous = process.env.YUKH_CODEX_WORKER_PROVIDER;
+  try {
+    const preflight = runEngagePreflight({
+      workspace: root,
+      goal: "Review one bounded context pack",
+      role: "backend-reviewer",
+      workProfile: "review",
+      preferredRuntime: "codex",
+      teamBudget: 90_000,
+      managerBudget: 20_000,
+      workerBudget: 45_000,
+      workerMaxCommands: 1,
+      workerTimeoutMs: 180_000,
+      codexModels: ["default"],
+      copilotModels: ["default"],
+      codexSkills: ["api-design", "testing"],
+      copilotSkills: ["frontend"],
+    });
+    assert.equal(runtimeTokenFloor(preflight.planned_worker)?.provider, "cli");
+    assert.equal(runtimeTokenFloor(preflight.planned_worker)?.minimum_token_budget, 120_000);
+
+    process.env.YUKH_CODEX_WORKER_PROVIDER = "python-app-server";
+    const floor = runtimeTokenFloor(preflight.planned_worker);
+    assert.equal(floor?.provider, "python-app-server");
+    assert.equal(floor?.minimum_token_budget, 18_000);
+    assert.equal(floor?.measured_total_tokens, 10_830);
+    assert.match(floor?.reason ?? "", /real Yukh prompt/u);
+  } finally {
+    if (previous === undefined) delete process.env.YUKH_CODEX_WORKER_PROVIDER;
+    else process.env.YUKH_CODEX_WORKER_PROVIDER = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -1698,6 +1736,67 @@ test("copilot sdk worker runs tool-free empty sessions with shutdown token accou
     assert.deepEqual(createdClients[0]?.mode, "empty");
     assert.deepEqual(createdSessions[0]?.availableTools, []);
     assert.equal(createdSessions[0]?.model, "copilot-test-model");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("codex python app-server worker captures final response and token accounting", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-codex-python-worker-")));
+  try {
+    const store = new TeamStore(root);
+    const team = store.create("Codex Python probe", "codex");
+    const agent = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "python-reviewer",
+      task: "Summarize only",
+      profile: {
+        schema: 1,
+        mission: "Review",
+        model: "codex-test-model",
+        skills: [],
+        instructions: "Be brief",
+      },
+      model_tool_mode: "none",
+      token_budget: 1_000,
+    });
+    const outcome = await runCodexPythonWorker({
+      executable: "/bin/codex",
+      python: process.env.PYTHON ?? "python3",
+      workspace: root,
+      prompt: "Do the task",
+      agent,
+      timeoutMs: 1_000,
+      workerSource: [
+        "import json",
+        "import os",
+        "required = ['YUKH_CODEX_EXECUTABLE', 'YUKH_CODEX_PYTHON_PROMPT_PATH']",
+        "if any(name not in os.environ for name in required): raise SystemExit(2)",
+        "print(json.dumps({",
+        "  'schema': 1,",
+        "  'status': 'completed',",
+        "  'final_response': 'Codex Python worker complete',",
+        "  'usage_last': {",
+        "    'input_tokens': 90,",
+        "    'cached_input_tokens': 40,",
+        "    'output_tokens': 25,",
+        "    'reasoning_output_tokens': 5,",
+        "  },",
+        "}))",
+      ].join("\n"),
+    });
+    assert.equal(outcome.exitCode, 0);
+    assert.equal(outcome.output.summary(), "Codex Python worker complete");
+    assert.deepEqual(outcome.output.usage(1_000), {
+      schema: 1,
+      source: "codex-python-app-server-v1",
+      input_tokens: 90,
+      cached_input_tokens: 40,
+      output_tokens: 25,
+      reasoning_output_tokens: 5,
+      total_tokens: 115,
+      budget_outcome: "within",
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
