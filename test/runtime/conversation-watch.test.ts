@@ -95,10 +95,11 @@ test("watch explains team and worker activity in work-oriented language", () => 
     ],
     new Map(),
   );
-  assert.match(changes.join("\n"), /manager=manager runtime=codex goal=Build a task board/u);
-  assert.match(changes.join("\n"), /WORKER  backend-lead  RUNNING  runtime=codex model=default/u);
+  assert.match(changes.join("\n"), /TEAM  team-0eae0789.*ACTIVE  goal=Build a task board/u);
+  assert.match(changes.join("\n"), /manager=manager runtime=codex agents=1 receipts=0/u);
+  assert.match(changes.join("\n"), /TIMELINE  WORKER backend-lead  RUNNING  status=working/u);
   assert.match(changes.join("\n"), /task=Define and implement the API/u);
-  assert.match(changes.join("\n"), /bounds=commands:6 timeout_ms:120000 tools=default/u);
+  assert.match(changes.join("\n"), /tools=default bounds=commands:6 timeout_ms:120000/u);
 });
 
 test("watch exposes manager accounting and receipt-backed actions", () => {
@@ -218,7 +219,7 @@ test("watch exposes manager accounting and receipt-backed actions", () => {
     ],
     new Map(),
   ).join("\n");
-  assert.match(changes, /MANAGER  delivery-manager  COMPLETED/u);
+  assert.match(changes, /TIMELINE  MANAGER delivery-manager  COMPLETED  status=succeeded/u);
   assert.match(changes, /input=5000 cached=3000 output=500 reasoning=100/u);
   assert.match(changes, /required=team.status receipts=team.status/u);
   assert.match(changes, /PLAN  plan-9776aa63-2b13-4d98-ab2b-5b0c8b0354aa  RUNNING/u);
@@ -290,7 +291,8 @@ test("watch marks over-budget summaries as reviewable", () => {
     ],
     new Map(),
   ).join("\n");
-  assert.match(changes, /completion=token_budget_exceeded review=summary_available/u);
+  assert.match(changes, /status=token_budget_exceeded review=summary_available/u);
+  assert.match(changes, /summary=Useful proposal preserved for review/u);
 });
 
 test("watch accepts bounded dynamic team identities", () => {
