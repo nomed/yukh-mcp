@@ -909,3 +909,9 @@ Issue #222 adds a guarded Codex Python app-server qualification for the real
 Yukh worker prompt. It is inert unless explicitly enabled and sends no
 repository file content by default. Optional context paths are bounded to the
 same small-file shape used by zero-command workers.
+
+Issue #224 wires that Codex Python app-server path into real team-worker
+execution behind `YUKH_CODEX_WORKER_PROVIDER=python-app-server`. The default
+Codex CLI path remains unchanged. The Python provider is limited to tool-free
+workers, runs with read-only sandbox and deny-all approvals, records usage as
+`codex-python-app-server-v1` and fails closed if token accounting is absent.

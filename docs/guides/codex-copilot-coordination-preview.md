@@ -116,6 +116,19 @@ override or narrow that discovered list. Skills remain explicit local policy:
 env = { YUKH_CODEX_MODELS = "default,approved-codex-model", YUKH_COPILOT_MODELS = "default,approved-copilot-model", YUKH_CODEX_SKILLS = "api-design,testing,review", YUKH_COPILOT_SKILLS = "frontend,testing,product" }
 ```
 
+Codex workers use the CLI runner by default. For tool-free Codex workers, opt
+into the lower-overhead Python app-server provider only after installing
+`openai-codex` for the selected Python:
+
+```toml
+env = { YUKH_CODEX_WORKER_PROVIDER = "python-app-server", YUKH_CODEX_PYTHON_EXECUTABLE = "/absolute/path/to/python3" }
+```
+
+This provider is used only when the worker runs with `tool_mode: none`; workers
+that need Coordination or team-control tools stay on the CLI path. The preflight
+token floor remains 120k for the CLI and becomes 18k for the opt-in Python
+app-server path.
+
 Start work with `manager.start`, not `team.create`. It creates the team and a
 depth-zero manager runtime together, reserves the manager budget and returns a
 server receipt plus the manager agent ID. Use `agent.await` from the controlling

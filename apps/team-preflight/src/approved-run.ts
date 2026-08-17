@@ -57,6 +57,10 @@ function profileEnvironment(args: ApprovedRunArguments): Readonly<Record<string,
   if (args.copilotModels) env.YUKH_COPILOT_MODELS = args.copilotModels;
   if (args.codexSkills) env.YUKH_CODEX_SKILLS = args.codexSkills;
   if (args.copilotSkills) env.YUKH_COPILOT_SKILLS = args.copilotSkills;
+  if (process.env.YUKH_CODEX_WORKER_PROVIDER === "python-app-server")
+    env.YUKH_CODEX_WORKER_PROVIDER = "python-app-server";
+  if (process.env.YUKH_CODEX_PYTHON_EXECUTABLE)
+    env.YUKH_CODEX_PYTHON_EXECUTABLE = process.env.YUKH_CODEX_PYTHON_EXECUTABLE;
   if (process.env.YUKH_COPILOT_WORKER_PROVIDER === "sdk") env.YUKH_COPILOT_WORKER_PROVIDER = "sdk";
   return env;
 }
