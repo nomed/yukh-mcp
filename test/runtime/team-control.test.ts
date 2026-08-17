@@ -19,6 +19,7 @@ import {
 } from "../../apps/team-preflight/src/format.js";
 import { runApprovedPlanWithDependencies } from "../../apps/team-preflight/src/plan-execute.js";
 import { runEngagePreflight } from "../../apps/team-preflight/src/preflight.js";
+import { buildWorkerPrompt, isMicroWorker } from "../../apps/team-worker/src/prompt.js";
 import {
   copilotModelCatalogFromDiscoveries,
   parseCodexModelCatalog,
@@ -310,6 +311,56 @@ test("micro code edit preflight keeps implementation bounded to one command", as
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("micro workers receive compact prompts without orchestration noise", () => {
+  const agent = {
+    schema: 1,
+    agent_id: "worker-00000000-0000-4000-8000-000000000001",
+    kind: "worker",
+    coordination_agent: "agent-backend-developer-00000000-0000-4000-8000-000000000001",
+    coordination_participant: "agent:backend-developer-00000000-0000-4000-8000-000000000001",
+    team_id: "team-00000000-0000-4000-8000-000000000001",
+    runtime: "codex",
+    role: "backend-developer",
+    profile: {
+      schema: 1,
+      mission: "Implement a tiny code edit",
+      model: "default",
+      skills: ["api-design", "testing"],
+      instructions:
+        "Long profile instructions that are useful for a normal agent but wasteful for one-command micro work.",
+    },
+    task: "Edit apps/team-worker/src/prompt.ts and run one focused test.",
+    depth: 1,
+    can_spawn: false,
+    token_budget: 45_000,
+    required_actions: [],
+    model_tool_mode: "none",
+    max_commands: 1,
+    timeout_ms: 180_000,
+    state: "defined",
+  } as const;
+  const prompt = buildWorkerPrompt({
+    agent,
+    modelToolMode: "none",
+    requiredActions: "none",
+    modelUsesCoordination: false,
+    modelUsesTeamControl: false,
+    modelTeamTools: [],
+    coordinationInstruction: "",
+    teamControlInstruction: "Required receipt-backed actions before success: agent.engage.",
+    delegationInstruction: "When engaging a child, use the returned coordination_participant.",
+    planConstraintInstruction: "Plan constraints: use only allowlisted models.",
+  });
+  assert.equal(isMicroWorker(agent), true);
+  assert.ok(prompt.length < 900);
+  assert.match(prompt, /Task: Edit apps\/team-worker\/src\/prompt\.ts/u);
+  assert.match(prompt, /No context pack was supplied/u);
+  assert.doesNotMatch(prompt, /Long profile instructions/u);
+  assert.doesNotMatch(prompt, /Required receipt-backed actions/u);
+  assert.doesNotMatch(prompt, /Plan constraints/u);
+  assert.doesNotMatch(prompt, /coordination_participant/u);
 });
 
 test("team status formatter exposes stop and token state without raw JSON", async () => {

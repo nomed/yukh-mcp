@@ -3,6 +3,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { RuntimeOutput } from "../../../packages/team-control/src/runtime-output.js";
+import { buildWorkerPrompt } from "./prompt.js";
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -72,28 +73,19 @@ const planConstraintInstruction =
   agent.output_contract === "team-plan-v1"
     ? `Plan constraints: use only allowlisted models. Codex models: ${allowlist("YUKH_CODEX_MODELS", ["default"]).join(", ")}. Copilot models: ${allowlist("YUKH_COPILOT_MODELS", ["default"]).join(", ")}. Prefer model "default" unless the task explicitly requires another allowlisted model. Do not invent model names. Worker context_paths must name repository-relative regular UTF-8 files, at most four per worker, each file at most 4096 bytes and each worker pack at most 12288 bytes total. If a requested or attractive file may exceed 4096 bytes, omit it or choose a smaller file; never rely on a large document being accepted at execution time. Synthesis must use no context_paths. Budget realistic runtime floors: Codex zero-command review/planning workers with small context currently need at least 18000 total tokens, and Codex tool-free synthesis currently needs at least 16000 total tokens, unless the task supplies fresher measured evidence. Prefer fewer planned agents over under-budgeted agents. Every planned worker and synthesis prompt must require a final public-safe completion summary below 4096 UTF-8 bytes; prefer 3500 bytes or less so the wrapper can persist it. Do not ask planned agents for multi-section reports that exceed the persistence cap.`
     : "";
-const outputInstruction =
-  agent.output_contract === "team-plan-v1"
-    ? "Return only the JSON team execution plan required by the supplied output schema. Include the minimum specialists needed and one concise delivery synthesizer. Every role must be a lowercase slug matching ^[a-z][a-z0-9-]{0,31}$, for example token-efficiency-auditor; spaces are invalid. Select at most four small repository-relative context_paths per worker and none for synthesis. Do not wrap JSON in Markdown."
-    : "End with one concise public-safe completion summary of at most 4096 UTF-8 bytes; the wrapper persists that final response.";
-const prompt = [
-  `You are ${agent.role}, ${agent.kind} ${agent.agent_id} in team ${agent.team_id}.`,
-  profile
-    ? `Mission: ${profile.mission}\nOperating instructions: ${profile.instructions}\nRequired skills: ${profile.skills.length > 0 ? profile.skills.join(", ") : "none"}.`
-    : "",
-  `Complete this task: ${agent.task}`,
-  contextPack
-    ? `Use only this server-prepared context pack (${contextPack.digest}, ${contextPack.byte_length} bytes):\n${contextPack.files.map((file) => `--- ${file.path} ---\n${file.content}`).join("\n")}`
-    : "",
-  `Token budget: ${agent.token_budget} total input plus output tokens. Runtime bounds: at most ${agent.max_commands ?? 8} command executions and ${agent.timeout_ms ?? 300_000} milliseconds. Keep inspection and tool output bounded.`,
+const prompt = buildWorkerPrompt({
+  agent,
+  ...(contextPack ? { contextPack } : {}),
+  modelToolMode,
+  requiredActions,
+  modelUsesCoordination,
+  modelUsesTeamControl,
+  modelTeamTools,
+  coordinationInstruction,
   teamControlInstruction,
   delegationInstruction,
-  coordinationInstruction,
   planConstraintInstruction,
-  outputInstruction,
-]
-  .filter(Boolean)
-  .join(" ");
+});
 const planSchema = fileURLToPath(
   new URL("../../../contracts/team-execution-plan-v1.schema.json", import.meta.url),
 );
