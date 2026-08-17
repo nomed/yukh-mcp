@@ -38,7 +38,9 @@ try {
       ? JSON.stringify({ ...output, approval_file: path })
       : [
           formatEngagePreflight(output, {
-            runCommand: `yukh team run-approved --preflight ${path} --approved-digest ${output.approval_digest} --format text`,
+            runCommand: output.provider_launchable
+              ? `yukh team run-approved --preflight ${path} --approved-digest ${output.approval_digest} --format text`
+              : false,
           }),
           "",
           `Approval file: ${path}`,

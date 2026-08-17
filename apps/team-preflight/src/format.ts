@@ -52,9 +52,12 @@ export function formatEngagePreflight(
     `- allocated: ${output.budget.allocated}`,
     `- observed provider tokens: ${output.provider_tokens_observed}`,
     `- provider launched: ${output.provider_runtime_launched ? "yes" : "no"}`,
+    `- provider launchable: ${output.provider_launchable ? "yes" : "no"}`,
   );
-  const runCommand =
-    options?.runCommand === undefined
+  if (!output.provider_launchable) lines.push("", `Next action: ${output.next_real_action}`);
+  const runCommand = !output.provider_launchable
+    ? false
+    : options?.runCommand === undefined
       ? `yukh team run-approved --preflight <preflight.json> --approved-digest ${output.approval_digest}`
       : options.runCommand;
   if (runCommand) lines.push("", "Run after approval", runCommand);

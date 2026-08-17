@@ -32,6 +32,7 @@ export interface EngagePreflightOutput {
   readonly workspace: string;
   readonly provider_tokens_observed: 0;
   readonly provider_runtime_launched: false;
+  readonly provider_launchable: boolean;
   readonly approval_digest: `sha-256:${string}`;
   readonly team: ReturnType<TeamStore["createManaged"]>["team"];
   readonly manager: ReturnType<TeamStore["createManaged"]>["manager"];
@@ -170,6 +171,7 @@ export function runEngagePreflight(args: EngagePreflightArguments): EngagePrefli
   });
   const floor = runtimeTokenFloor(worker);
   const budget = store.status(managed.team.team_id).tokens;
+  const providerLaunchable = !floor || worker.token_budget >= floor.minimum_token_budget;
   const output = {
     schema: 1 as const,
     status: "ok" as const,
@@ -177,6 +179,7 @@ export function runEngagePreflight(args: EngagePreflightArguments): EngagePrefli
     workspace,
     provider_tokens_observed: 0 as const,
     provider_runtime_launched: false as const,
+    provider_launchable: providerLaunchable,
     approval_digest: "sha-256:" as `sha-256:${string}`,
     team: managed.team,
     manager: managed.manager,
@@ -184,8 +187,9 @@ export function runEngagePreflight(args: EngagePreflightArguments): EngagePrefli
     planned_worker: worker,
     ...(floor ? { runtime_token_floor: floor } : {}),
     budget,
-    next_real_action:
-      "Run a managed manager or agent.engage from Team Control only after approving this policy and budget.",
+    next_real_action: providerLaunchable
+      ? "Run a managed manager or agent.engage from Team Control only after approving this policy and budget."
+      : "Do not launch this worker with the current CLI runtime budget. Use an SDK/lean worker runtime or raise the worker budget to the measured runtime floor.",
   };
   return { ...output, approval_digest: preflightApprovalDigest(output) };
 }
