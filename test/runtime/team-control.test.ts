@@ -282,6 +282,7 @@ test("micro documentation edit preflight overrides implementation bounds", async
     assert.equal(output.planned_worker.token_budget, 35_000);
     assert.equal(output.planned_worker.max_commands, 1);
     assert.equal(output.planned_worker.timeout_ms, 120_000);
+    assert.equal(output.runtime_token_floor?.minimum_token_budget, 120_000);
     assert.equal(output.provider_runtime_launched, false);
     assert.equal(output.budget.allocated, 55_000);
   } finally {
@@ -306,6 +307,7 @@ test("micro code edit preflight keeps implementation bounded to one command", as
     assert.equal(output.planned_worker.token_budget, 45_000);
     assert.equal(output.planned_worker.max_commands, 1);
     assert.equal(output.planned_worker.timeout_ms, 180_000);
+    assert.equal(output.runtime_token_floor?.minimum_token_budget, 120_000);
     assert.equal(output.provider_runtime_launched, false);
     assert.equal(output.budget.allocated, 65_000);
   } finally {
@@ -493,6 +495,7 @@ test("engage preflight composes a worker without launching a provider runtime", 
     assert.equal(output.budget.allocated, 260_000);
     assert.equal(output.budget.observed, 0);
     assert.equal(output.budget.pending_agents, 2);
+    assert.equal(output.runtime_token_floor, undefined);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -520,6 +523,8 @@ test("engage preflight text output shows approval and budget without raw JSON no
     assert.match(text, /runtime: codex/u);
     assert.match(text, /task: Preflight backend worker/u);
     assert.match(text, /observed provider tokens: 0/u);
+    assert.match(text, /runtime token floor: 120000/u);
+    assert.match(text, /cached input floor near 90k/u);
     assert.doesNotMatch(text, /"planned_worker"/u);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -553,8 +558,9 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
       role: "backend-reviewer",
       workProfile: "review",
       preferredRuntime: "codex",
-      teamBudget: 220_000,
+      teamBudget: 320_000,
       managerBudget: 180_000,
+      workerBudget: 120_000,
       codexModels: ["default"],
       copilotModels: ["default"],
       codexSkills: ["api-design", "testing"],
@@ -623,6 +629,49 @@ test("approved preflight blocks micro workers before provider launch without exp
           waitMs: 0,
         }),
       /micro_worker_launch_requires_explicit_allow/u,
+    );
+    const store = new TeamStore(root);
+    const worker = store.agent(preflight.team.team_id, preflight.planned_worker.agent_id);
+    assert.equal(worker.state, "defined");
+    assert.equal(store.status(preflight.team.team_id).tokens.observed, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("approved preflight blocks measured Codex CLI token floors before provider launch", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-approved-runtime-floor-")));
+  try {
+    const preflightPath = join(root, "preflight.json");
+    const preflight = runEngagePreflight({
+      workspace: root,
+      goal: "Edit one named file and run one focused test",
+      role: "backend-developer",
+      workProfile: "implementation",
+      preferredRuntime: "codex",
+      teamBudget: 90_000,
+      managerBudget: 20_000,
+      workerBudget: 45_000,
+      workerMaxCommands: 1,
+      workerTimeoutMs: 180_000,
+      codexModels: ["default"],
+      copilotModels: ["default"],
+      codexSkills: ["api-design", "testing"],
+      copilotSkills: ["frontend"],
+    });
+    await writeFile(preflightPath, `${JSON.stringify(preflight)}\n`, { mode: 0o600 });
+    await assert.rejects(
+      () =>
+        runApprovedPreflight({
+          preflightPath,
+          approvedDigest: preflight.approval_digest,
+          launcher: process.execPath,
+          codex: process.execPath,
+          copilot: process.execPath,
+          allowMicroLaunch: true,
+          waitMs: 0,
+        }),
+      /worker_token_budget_below_runtime_floor/u,
     );
     const store = new TeamStore(root);
     const worker = store.agent(preflight.team.team_id, preflight.planned_worker.agent_id);
