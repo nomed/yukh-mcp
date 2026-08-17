@@ -561,13 +561,14 @@ test("watch rejects malformed or unverified transcript records", () => {
 });
 
 test("watch renders closed coordinator lifecycle without message content", () => {
-  const raw = `${JSON.stringify({ schema: 1, event: "agent_started", agent: "agent-b", question_event_id: eventID, turn: 1 })}\n`;
+  const log = "/tmp/yukh-agent.log";
+  const raw = `${JSON.stringify({ schema: 1, event: "agent_started", agent: "agent-b", question_event_id: eventID, turn: 1, agent_log_path: log })}\n`;
   const records = lifecycleRecords(raw, 0);
   assert.equal(records.length, 1);
   assert.equal(lifecycleRecords(raw, 1).length, 0);
   assert.equal(
     renderLifecycle(records[0]!),
-    `COORDINATOR  agent-b  AGENT STARTED  turn=1 question=${eventID}`,
+    `COORDINATOR  agent-b  AGENT STARTED  turn=1 question=${eventID} log=${log}`,
   );
   assert.throws(() => lifecycleRecords('{"schema":1,"event":"unknown"}\n', 0));
   const failure = lifecycleRecords(

@@ -143,7 +143,7 @@ test("coordinator fails the agent before launch when target bootstrap is unavail
       if (command === "events replay") return replay(false);
       if (command === "session bootstrap")
         return { schema: 1, status: "error", command, code: "YKC-UNAVAILABLE-001" };
-      return { schema: 1, status: "ok", command, result: { event_id: answerId } };
+      return { schema: 1, status: "error", command, code: "YKC-AUTH-001" };
     },
   };
   const coordinator = new ConversationCoordinator({
@@ -154,7 +154,7 @@ test("coordinator fails the agent before launch when target bootstrap is unavail
     observe: (event) => lifecycle.push(event),
   });
   assert.equal(await coordinator.tick(), "handled");
-  assert.deepEqual(commands, ["events replay", "session bootstrap"]);
+  assert.deepEqual(commands, ["events replay", "session bootstrap", "session join"]);
   assert.deepEqual(lifecycle, [
     {
       schema: 1,
@@ -171,11 +171,69 @@ test("coordinator fails the agent before launch when target bootstrap is unavail
     },
     {
       schema: 1,
+      event: "coordinator_coordination_failed",
+      coordination_action: "join",
+      ykc_code: "YKC-AUTH-001",
+    },
+    {
+      schema: 1,
       event: "agent_failed",
       agent: "agent-b",
       question_event_id: questionId,
       turn: 1,
       failure_code: "agent_coordination_failed",
+    },
+  ]);
+});
+
+test("coordinator launches when repeated bootstrap fails but join succeeds", async () => {
+  const lifecycle: unknown[] = [];
+  const commands: string[] = [];
+  let launched = false;
+  let output = replay(false);
+  const launcher: CoordinationLauncher = {
+    invoke: async (command) => {
+      commands.push(command);
+      if (command === "events replay") return output;
+      if (command === "session bootstrap")
+        return { schema: 1, status: "error", command, code: "YKC-UNAVAILABLE-001" };
+      return { schema: 1, status: "ok", command, result: { event_id: answerId } };
+    },
+  };
+  const coordinator = new ConversationCoordinator({
+    launchers: { "agent-a": launcher, "agent-b": launcher },
+    runner: {
+      run: async () => {
+        launched = true;
+        output = replay(true);
+      },
+    },
+    maxTurns: 1,
+    lifetimeMs: 10_000,
+    observe: (event) => lifecycle.push(event),
+  });
+  assert.equal(await coordinator.tick(), "handled");
+  assert.equal(launched, true);
+  assert.deepEqual(commands, [
+    "events replay",
+    "session bootstrap",
+    "session join",
+    "events replay",
+  ]);
+  assert.deepEqual(lifecycle, [
+    {
+      schema: 1,
+      event: "agent_started",
+      agent: "agent-b",
+      question_event_id: questionId,
+      turn: 1,
+    },
+    {
+      schema: 1,
+      event: "answer_verified",
+      agent: "agent-b",
+      question_event_id: questionId,
+      turn: 1,
     },
   ]);
 });

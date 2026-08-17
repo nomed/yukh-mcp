@@ -7,7 +7,12 @@ import type {
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 export interface AgentRunner {
-  run(agent: PreviewAgent, prompt: string): Promise<void>;
+  prepare?(
+    agent: PreviewAgent,
+    questionEventID: string,
+    turn: number,
+  ): { readonly log_path?: string };
+  run(agent: PreviewAgent, prompt: string, context?: { readonly log_path?: string }): Promise<void>;
 }
 
 export interface CoordinatorOptions {
@@ -38,6 +43,7 @@ export interface CoordinatorEvent {
     | "agent_error";
   readonly coordination_action?: "bootstrap" | "join" | "replay";
   readonly ykc_code?: string;
+  readonly agent_log_path?: string;
 }
 
 type RecordValue = { readonly event?: unknown };
@@ -116,12 +122,14 @@ export class ConversationCoordinator {
     if (!agent) return "idle";
     this.#attempted.add(question.id);
     this.#turns++;
-    this.#observe("agent_started", agent, question.id);
+    const runContext = this.#options.runner.prepare?.(agent, question.id, this.#turns);
+    this.#observe("agent_started", agent, question.id, undefined, runContext?.log_path);
     try {
       await this.#prepare(agent);
       await this.#options.runner.run(
         agent,
         `Use yukh-coordination for communication. Bootstrap if required, join, replay, and find question event ${question.id}. Complete the requested work with the available local tools inside the current workspace, including files, shell, dependencies, and tests. Then answer through yukh-coordination preserving work_uri, correlation_id, and question_event_id. If another peer action is required, publish one directed follow-up question with the same work_uri.`,
+        runContext,
       );
     } catch (error) {
       const known = [
@@ -154,6 +162,7 @@ export class ConversationCoordinator {
     agent: PreviewAgent,
     questionEventID: string,
     failureCode?: CoordinatorEvent["failure_code"],
+    logPath?: string,
   ) {
     this.#options.observe?.({
       schema: 1,
@@ -162,6 +171,7 @@ export class ConversationCoordinator {
       question_event_id: questionEventID,
       turn: this.#turns,
       ...(failureCode ? { failure_code: failureCode } : {}),
+      ...(logPath ? { agent_log_path: logPath } : {}),
     });
   }
 
@@ -190,16 +200,13 @@ export class ConversationCoordinator {
     const launcher = this.#options.launchers[agent];
     if (!launcher) throw new Error("agent_coordination_failed");
     const bootstrap = await launcher.invoke("session bootstrap");
-    if (bootstrap.status !== "ok") {
-      this.#observeCoordinationFailure("bootstrap", bootstrap.code);
-      throw new Error("agent_coordination_failed");
-    }
     const join = await launcher.invoke("session join", {
       capabilities: ["publish", "replay"],
       session_label: agent,
       status: "available",
     });
     if (join.status !== "ok") {
+      if (bootstrap.status !== "ok") this.#observeCoordinationFailure("bootstrap", bootstrap.code);
       this.#observeCoordinationFailure("join", join.code);
       throw new Error("agent_coordination_failed");
     }
