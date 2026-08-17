@@ -134,7 +134,7 @@ test("coordinator records replay bootstrap failures with the Yukh code", async (
   ]);
 });
 
-test("coordinator treats target bootstrap as best effort when join succeeds", async () => {
+test("coordinator fails the agent before launch when target bootstrap is unavailable", async () => {
   const lifecycle: unknown[] = [];
   const commands: string[] = [];
   const launcher: CoordinationLauncher = {
@@ -146,26 +146,15 @@ test("coordinator treats target bootstrap as best effort when join succeeds", as
       return { schema: 1, status: "ok", command, result: { event_id: answerId } };
     },
   };
-  let launched = false;
   const coordinator = new ConversationCoordinator({
     launchers: { "agent-a": launcher, "agent-b": launcher },
-    runner: {
-      run: async () => {
-        launched = true;
-      },
-    },
+    runner: { run: async () => assert.fail("agent must not launch without bootstrap") },
     maxTurns: 1,
     lifetimeMs: 10_000,
     observe: (event) => lifecycle.push(event),
   });
   assert.equal(await coordinator.tick(), "handled");
-  assert.equal(launched, true);
-  assert.deepEqual(commands, [
-    "events replay",
-    "session bootstrap",
-    "session join",
-    "events replay",
-  ]);
+  assert.deepEqual(commands, ["events replay", "session bootstrap"]);
   assert.deepEqual(lifecycle, [
     {
       schema: 1,
@@ -176,10 +165,17 @@ test("coordinator treats target bootstrap as best effort when join succeeds", as
     },
     {
       schema: 1,
-      event: "agent_completed_without_answer",
+      event: "coordinator_coordination_failed",
+      coordination_action: "bootstrap",
+      ykc_code: "YKC-UNAVAILABLE-001",
+    },
+    {
+      schema: 1,
+      event: "agent_failed",
       agent: "agent-b",
       question_event_id: questionId,
       turn: 1,
+      failure_code: "agent_coordination_failed",
     },
   ]);
 });
@@ -187,10 +183,12 @@ test("coordinator treats target bootstrap as best effort when join succeeds", as
 test("coordinator fails the agent before launch when target join is unavailable", async () => {
   const lifecycle: unknown[] = [];
   const launcher: CoordinationLauncher = {
-    invoke: async (command) =>
-      command === "events replay"
-        ? replay(false)
-        : { schema: 1, status: "error", command, code: "YKC-CUSTODY-001" },
+    invoke: async (command) => {
+      if (command === "events replay") return replay(false);
+      if (command === "session bootstrap")
+        return { schema: 1, status: "ok", command, result: { outcome: "bootstrapped" } };
+      return { schema: 1, status: "error", command, code: "YKC-CUSTODY-001" };
+    },
   };
   const coordinator = new ConversationCoordinator({
     launchers: { "agent-a": launcher, "agent-b": launcher },
