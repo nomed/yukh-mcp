@@ -8,6 +8,7 @@ interface Arguments {
   readonly codex: string;
   readonly copilot: string;
   readonly waitMs: number;
+  readonly allowMicroLaunch: boolean;
   readonly codexModels?: string;
   readonly copilotModels?: string;
   readonly codexSkills?: string;
@@ -58,6 +59,9 @@ function parseArguments(argv: readonly string[]): Arguments {
       "--copilot or YUKH_COPILOT_EXECUTABLE",
     ),
     waitMs: integer(values.get("wait-ms"), 0),
+    allowMicroLaunch:
+      values.get("allow-micro-launch") === "true" ||
+      process.env.YUKH_ALLOW_MICRO_WORKER_LAUNCH === "1",
     ...(codexModels ? { codexModels } : {}),
     ...(copilotModels ? { copilotModels } : {}),
     ...(codexSkills ? { codexSkills } : {}),
