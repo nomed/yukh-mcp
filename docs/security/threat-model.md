@@ -898,3 +898,9 @@ UTF-8 files without following links. Files are limited to 4 KiB each and 12 KiB
 in aggregate. The retained pack records paths, byte length and a SHA-256 digest;
 the wrapper verifies it again before prompt construction. `.git`, `.yukh`,
 absolute paths, traversal and invalid UTF-8 fail closed.
+
+Issue #220 measured minimal Codex CLI, TypeScript SDK and Python app-server
+turns. Python app-server reuse improved latency but did not eliminate per-turn
+token overhead, and the minimal probe does not supersede the real Yukh worker
+floor. The Codex worker floor therefore remains conservative until a
+runner-level qualification uses the actual Yukh worker prompt.
