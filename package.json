@@ -12,7 +12,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc --project tsconfig.build.json && node --input-type=module --eval \"import { cpSync } from 'node:fs'; cpSync('contracts', 'dist/contracts', { recursive: true });\"",
+    "build": "tsc --project tsconfig.build.json && node --input-type=module --eval \"import { cpSync } from 'node:fs'; cpSync('contracts', 'dist/contracts', { recursive: true }); cpSync('apps/control-plane-preview/static', 'dist/apps/control-plane-preview/static', { recursive: true });\"",
     "start": "node dist/apps/gateway/src/main.js",
     "dev": "tsx apps/gateway/src/main.ts",
     "demo": "tsx apps/demo/src/main.ts",
