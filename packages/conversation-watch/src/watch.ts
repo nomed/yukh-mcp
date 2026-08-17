@@ -50,6 +50,8 @@ export interface AgentActivity {
   readonly agent_id: string;
   readonly state_updated_at?: string;
   readonly log_updated_at?: string;
+  readonly stale_after_ms?: number;
+  readonly observed_at?: string;
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -199,7 +201,8 @@ export function renderTeamChanges(
         (action) => !agentReceipts.includes(action),
       );
       const activity = activityFor(snapshot, agent.agent_id);
-      const value = `${agent.state}:${agent.task}:${agent.max_commands ?? 8}:${agent.timeout_ms ?? 300_000}:${agent.usage?.total_tokens ?? "pending"}:${agent.completion?.outcome ?? "pending"}:${agentReceipts.join(",")}:${activity?.state_updated_at ?? "unknown"}:${activity?.log_updated_at ?? "none"}`;
+      const status = statusReason(agent, missingActions, activity);
+      const value = `${agent.state}:${agent.task}:${agent.max_commands ?? 8}:${agent.timeout_ms ?? 300_000}:${agent.usage?.total_tokens ?? "pending"}:${agent.completion?.outcome ?? "pending"}:${agentReceipts.join(",")}:${status}:${activity?.state_updated_at ?? "unknown"}:${activity?.log_updated_at ?? "none"}`;
       if (previous.get(key) === value) continue;
       previous.set(key, value);
       const review =
@@ -211,7 +214,7 @@ export function renderTeamChanges(
         ? `\n          summary=${compact(agent.completion.summary, 180)}`
         : "";
       lines.push(
-        `TIMELINE  ${agent.kind.toUpperCase()} ${agent.role}  ${agent.state.toUpperCase()}  status=${statusReason(agent, missingActions)}${review}\n          task=${compact(agent.task, 180)}${summary}\n          runtime=${agent.runtime} model=${agent.profile?.model ?? "default"} tools=${agent.model_tool_mode ?? "default"} bounds=commands:${agent.max_commands ?? 8} timeout_ms:${agent.timeout_ms ?? 300_000}\n          activity=last_change:${activity?.state_updated_at ?? "unknown"} log:${activity?.log_updated_at ?? "none"}\n          tokens=${agent.usage?.total_tokens ?? "pending"}/${agent.token_budget} input=${agent.usage?.input_tokens ?? "pending"} cached=${agent.usage?.cached_input_tokens ?? "pending"} output=${agent.usage?.output_tokens ?? "pending"} reasoning=${agent.usage?.reasoning_output_tokens ?? "pending"} accounting=${agent.usage?.source ?? "pending"}\n          required=${agent.required_actions.join(",") || "none"} missing=${missingActions.join(",") || "none"} receipts=${agentReceipts.join(",") || "none"} coordination=${agent.coordination_participant}\n          id=${agent.agent_id} parent=${agent.parent_agent_id ?? (agent.kind === "manager" ? "root" : "manager")}`,
+        `TIMELINE  ${agent.kind.toUpperCase()} ${agent.role}  ${agent.state.toUpperCase()}  status=${status}${review}\n          task=${compact(agent.task, 180)}${summary}\n          runtime=${agent.runtime} model=${agent.profile?.model ?? "default"} tools=${agent.model_tool_mode ?? "default"} bounds=commands:${agent.max_commands ?? 8} timeout_ms:${agent.timeout_ms ?? 300_000}\n          activity=last_change:${activity?.state_updated_at ?? "unknown"} log:${activity?.log_updated_at ?? "none"}\n          tokens=${agent.usage?.total_tokens ?? "pending"}/${agent.token_budget} input=${agent.usage?.input_tokens ?? "pending"} cached=${agent.usage?.cached_input_tokens ?? "pending"} output=${agent.usage?.output_tokens ?? "pending"} reasoning=${agent.usage?.reasoning_output_tokens ?? "pending"} accounting=${agent.usage?.source ?? "pending"}\n          required=${agent.required_actions.join(",") || "none"} missing=${missingActions.join(",") || "none"} receipts=${agentReceipts.join(",") || "none"} coordination=${agent.coordination_participant}\n          id=${agent.agent_id} parent=${agent.parent_agent_id ?? (agent.kind === "manager" ? "root" : "manager")}`,
       );
     }
     for (const plan of snapshot.plans ?? []) {
@@ -232,10 +235,14 @@ function compact(value: string, limit: number): string {
   return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized;
 }
 
-function statusReason(agent: AgentRecord, missingActions: readonly string[]): string {
+function statusReason(
+  agent: AgentRecord,
+  missingActions: readonly string[],
+  activity: AgentActivity | undefined,
+): string {
   if (agent.state === "defined")
     return missingActions.length > 0 ? `waiting:${missingActions.join(",")}` : "waiting:launch";
-  if (agent.state === "running") return "working";
+  if (agent.state === "running") return runningStatus(activity);
   if (agent.state === "stopped") return "stopped";
   if (agent.completion) return agent.completion.outcome;
   if (agent.state === "failed") return "failed:no-completion";
@@ -244,4 +251,15 @@ function statusReason(agent: AgentRecord, missingActions: readonly string[]): st
 
 function activityFor(snapshot: TeamSnapshot, agentID: string): AgentActivity | undefined {
   return snapshot.activity?.find((activity) => activity.agent_id === agentID);
+}
+
+function runningStatus(activity: AgentActivity | undefined): string {
+  if (!activity || activity.stale_after_ms === undefined || activity.observed_at === undefined)
+    return "working";
+  const observed = Date.parse(activity.observed_at);
+  const last = Date.parse(activity.log_updated_at ?? activity.state_updated_at ?? "");
+  if (!Number.isFinite(observed) || !Number.isFinite(last)) return "working";
+  const idleMs = observed - last;
+  if (idleMs <= activity.stale_after_ms) return "working";
+  return `stale:${Math.floor(idleMs / 1_000)}s`;
 }

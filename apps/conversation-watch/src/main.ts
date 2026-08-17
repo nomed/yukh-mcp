@@ -33,6 +33,7 @@ const lifecyclePath = workspace
 const present = new Set<string>();
 const teamView = new Map<string, string>();
 const teamStore = workspace ? new TeamStore(workspace) : undefined;
+const staleAfterMs = integer(process.env.YUKH_WATCH_STALE_AFTER_MS, 120_000);
 let unavailable = false;
 let lastReplayFailure = "";
 
@@ -109,6 +110,7 @@ for (;;) {
 }
 
 function withActivity(workspace: string, snapshots: readonly TeamSnapshot[]): TeamSnapshot[] {
+  const observedAt = new Date().toISOString();
   return snapshots.map((snapshot) => ({
     ...snapshot,
     activity: snapshot.agents.map((agent): AgentActivity => {
@@ -117,6 +119,8 @@ function withActivity(workspace: string, snapshots: readonly TeamSnapshot[]): Te
         agent_id: agent.agent_id,
         ...mtime(join(root, `${agent.agent_id}.json`), "state_updated_at"),
         ...mtime(join(root, `${agent.agent_id}.log`), "log_updated_at"),
+        stale_after_ms: staleAfterMs,
+        observed_at: observedAt,
       };
     }),
   }));
@@ -131,4 +135,12 @@ function mtime(path: string, key: "state_updated_at" | "log_updated_at"): Partia
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
     throw error;
   }
+}
+
+function integer(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1_000 || parsed > 86_400_000)
+    throw new TypeError("invalid watcher configuration");
+  return parsed;
 }
