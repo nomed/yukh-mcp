@@ -12,6 +12,7 @@ export interface ApprovedRunArguments {
   readonly codex: string;
   readonly copilot: string;
   readonly waitMs: number;
+  readonly allowMicroLaunch?: boolean;
   readonly codexModels?: string;
   readonly copilotModels?: string;
   readonly codexSkills?: string;
@@ -55,6 +56,12 @@ function profileEnvironment(args: ApprovedRunArguments): Readonly<Record<string,
   return env;
 }
 
+function microWorkerRequiresExplicitAllow(worker: AgentRecord): boolean {
+  return (
+    worker.model_tool_mode === "none" && worker.max_commands === 1 && worker.token_budget <= 45_000
+  );
+}
+
 export async function runApprovedPreflight(args: ApprovedRunArguments) {
   const preflight = loadPreflight(args.preflightPath);
   const digest = preflightApprovalDigest(preflight);
@@ -67,6 +74,8 @@ export async function runApprovedPreflight(args: ApprovedRunArguments) {
   const worker = store.agent(preflight.team.team_id, preflight.planned_worker.agent_id);
   if (team.state !== "active") throw new Error("team_not_active");
   if (worker.state !== "defined") throw new Error("worker_not_defined");
+  if (microWorkerRequiresExplicitAllow(worker) && args.allowMicroLaunch !== true)
+    throw new Error("micro_worker_launch_requires_explicit_allow");
 
   const entrypoints = teamRuntimeEntrypoints();
   const supervisor = new TeamSupervisor({

@@ -479,6 +479,48 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
   }
 });
 
+test("approved preflight blocks micro workers before provider launch without explicit opt-in", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-approved-micro-block-")));
+  try {
+    const preflightPath = join(root, "preflight.json");
+    const preflight = runEngagePreflight({
+      workspace: root,
+      goal: "Edit one named file and run one focused test",
+      role: "backend-developer",
+      workProfile: "implementation",
+      preferredRuntime: "codex",
+      teamBudget: 90_000,
+      managerBudget: 20_000,
+      workerBudget: 45_000,
+      workerMaxCommands: 1,
+      workerTimeoutMs: 180_000,
+      codexModels: ["default"],
+      copilotModels: ["default"],
+      codexSkills: ["api-design", "testing"],
+      copilotSkills: ["frontend"],
+    });
+    await writeFile(preflightPath, `${JSON.stringify(preflight)}\n`, { mode: 0o600 });
+    await assert.rejects(
+      () =>
+        runApprovedPreflight({
+          preflightPath,
+          approvedDigest: preflight.approval_digest,
+          launcher: process.execPath,
+          codex: process.execPath,
+          copilot: process.execPath,
+          waitMs: 0,
+        }),
+      /micro_worker_launch_requires_explicit_allow/u,
+    );
+    const store = new TeamStore(root);
+    const worker = store.agent(preflight.team.team_id, preflight.planned_worker.agent_id);
+    assert.equal(worker.state, "defined");
+    assert.equal(store.status(preflight.team.team_id).tokens.observed, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("runtime model discovery parses CLI catalogs and keeps explicit env authoritative", () => {
   assert.deepEqual(
     parseCodexModelCatalog(
