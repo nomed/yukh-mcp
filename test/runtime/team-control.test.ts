@@ -283,6 +283,8 @@ test("micro documentation edit preflight overrides implementation bounds", async
     assert.equal(output.planned_worker.max_commands, 1);
     assert.equal(output.planned_worker.timeout_ms, 120_000);
     assert.equal(output.runtime_token_floor?.minimum_token_budget, 120_000);
+    assert.equal(output.provider_launchable, false);
+    assert.match(output.next_real_action, /SDK\/lean worker runtime/u);
     assert.equal(output.provider_runtime_launched, false);
     assert.equal(output.budget.allocated, 55_000);
   } finally {
@@ -308,6 +310,8 @@ test("micro code edit preflight keeps implementation bounded to one command", as
     assert.equal(output.planned_worker.max_commands, 1);
     assert.equal(output.planned_worker.timeout_ms, 180_000);
     assert.equal(output.runtime_token_floor?.minimum_token_budget, 120_000);
+    assert.equal(output.provider_launchable, false);
+    assert.match(output.next_real_action, /SDK\/lean worker runtime/u);
     assert.equal(output.provider_runtime_launched, false);
     assert.equal(output.budget.allocated, 65_000);
   } finally {
@@ -483,6 +487,7 @@ test("engage preflight composes a worker without launching a provider runtime", 
     });
     assert.equal(output.status, "ok");
     assert.equal(output.provider_runtime_launched, false);
+    assert.equal(output.provider_launchable, true);
     assert.equal(output.provider_tokens_observed, 0);
     assert.equal(output.policy.recommendation.runtime, "copilot");
     assert.equal(output.policy.recommendation.model, "default");
@@ -525,6 +530,9 @@ test("engage preflight text output shows approval and budget without raw JSON no
     assert.match(text, /observed provider tokens: 0/u);
     assert.match(text, /runtime token floor: 120000/u);
     assert.match(text, /cached input floor near 90k/u);
+    assert.match(text, /provider launchable: no/u);
+    assert.match(text, /Next action: Do not launch/u);
+    assert.doesNotMatch(text, /Run after approval/u);
     assert.doesNotMatch(text, /"planned_worker"/u);
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -41,6 +41,9 @@ function loadPreflight(path: string): EngagePreflightOutput {
     value.schema !== 1 ||
     value.status !== "ok" ||
     value.command !== "team preflight-engage" ||
+    value.provider_launchable !==
+      (value.runtime_token_floor === undefined ||
+        value.planned_worker.token_budget >= value.runtime_token_floor.minimum_token_budget) ||
     value.provider_runtime_launched !== false ||
     value.provider_tokens_observed !== 0
   )
