@@ -1,5 +1,5 @@
-import { lstatSync, realpathSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { closeSync, lstatSync, mkdirSync, openSync, realpathSync, writeSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import { spawn } from "node:child_process";
 import type { PreviewAgent } from "../../coordination-preview/src/launcher.js";
 import type { AgentRunner } from "./coordinator.js";
@@ -38,7 +38,21 @@ export function createAgentRunner(options: {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 900_000)
     throw new TypeError("invalid agent timeout");
   return {
-    run(agent: PreviewAgent, prompt: string): Promise<void> {
+    prepare(agent: PreviewAgent, questionEventID: string, turn: number) {
+      const directory = join(cwd, ".yukh", "conversation-agent-logs");
+      mkdirSync(directory, { recursive: true, mode: 0o700 });
+      return {
+        log_path: join(
+          directory,
+          `${new Date().toISOString().replaceAll(":", "-")}-turn-${turn}-${agent}-${questionEventID}.log`,
+        ),
+      };
+    },
+    run(
+      agent: PreviewAgent,
+      prompt: string,
+      context?: { readonly log_path?: string },
+    ): Promise<void> {
       if (prompt.length === 0 || prompt.length > 1_024)
         return Promise.reject(new TypeError("invalid prompt"));
       const command = agent === "agent-a" ? codex : copilot;
@@ -55,10 +69,13 @@ export function createAgentRunner(options: {
             ]
           : ["-p", prompt, "-s", "--no-ask-user", "--allow-all"];
       return new Promise((resolve, reject) => {
+        const log = context?.log_path ? openSync(context.log_path, "a", 0o600) : undefined;
+        if (log !== undefined)
+          writeSync(log, `agent=${agent}\ncommand=${command}\nargs=${JSON.stringify(args)}\n\n`);
         const child = spawn(command, args, {
           cwd,
           shell: false,
-          stdio: "ignore",
+          stdio: ["ignore", log ?? "ignore", log ?? "ignore"],
           env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
         });
         let settled = false;
@@ -66,6 +83,7 @@ export function createAgentRunner(options: {
           if (settled) return;
           settled = true;
           child.kill("SIGKILL");
+          if (log !== undefined) closeSync(log);
           reject(new Error(reason));
         };
         const timer = setTimeout(() => fail("agent_timed_out"), timeoutMs);
@@ -74,6 +92,7 @@ export function createAgentRunner(options: {
           clearTimeout(timer);
           if (settled) return;
           settled = true;
+          if (log !== undefined) closeSync(log);
           if (code === 0) resolve();
           else reject(new Error("agent_exit_nonzero"));
         });

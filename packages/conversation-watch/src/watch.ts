@@ -27,6 +27,7 @@ export interface LifecycleRecord {
   readonly failure_code?: string;
   readonly coordination_action?: string;
   readonly ykc_code?: string;
+  readonly agent_log_path?: string;
 }
 
 export interface TeamSnapshot {
@@ -162,6 +163,13 @@ export function lifecycleRecords(raw: string, after: number): LifecycleRecord[] 
       (record.ykc_code !== undefined && !/^YKC-[A-Z]+-[0-9]{3}$/u.test(record.ykc_code))
     )
       throw new Error("coordination_protocol_error");
+    if (
+      record.agent_log_path !== undefined &&
+      (typeof record.agent_log_path !== "string" ||
+        !record.agent_log_path.startsWith("/") ||
+        record.agent_log_path.length > 4_096)
+    )
+      throw new Error("coordination_protocol_error");
     return record;
   });
 }
@@ -175,7 +183,8 @@ export function renderLifecycle(record: LifecycleRecord): string {
     return `COORDINATOR  COORDINATION ${record.coordination_action?.toUpperCase() ?? "ACTION"} FAILED code=${record.ykc_code ?? "unknown"} — RETRYING`;
   const label = record.event.replaceAll("_", " ").toUpperCase();
   const failure = record.failure_code ? ` failure=${record.failure_code}` : "";
-  return `COORDINATOR  ${record.agent ?? "agent"}  ${label}  turn=${record.turn ?? "?"} question=${record.question_event_id ?? "?"}${failure}`;
+  const log = record.agent_log_path ? ` log=${record.agent_log_path}` : "";
+  return `COORDINATOR  ${record.agent ?? "agent"}  ${label}  turn=${record.turn ?? "?"} question=${record.question_event_id ?? "?"}${failure}${log}`;
 }
 
 export function renderTeamChanges(
