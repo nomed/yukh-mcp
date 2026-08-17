@@ -608,6 +608,54 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_inpu
   }
 });
 
+test("approved preflight forwards preview runtime to launched worker wrapper", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-approved-preview-runtime-")));
+  try {
+    const observedRuntime = join(root, "observed-preview-runtime.txt");
+    const worker = join(root, "worker.mjs");
+    const executable = join(root, "agent-cli");
+    const mcp = join(root, "coordination.mjs");
+    const teamControlMcp = join(root, "team-control.mjs");
+    const previewRuntime = join(root, "preview-runtime");
+    await writeFile(
+      worker,
+      `import {writeFileSync} from "node:fs"; writeFileSync(${JSON.stringify(observedRuntime)}, process.env.YUKH_PREVIEW_RUNTIME ?? "");`,
+    );
+    await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+    await writeFile(mcp, "", { mode: 0o600 });
+    await writeFile(teamControlMcp, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const team = store.create("Launch worker", "codex");
+    const agent = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "backend-reviewer",
+      task: "Review backend",
+      token_budget: 120_000,
+    });
+    const supervisor = new TeamSupervisor({
+      node: process.execPath,
+      worker,
+      launcher: executable,
+      coordinationMcp: mcp,
+      teamControlMcp,
+      codex: executable,
+      copilot: executable,
+      workspace: root,
+      profileEnvironment: { YUKH_PREVIEW_RUNTIME: previewRuntime },
+    });
+    supervisor.launch(agent);
+    for (let attempt = 0; attempt < 50; attempt++) {
+      try {
+        if ((await readFile(observedRuntime, "utf8")) === previewRuntime) break;
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(await readFile(observedRuntime, "utf8"), previewRuntime);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("approved preflight blocks micro workers before provider launch without explicit opt-in", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-approved-micro-block-")));
   try {
@@ -2027,6 +2075,67 @@ test("worker fails closed before agent launch when Coordination cannot join", as
     assert.equal(await new Promise<number | null>((resolve) => child.once("close", resolve)), 1);
     assert.equal(store.agent(team.team_id, agent.agent_id).state, "failed");
     await assert.rejects(readFile(marker), /ENOENT/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("worker forwards preview runtime to Coordination launcher", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-preview-runtime-")));
+  try {
+    const observed = join(root, "observed-preview-runtime");
+    const previewRuntime = join(root, "preview-runtime");
+    const executable = join(root, "agent-cli");
+    const launcher = join(root, "launcher");
+    const support = join(root, "support.mjs");
+    await writeFile(
+      executable,
+      `#!/bin/sh
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"runtime ok"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20,"reasoning_output_tokens":5}}'
+`,
+      { mode: 0o700 },
+    );
+    await writeFile(
+      launcher,
+      `#!/bin/sh
+printf '%s' "$YUKH_PREVIEW_RUNTIME" > ${JSON.stringify(observed)}
+cat >/dev/null
+printf '{"schema":1,"status":"ok","command":"test"}\\n'
+`,
+      { mode: 0o700 },
+    );
+    await writeFile(support, "", { mode: 0o600 });
+    const store = new TeamStore(root);
+    const team = store.create("Forward preview runtime", "codex");
+    const agent = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "backend-reviewer",
+      task: "Verify preview runtime",
+      token_budget: 120_000,
+    });
+    const child = spawn(
+      process.execPath,
+      ["--import", tsxLoader, workerMain, team.team_id, agent.agent_id],
+      {
+        cwd: root,
+        stdio: "ignore",
+        env: {
+          HOME: process.env.HOME ?? "",
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          YUKH_TEAM_WORKSPACE: root,
+          YUKH_COORDINATION_LAUNCHER: launcher,
+          YUKH_COORDINATION_MCP_MAIN: support,
+          YUKH_TEAM_CONTROL_MCP_MAIN: support,
+          YUKH_CODEX_EXECUTABLE: executable,
+          YUKH_COPILOT_EXECUTABLE: executable,
+          YUKH_PREVIEW_RUNTIME: previewRuntime,
+        },
+      },
+    );
+    assert.equal(await new Promise<number | null>((resolve) => child.once("close", resolve)), 0);
+    assert.equal(await readFile(observed, "utf8"), previewRuntime);
+    assert.equal(store.agent(team.team_id, agent.agent_id).state, "completed");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

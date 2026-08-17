@@ -43,6 +43,7 @@ function profileEnvironment(args: ApprovedPlanRunArguments): Readonly<Record<str
   if (process.env.YUKH_CODEX_PYTHON_EXECUTABLE)
     env.YUKH_CODEX_PYTHON_EXECUTABLE = process.env.YUKH_CODEX_PYTHON_EXECUTABLE;
   if (process.env.YUKH_COPILOT_WORKER_PROVIDER === "sdk") env.YUKH_COPILOT_WORKER_PROVIDER = "sdk";
+  if (process.env.YUKH_PREVIEW_RUNTIME) env.YUKH_PREVIEW_RUNTIME = process.env.YUKH_PREVIEW_RUNTIME;
   return env;
 }
 
