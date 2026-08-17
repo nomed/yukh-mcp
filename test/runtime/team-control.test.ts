@@ -354,6 +354,7 @@ test("micro workers receive compact prompts without orchestration noise", () => 
     planConstraintInstruction: "Plan constraints: use only allowlisted models.",
   });
   assert.equal(isMicroWorker(agent), true);
+  assert.equal(isMicroWorker({ ...agent, max_commands: 2 }), false);
   assert.ok(prompt.length < 900);
   assert.match(prompt, /Task: Edit apps\/team-worker\/src\/prompt\.ts/u);
   assert.match(prompt, /No context pack was supplied/u);
@@ -361,6 +362,66 @@ test("micro workers receive compact prompts without orchestration noise", () => 
   assert.doesNotMatch(prompt, /Required receipt-backed actions/u);
   assert.doesNotMatch(prompt, /Plan constraints/u);
   assert.doesNotMatch(prompt, /coordination_participant/u);
+});
+
+test("approved run formatter exposes terminal cached and uncached token usage", () => {
+  const text = formatApprovedRun({
+    schema: 1,
+    status: "ok",
+    command: "team run-approved",
+    approval_digest: "sha-256:1111111111111111111111111111111111111111111111111111111111111111",
+    provider_runtime_launched: true,
+    launched_worker: "worker-00000000-0000-4000-8000-000000000001",
+    receipt: {
+      schema: 1,
+      receipt_id: "receipt-00000000-0000-4000-8000-000000000001",
+      team_id: "team-00000000-0000-4000-8000-000000000001",
+      action: "agent.engage",
+      actor_agent_id: "worker-00000000-0000-4000-8000-000000000000",
+      subject_agent_id: "worker-00000000-0000-4000-8000-000000000001",
+      outcome: "succeeded",
+    },
+    runtime: { pid: 123, log: "/tmp/worker.log" },
+    terminal_agent: {
+      schema: 1,
+      agent_id: "worker-00000000-0000-4000-8000-000000000001",
+      kind: "worker",
+      coordination_agent: "agent-backend-developer-00000000-0000-4000-8000-000000000001",
+      coordination_participant: "agent:backend-developer-00000000-0000-4000-8000-000000000001",
+      team_id: "team-00000000-0000-4000-8000-000000000001",
+      runtime: "codex",
+      role: "backend-developer",
+      task: "Probe token accounting.",
+      depth: 1,
+      can_spawn: false,
+      token_budget: 45_000,
+      required_actions: [],
+      state: "failed",
+      usage: {
+        schema: 1,
+        source: "codex-json-v1",
+        input_tokens: 114_867,
+        cached_input_tokens: 89_600,
+        output_tokens: 1_846,
+        reasoning_output_tokens: 1_259,
+        total_tokens: 116_713,
+        budget_outcome: "exceeded",
+      },
+    },
+    tokens: {
+      budget: 90_000,
+      allocated: 65_000,
+      observed: 116_713,
+      remaining: 0,
+      pending_agents: 1,
+      unaccounted_agents: 0,
+      exceeded_agents: 1,
+    },
+  } as Parameters<typeof formatApprovedRun>[0]);
+  assert.match(text, /terminal cached input: 89600/u);
+  assert.match(text, /terminal uncached input: 25267/u);
+  assert.match(text, /terminal output: 1846/u);
+  assert.match(text, /Terminal worker state: failed/u);
 });
 
 test("team status formatter exposes stop and token state without raw JSON", async () => {

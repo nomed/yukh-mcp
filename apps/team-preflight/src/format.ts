@@ -55,7 +55,8 @@ export function formatEngagePreflight(
 }
 
 export function formatApprovedRun(output: ApprovedRunOutput): string {
-  return [
+  const usage = output.terminal_agent?.usage;
+  const lines = [
     "Yukh approved run",
     `Status: ${output.status}`,
     `Approval digest: ${output.approval_digest}`,
@@ -71,9 +72,17 @@ export function formatApprovedRun(output: ApprovedRunOutput): string {
     `- remaining: ${output.tokens.remaining}`,
     `- pending agents: ${output.tokens.pending_agents}`,
     `- unaccounted agents: ${output.tokens.unaccounted_agents}`,
-    "",
-    `Terminal worker state: ${output.terminal_agent?.state ?? "not waited"}`,
-  ].join("\n");
+  ];
+  if (usage)
+    lines.push(
+      `- terminal input: ${usage.input_tokens}`,
+      `- terminal cached input: ${usage.cached_input_tokens}`,
+      `- terminal uncached input: ${usage.input_tokens - usage.cached_input_tokens}`,
+      `- terminal output: ${usage.output_tokens}`,
+      `- terminal reasoning output: ${usage.reasoning_output_tokens}`,
+    );
+  lines.push("", `Terminal worker state: ${output.terminal_agent?.state ?? "not waited"}`);
+  return lines.join("\n");
 }
 
 export function formatApprovedPlanRun(output: ApprovedPlanRunOutput): string {
