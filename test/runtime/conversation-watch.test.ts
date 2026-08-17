@@ -295,6 +295,69 @@ test("watch status names only missing required receipts", () => {
   assert.doesNotMatch(changes, /status=waiting:policy\.profile,agent\.engage/u);
 });
 
+test("watch renders agent state and log activity when available", () => {
+  const changes = renderTeamChanges(
+    [
+      {
+        team: {
+          schema: 1,
+          team_id: "team-0eae0789-0d76-493a-9d89-2f44c9f819cd",
+          goal: "Observe a running worker",
+          workspace: "/tmp/project",
+          manager_runtime: "codex",
+          max_agents: 3,
+          max_depth: 2,
+          token_budget: 60_000,
+          state: "active",
+        },
+        agents: [
+          {
+            schema: 1,
+            agent_id: "worker-3dc1c6d1-ac73-4f39-9d48-301123385534",
+            kind: "worker",
+            coordination_agent: "agent-observer-61e1f378",
+            coordination_participant: "agent:observer-61e1f378",
+            team_id: "team-0eae0789-0d76-493a-9d89-2f44c9f819cd",
+            runtime: "codex",
+            role: "observer",
+            task: "Keep working",
+            depth: 1,
+            can_spawn: false,
+            token_budget: 18_000,
+            required_actions: [],
+            max_commands: 1,
+            timeout_ms: 180_000,
+            state: "running",
+          },
+        ],
+        receipts: [],
+        plans: [],
+        activity: [
+          {
+            agent_id: "worker-3dc1c6d1-ac73-4f39-9d48-301123385534",
+            state_updated_at: "2026-08-17T07:40:00.000Z",
+            log_updated_at: "2026-08-17T07:41:00.000Z",
+          },
+        ],
+        tokens: {
+          budget: 60_000,
+          allocated: 18_000,
+          observed: 0,
+          remaining: 60_000,
+          pending_agents: 1,
+          unaccounted_agents: 0,
+          exceeded_agents: 0,
+        },
+      },
+    ],
+    new Map(),
+  ).join("\n");
+  assert.match(
+    changes,
+    /activity=last_change:2026-08-17T07:40:00\.000Z log:2026-08-17T07:41:00\.000Z/u,
+  );
+});
+
 test("watch marks over-budget summaries as reviewable", () => {
   const changes = renderTeamChanges(
     [
