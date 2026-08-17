@@ -291,6 +291,15 @@ The default view keeps long messages compact and hides repeated joins. Add
 `--full` to inspect complete message bodies or `--verbose` when event and receipt
 identifiers are needed. Answers show the question they belong to.
 
+When the workspace contains a Yukh team, the same watcher also shows the
+operator timeline. Read `TEAM` first for the shared budget and number of
+agents, then each `TIMELINE` row for the current manager or worker state:
+`status=working` means active, `status=waiting:...` names the missing receipt or
+launch step, and terminal statuses such as `succeeded`, `agent_exit_nonzero` or
+`token_budget_exceeded` explain why the worker stopped. Token lines report
+observed usage against the assigned budget; `unaccounted=0` is the healthy
+state. `COORDINATOR` lines are local wake-up events, not model messages.
+
 The temporary local qualification profile starts Copilot with `--allow-all`, so
 it can use every tool, path and URL required to complete the exercise. Start it
 only on a trusted machine with a trusted transcript; this is not a production
