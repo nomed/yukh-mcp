@@ -188,6 +188,9 @@ export function renderTeamChanges(
       const agentReceipts = snapshot.receipts
         .filter((receipt) => receipt.actor_agent_id === agent.agent_id)
         .map((receipt) => receipt.action);
+      const missingActions = agent.required_actions.filter(
+        (action) => !agentReceipts.includes(action),
+      );
       const value = `${agent.state}:${agent.task}:${agent.max_commands ?? 8}:${agent.timeout_ms ?? 300_000}:${agent.usage?.total_tokens ?? "pending"}:${agent.completion?.outcome ?? "pending"}:${agentReceipts.join(",")}`;
       if (previous.get(key) === value) continue;
       previous.set(key, value);
@@ -200,7 +203,7 @@ export function renderTeamChanges(
         ? `\n          summary=${compact(agent.completion.summary, 180)}`
         : "";
       lines.push(
-        `TIMELINE  ${agent.kind.toUpperCase()} ${agent.role}  ${agent.state.toUpperCase()}  status=${statusReason(agent)}${review}\n          task=${compact(agent.task, 180)}${summary}\n          runtime=${agent.runtime} model=${agent.profile?.model ?? "default"} tools=${agent.model_tool_mode ?? "default"} bounds=commands:${agent.max_commands ?? 8} timeout_ms:${agent.timeout_ms ?? 300_000}\n          tokens=${agent.usage?.total_tokens ?? "pending"}/${agent.token_budget} input=${agent.usage?.input_tokens ?? "pending"} cached=${agent.usage?.cached_input_tokens ?? "pending"} output=${agent.usage?.output_tokens ?? "pending"} reasoning=${agent.usage?.reasoning_output_tokens ?? "pending"} accounting=${agent.usage?.source ?? "pending"}\n          required=${agent.required_actions.join(",") || "none"} receipts=${agentReceipts.join(",") || "none"} coordination=${agent.coordination_participant}\n          id=${agent.agent_id} parent=${agent.parent_agent_id ?? (agent.kind === "manager" ? "root" : "manager")}`,
+        `TIMELINE  ${agent.kind.toUpperCase()} ${agent.role}  ${agent.state.toUpperCase()}  status=${statusReason(agent, missingActions)}${review}\n          task=${compact(agent.task, 180)}${summary}\n          runtime=${agent.runtime} model=${agent.profile?.model ?? "default"} tools=${agent.model_tool_mode ?? "default"} bounds=commands:${agent.max_commands ?? 8} timeout_ms:${agent.timeout_ms ?? 300_000}\n          tokens=${agent.usage?.total_tokens ?? "pending"}/${agent.token_budget} input=${agent.usage?.input_tokens ?? "pending"} cached=${agent.usage?.cached_input_tokens ?? "pending"} output=${agent.usage?.output_tokens ?? "pending"} reasoning=${agent.usage?.reasoning_output_tokens ?? "pending"} accounting=${agent.usage?.source ?? "pending"}\n          required=${agent.required_actions.join(",") || "none"} missing=${missingActions.join(",") || "none"} receipts=${agentReceipts.join(",") || "none"} coordination=${agent.coordination_participant}\n          id=${agent.agent_id} parent=${agent.parent_agent_id ?? (agent.kind === "manager" ? "root" : "manager")}`,
       );
     }
     for (const plan of snapshot.plans ?? []) {
@@ -221,11 +224,9 @@ function compact(value: string, limit: number): string {
   return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized;
 }
 
-function statusReason(agent: AgentRecord): string {
+function statusReason(agent: AgentRecord, missingActions: readonly string[]): string {
   if (agent.state === "defined")
-    return agent.required_actions.length > 0
-      ? `waiting:${agent.required_actions.join(",")}`
-      : "waiting:launch";
+    return missingActions.length > 0 ? `waiting:${missingActions.join(",")}` : "waiting:launch";
   if (agent.state === "running") return "working";
   if (agent.state === "stopped") return "stopped";
   if (agent.completion) return agent.completion.outcome;
