@@ -31,6 +31,7 @@ and one denial, cleans up, then exits.
 
 - **Evaluate it:** run the [read-only demo](guides/read-only-demo.md).
 - **Inspect the process:** start the [inert gateway](how-to/run-inert-gateway.md).
+- **Publish agent work:** follow the [agent GitHub workflow](guides/agent-github-workflow.md).
 - **Integrate contracts:** use the [contract reference](reference/contracts.md).
 - **Review safety:** read the [security model](security/security-model.md).
 

@@ -115,6 +115,16 @@ const teamControlEnv = {
   ),
 };
 
+function runtimeEnv(): NodeJS.ProcessEnv {
+  return {
+    HOME: process.env.HOME ?? "",
+    PATH: process.env.PATH ?? "/usr/bin:/bin",
+    ...(process.env.YUKH_PREVIEW_RUNTIME
+      ? { YUKH_PREVIEW_RUNTIME: process.env.YUKH_PREVIEW_RUNTIME }
+      : {}),
+  };
+}
+
 const command =
   agent.runtime === "codex"
     ? required("YUKH_CODEX_EXECUTABLE")
@@ -216,7 +226,7 @@ async function coordination(
       cwd: workspace,
       shell: false,
       stdio: ["pipe", "pipe", "inherit"],
-      env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
+      env: runtimeEnv(),
     });
     const chunks: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -300,7 +310,7 @@ const outcome = !joined
             detached: process.platform !== "win32",
             shell: false,
             stdio: ["ignore", "pipe", "pipe"],
-            env: { HOME: process.env.HOME ?? "", PATH: process.env.PATH ?? "/usr/bin:/bin" },
+            env: runtimeEnv(),
           });
           if (!child.stdout || !child.stderr) throw new Error("agent_output_unavailable");
           child.stdout.pipe(process.stdout);

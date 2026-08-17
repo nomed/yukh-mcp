@@ -1,0 +1,18 @@
+{
+  "name": "yukh",
+  "version": "0.1.0",
+  "description": "Yukh suite operating skills for agent teams, Coordination handoffs, budgeted work, and GitHub-compatible publication.",
+  "author": {
+    "name": "Nomed"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Yukh",
+    "shortDescription": "Operate Yukh agent teams safely.",
+    "longDescription": "Yukh provides operating skills for manager, worker, and subagent behavior across Yukh MCP, Coordination, token budgets, evidence, and GitHub-compatible publication.",
+    "developerName": "Nomed",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use the Yukh agent workflow: plan bounded work, preserve receipts and token evidence, and publish through the GitHub-compatible path when needed."
+  }
+}

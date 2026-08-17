@@ -38,6 +38,7 @@ const profileEnvironment = {
       "YUKH_CODEX_WORKER_PROVIDER",
       "YUKH_CODEX_PYTHON_EXECUTABLE",
       "YUKH_COPILOT_WORKER_PROVIDER",
+      "YUKH_PREVIEW_RUNTIME",
     ]
       .filter((name) => process.env[name] !== undefined)
       .map((name) => [name, process.env[name]!] as const),
