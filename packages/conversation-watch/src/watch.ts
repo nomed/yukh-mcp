@@ -34,6 +34,7 @@ export interface TeamSnapshot {
   readonly agents: readonly AgentRecord[];
   readonly receipts: readonly TeamActionReceipt[];
   readonly plans?: readonly TeamExecutionPlanRecord[];
+  readonly activity?: readonly AgentActivity[];
   readonly tokens: {
     readonly budget: number;
     readonly allocated: number;
@@ -43,6 +44,12 @@ export interface TeamSnapshot {
     readonly unaccounted_agents: number;
     readonly exceeded_agents: number;
   };
+}
+
+export interface AgentActivity {
+  readonly agent_id: string;
+  readonly state_updated_at?: string;
+  readonly log_updated_at?: string;
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -191,7 +198,8 @@ export function renderTeamChanges(
       const missingActions = agent.required_actions.filter(
         (action) => !agentReceipts.includes(action),
       );
-      const value = `${agent.state}:${agent.task}:${agent.max_commands ?? 8}:${agent.timeout_ms ?? 300_000}:${agent.usage?.total_tokens ?? "pending"}:${agent.completion?.outcome ?? "pending"}:${agentReceipts.join(",")}`;
+      const activity = activityFor(snapshot, agent.agent_id);
+      const value = `${agent.state}:${agent.task}:${agent.max_commands ?? 8}:${agent.timeout_ms ?? 300_000}:${agent.usage?.total_tokens ?? "pending"}:${agent.completion?.outcome ?? "pending"}:${agentReceipts.join(",")}:${activity?.state_updated_at ?? "unknown"}:${activity?.log_updated_at ?? "none"}`;
       if (previous.get(key) === value) continue;
       previous.set(key, value);
       const review =
@@ -203,7 +211,7 @@ export function renderTeamChanges(
         ? `\n          summary=${compact(agent.completion.summary, 180)}`
         : "";
       lines.push(
-        `TIMELINE  ${agent.kind.toUpperCase()} ${agent.role}  ${agent.state.toUpperCase()}  status=${statusReason(agent, missingActions)}${review}\n          task=${compact(agent.task, 180)}${summary}\n          runtime=${agent.runtime} model=${agent.profile?.model ?? "default"} tools=${agent.model_tool_mode ?? "default"} bounds=commands:${agent.max_commands ?? 8} timeout_ms:${agent.timeout_ms ?? 300_000}\n          tokens=${agent.usage?.total_tokens ?? "pending"}/${agent.token_budget} input=${agent.usage?.input_tokens ?? "pending"} cached=${agent.usage?.cached_input_tokens ?? "pending"} output=${agent.usage?.output_tokens ?? "pending"} reasoning=${agent.usage?.reasoning_output_tokens ?? "pending"} accounting=${agent.usage?.source ?? "pending"}\n          required=${agent.required_actions.join(",") || "none"} missing=${missingActions.join(",") || "none"} receipts=${agentReceipts.join(",") || "none"} coordination=${agent.coordination_participant}\n          id=${agent.agent_id} parent=${agent.parent_agent_id ?? (agent.kind === "manager" ? "root" : "manager")}`,
+        `TIMELINE  ${agent.kind.toUpperCase()} ${agent.role}  ${agent.state.toUpperCase()}  status=${statusReason(agent, missingActions)}${review}\n          task=${compact(agent.task, 180)}${summary}\n          runtime=${agent.runtime} model=${agent.profile?.model ?? "default"} tools=${agent.model_tool_mode ?? "default"} bounds=commands:${agent.max_commands ?? 8} timeout_ms:${agent.timeout_ms ?? 300_000}\n          activity=last_change:${activity?.state_updated_at ?? "unknown"} log:${activity?.log_updated_at ?? "none"}\n          tokens=${agent.usage?.total_tokens ?? "pending"}/${agent.token_budget} input=${agent.usage?.input_tokens ?? "pending"} cached=${agent.usage?.cached_input_tokens ?? "pending"} output=${agent.usage?.output_tokens ?? "pending"} reasoning=${agent.usage?.reasoning_output_tokens ?? "pending"} accounting=${agent.usage?.source ?? "pending"}\n          required=${agent.required_actions.join(",") || "none"} missing=${missingActions.join(",") || "none"} receipts=${agentReceipts.join(",") || "none"} coordination=${agent.coordination_participant}\n          id=${agent.agent_id} parent=${agent.parent_agent_id ?? (agent.kind === "manager" ? "root" : "manager")}`,
       );
     }
     for (const plan of snapshot.plans ?? []) {
@@ -232,4 +240,8 @@ function statusReason(agent: AgentRecord, missingActions: readonly string[]): st
   if (agent.completion) return agent.completion.outcome;
   if (agent.state === "failed") return "failed:no-completion";
   return "completed:no-completion";
+}
+
+function activityFor(snapshot: TeamSnapshot, agentID: string): AgentActivity | undefined {
+  return snapshot.activity?.find((activity) => activity.agent_id === agentID);
 }

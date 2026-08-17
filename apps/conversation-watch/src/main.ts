@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createCoordinationLauncher } from "../../../packages/coordination-preview/src/launcher.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
@@ -9,6 +9,10 @@ import {
   renderRecord,
   renderTeamChanges,
   watchRecords,
+} from "../../../packages/conversation-watch/src/watch.js";
+import type {
+  AgentActivity,
+  TeamSnapshot,
 } from "../../../packages/conversation-watch/src/watch.js";
 
 const launcherPath = process.env.YUKH_COORDINATION_LAUNCHER;
@@ -98,8 +102,33 @@ for (;;) {
     lifecycleOffset += records.length;
   }
   if (teamStore) {
-    for (const line of renderTeamChanges(teamStore.teams(), teamView))
+    for (const line of renderTeamChanges(withActivity(workspace!, teamStore.teams()), teamView))
       process.stdout.write(`${line}\n\n`);
   }
   await new Promise((resolve) => setTimeout(resolve, 1_000));
+}
+
+function withActivity(workspace: string, snapshots: readonly TeamSnapshot[]): TeamSnapshot[] {
+  return snapshots.map((snapshot) => ({
+    ...snapshot,
+    activity: snapshot.agents.map((agent): AgentActivity => {
+      const root = join(workspace, ".yukh", "teams", snapshot.team.team_id, "agents");
+      return {
+        agent_id: agent.agent_id,
+        ...mtime(join(root, `${agent.agent_id}.json`), "state_updated_at"),
+        ...mtime(join(root, `${agent.agent_id}.log`), "log_updated_at"),
+      };
+    }),
+  }));
+}
+
+function mtime(path: string, key: "state_updated_at" | "log_updated_at"): Partial<AgentActivity> {
+  try {
+    const info = statSync(path);
+    if (!info.isFile()) return {};
+    return { [key]: info.mtime.toISOString() };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
 }
