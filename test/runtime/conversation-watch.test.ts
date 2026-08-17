@@ -221,9 +221,78 @@ test("watch exposes manager accounting and receipt-backed actions", () => {
   ).join("\n");
   assert.match(changes, /TIMELINE  MANAGER delivery-manager  COMPLETED  status=succeeded/u);
   assert.match(changes, /input=5000 cached=3000 output=500 reasoning=100/u);
-  assert.match(changes, /required=team.status receipts=team.status/u);
+  assert.match(changes, /required=team.status missing=none receipts=team.status/u);
   assert.match(changes, /PLAN  plan-9776aa63-2b13-4d98-ab2b-5b0c8b0354aa  RUNNING/u);
   assert.match(changes, /workers=1 synthesis=worker-4dc1c6d1/u);
+});
+
+test("watch status names only missing required receipts", () => {
+  const teamID = "team-0eae0789-0d76-493a-9d89-2f44c9f819cd";
+  const managerID = "worker-9776aa63-2b13-4d98-ab2b-5b0c8b0354aa";
+  const changes = renderTeamChanges(
+    [
+      {
+        team: {
+          schema: 1,
+          team_id: teamID,
+          goal: "Track missing receipts",
+          workspace: "/tmp/project",
+          manager_runtime: "codex",
+          manager_role: "delivery-manager",
+          manager_mission: "Keep operator status precise",
+          max_agents: 3,
+          max_depth: 2,
+          token_budget: 60_000,
+          state: "active",
+        },
+        agents: [
+          {
+            schema: 1,
+            agent_id: managerID,
+            kind: "manager",
+            coordination_agent: "agent-delivery-manager-61e1f378",
+            coordination_participant: "agent:delivery-manager-61e1f378",
+            team_id: teamID,
+            runtime: "codex",
+            role: "delivery-manager",
+            task: "Prepare and engage a worker",
+            depth: 0,
+            can_spawn: true,
+            token_budget: 20_000,
+            required_actions: ["policy.profile", "agent.engage"],
+            max_commands: 0,
+            timeout_ms: 60_000,
+            state: "defined",
+          },
+        ],
+        receipts: [
+          {
+            schema: 1,
+            receipt_id: "receipt-9776aa63-2b13-4d98-ab2b-5b0c8b0354aa",
+            team_id: teamID,
+            action: "agent.engage",
+            actor_agent_id: managerID,
+            subject_agent_id: "worker-3dc1c6d1-ac73-4f39-9d48-301123385534",
+            outcome: "succeeded",
+          },
+        ],
+        plans: [],
+        tokens: {
+          budget: 60_000,
+          allocated: 20_000,
+          observed: 0,
+          remaining: 60_000,
+          pending_agents: 1,
+          unaccounted_agents: 0,
+          exceeded_agents: 0,
+        },
+      },
+    ],
+    new Map(),
+  ).join("\n");
+  assert.match(changes, /status=waiting:policy\.profile/u);
+  assert.match(changes, /missing=policy\.profile receipts=agent\.engage/u);
+  assert.doesNotMatch(changes, /status=waiting:policy\.profile,agent\.engage/u);
 });
 
 test("watch marks over-budget summaries as reviewable", () => {
