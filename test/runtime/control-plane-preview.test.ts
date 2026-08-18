@@ -233,6 +233,13 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(initial.headers.get("cache-control"), "no-store");
     assert.deepEqual((await initial.json()).previews, []);
 
+    const initialReadiness = await fetch(`${base}/api/manager-plan/launch-readiness`);
+    assert.equal(initialReadiness.status, 200);
+    const initialReadinessBody = await initialReadiness.json();
+    assert.equal(initialReadinessBody.schema, "yukh-control-plane-launch-readiness-v1");
+    assert.equal(initialReadinessBody.outcome, "blocked");
+    assert.equal(initialReadinessBody.reasons[0].code, "missing_plan_preview");
+
     const goal = "Persist this sensitive manager plan preview locally";
     const proposed = await fetch(`${base}/api/manager-plan/previews`, {
       method: "POST",
@@ -251,6 +258,11 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(proposedBody.preview.proposed_workers.length, 2);
     assert.match(proposedBody.preview.goal_digest, /^sha-256:[a-f0-9]{64}$/u);
 
+    const proposedReadiness = await fetch(`${base}/api/manager-plan/launch-readiness`);
+    const proposedReadinessBody = await proposedReadiness.json();
+    assert.equal(proposedReadinessBody.outcome, "blocked");
+    assert.equal(proposedReadinessBody.reasons[0].code, "plan_not_approved");
+
     const approved = await fetch(`${base}/api/manager-plan/previews`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -267,6 +279,12 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(approvedBody.preview.state, "approved-preview");
     assert.match(approvedBody.preview.receipt_id, /^preview-receipt-/u);
 
+    const approvedReadiness = await fetch(`${base}/api/manager-plan/launch-readiness`);
+    const approvedReadinessBody = await approvedReadiness.json();
+    assert.equal(approvedReadinessBody.outcome, "ready");
+    assert.deepEqual(approvedReadinessBody.reasons, []);
+    assert.doesNotMatch(JSON.stringify(approvedReadinessBody), /sensitive manager plan preview/iu);
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -276,6 +294,12 @@ test("control plane preview persists local manager plan previews without leaking
     const denied = await fetch(`${base}/api/manager-plan/previews`, { method: "DELETE" });
     assert.equal(denied.status, 405);
     assert.equal(denied.headers.get("allow"), "GET, POST");
+
+    const readinessDenied = await fetch(`${base}/api/manager-plan/launch-readiness`, {
+      method: "POST",
+    });
+    assert.equal(readinessDenied.status, 405);
+    assert.equal(readinessDenied.headers.get("allow"), "GET");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -313,6 +337,8 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /renderTeamDetail/u);
   assert.match(data, /renderPlanPreview/u);
   assert.match(data, /api\/manager-plan\/previews/u);
+  assert.match(data, /api\/manager-plan\/launch-readiness/u);
+  assert.match(data, /Launch readiness/u);
   assert.match(data, /Persisted manager plan/u);
   assert.match(data, /Dry-run manager plan/u);
   assert.match(data, /no workers launched/u);
@@ -351,5 +377,6 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.preview-actions/u);
   assert.match(css, /\.approval-receipt/u);
   assert.match(css, /\.approved-preview/u);
+  assert.match(css, /\.readiness-panel/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });
