@@ -621,14 +621,90 @@ const suggestWorkers = (goal) => {
   return [...new Set(roles)];
 };
 
-const renderPlanPreview = ({ goal, mode, provider, budget }) => {
+let latestPlanInput = null;
+
+const persistPlanPreview = async ({ goal, mode, provider, budget, state = "proposed" }) => {
+  try {
+    const response = await fetch("./api/manager-plan/previews", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ goal, mode, provider, token_budget: budget, state }),
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.preview ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const loadPersistedPlanPreview = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/previews", { cache: "no-store" });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.previews?.[0] ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const renderPersistedPlanPreview = (preview) => {
+  byId("plan-preview").innerHTML = `
+    <article class="preview-card ${preview.state === "approved-preview" ? "approved-preview" : ""}">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">Persisted manager plan</p>
+          <h4>${escapeHtml(preview.mode)}</h4>
+        </div>
+        <span class="status-pill small preview-status"><span class="dot ${preview.state === "approved-preview" ? "ok" : "warn"}"></span>${escapeHtml(preview.state)}</span>
+      </div>
+      <p class="muted">Goal ${escapeHtml(preview.goal_digest)}</p>
+      <div class="preview-grid">
+        <article>
+          <span>Manager</span>
+          <strong>${escapeHtml(preview.provider)}</strong>
+          <p class="muted">${preview.manager_reserve.toLocaleString()} tokens reserved for plan, synthesis and receipts.</p>
+        </article>
+        <article>
+          <span>Workers proposed</span>
+          <strong>${preview.proposed_workers.length}</strong>
+          <p class="muted">${preview.proposed_workers.map((worker) => `${worker.role}: ${worker.token_budget.toLocaleString()}`).join(" · ")}</p>
+        </article>
+        <article>
+          <span>Safety reserve</span>
+          <strong>${preview.safety_reserve.toLocaleString()}</strong>
+          <p class="muted">Held back until operator approval.</p>
+        </article>
+      </div>
+      ${
+        preview.receipt_id
+          ? `<div class="approval-receipt">
+              <span>Persisted local receipt</span>
+              <strong>${escapeHtml(preview.receipt_id)}</strong>
+              <p class="muted">Stored in the local Control Plane runtime. Workers remain stopped.</p>
+            </div>`
+          : ""
+      }
+    </article>
+  `;
+};
+
+const renderPlanPreview = async ({ goal, mode, provider, budget }) => {
+  latestPlanInput = { goal, mode, provider, budget };
+  const persisted = await persistPlanPreview(latestPlanInput);
   const safeBudget = Number.isFinite(budget) && budget > 0 ? Math.floor(budget) : 0;
-  const managerReserve = Math.floor(safeBudget * 0.25);
-  const workerReserve = Math.floor(safeBudget * 0.55);
-  const safetyReserve = Math.max(0, safeBudget - managerReserve - workerReserve);
-  const workers = suggestWorkers(goal);
-  const perWorker = workers.length > 0 ? Math.floor(workerReserve / workers.length) : 0;
-  const receiptId = `preview-receipt-${Date.now().toString(36)}`;
+  const managerReserve = persisted?.manager_reserve ?? Math.floor(safeBudget * 0.25);
+  const workerReserve = persisted?.worker_reserve ?? Math.floor(safeBudget * 0.55);
+  const safetyReserve =
+    persisted?.safety_reserve ?? Math.max(0, safeBudget - managerReserve - workerReserve);
+  const workers =
+    persisted?.proposed_workers ??
+    suggestWorkers(goal).map((worker) => ({
+      role: worker,
+      token_budget: Math.floor(workerReserve / suggestWorkers(goal).length),
+    }));
+  const receiptId = persisted?.receipt_id ?? `preview-receipt-${Date.now().toString(36)}`;
 
   byId("plan-preview").innerHTML = `
     <article class="preview-card" data-preview-receipt-id="${receiptId}">
@@ -649,7 +725,7 @@ const renderPlanPreview = ({ goal, mode, provider, budget }) => {
         <article>
           <span>Workers proposed</span>
           <strong>${workers.length}</strong>
-          <p class="muted">${workers.map((worker) => `${worker}: ${perWorker.toLocaleString()}`).join(" · ")}</p>
+          <p class="muted">${workers.map((worker) => `${worker.role}: ${worker.token_budget.toLocaleString()}`).join(" · ")}</p>
         </article>
         <article>
           <span>Safety reserve</span>
@@ -671,9 +747,15 @@ const renderPlanPreview = ({ goal, mode, provider, budget }) => {
   `;
 };
 
-byId("plan-preview").addEventListener("click", (event) => {
+byId("plan-preview").addEventListener("click", async (event) => {
   const button = event.target.closest(".approve-preview-button");
   if (!button) return;
+  if (latestPlanInput) {
+    const approved = await persistPlanPreview({ ...latestPlanInput, state: "approved-preview" });
+    if (approved?.receipt_id) {
+      button.closest(".preview-card")?.setAttribute("data-preview-receipt-id", approved.receipt_id);
+    }
+  }
 
   const card = button.closest(".preview-card");
   const receiptId = card?.getAttribute("data-preview-receipt-id") ?? "preview-receipt";
@@ -697,10 +779,15 @@ byId("plan-preview").addEventListener("click", (event) => {
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  renderPlanPreview({
+  void renderPlanPreview({
     goal: byId("plan-goal").value.trim() || "Untitled Yukh manager plan",
     mode: byId("plan-mode").value,
     provider: byId("plan-provider").value,
     budget: Number.parseInt(byId("plan-budget").value.replaceAll(/[^\d]/g, ""), 10),
   });
 });
+
+const persistedPlan = await loadPersistedPlanPreview();
+if (persistedPlan) {
+  renderPersistedPlanPreview(persistedPlan);
+}
