@@ -98,6 +98,24 @@ const data = {
 };
 
 const byId = (id) => document.getElementById(id);
+const topologyStateLabel = (state) => state.replaceAll("_", " ");
+const loadTopology = async () => {
+  try {
+    const response = await fetch("./api/topology/status", { cache: "no-store" });
+    if (!response.ok) return data.topology;
+    const status = await response.json();
+    if (
+      status?.schema !== "yukh-control-plane-topology-status-v1" ||
+      !Array.isArray(status.runtimes)
+    ) {
+      return data.topology;
+    }
+    return status.runtimes;
+  } catch {
+    return data.topology;
+  }
+};
+
 const activeTeams = data.teams.filter((team) => team.state !== "complete");
 const agents = data.teams.flatMap((team) => team.agents);
 const used = data.teams.reduce((sum, team) => sum + team.budget.used, 0);
@@ -109,7 +127,8 @@ byId("metric-agents").textContent = String(agents.length);
 byId("metric-budget").textContent = `${Math.round((used / allocated) * 100)}% used`;
 byId("metric-providers").textContent = "CLI + SDK";
 
-byId("topology-panels").innerHTML = data.topology
+const topology = await loadTopology();
+byId("topology-panels").innerHTML = topology
   .map(
     (node) => `
       <article class="topology-node">
@@ -118,7 +137,7 @@ byId("topology-panels").innerHTML = data.topology
             <p class="eyebrow">${node.owner}</p>
             <h4>${node.name}</h4>
           </div>
-          <span class="status-pill small"><span class="dot ${node.state.includes("ready") ? "ok" : "warn"}"></span>${node.state}</span>
+          <span class="status-pill small"><span class="dot ${node.state.includes("ready") ? "ok" : "warn"}"></span>${topologyStateLabel(node.state)}</span>
         </div>
         <dl>
           <div><dt>Writes</dt><dd>${node.writes}</dd></div>

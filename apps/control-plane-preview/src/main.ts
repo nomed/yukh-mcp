@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createTopologyStatus } from "./topology-status.js";
 
 type ControlPlaneOptions = {
   readonly host: string;
@@ -14,6 +15,8 @@ const CONTENT_TYPES = new Map([
   ["styles.css", "text/css; charset=utf-8"],
   ["mock-data.js", "text/javascript; charset=utf-8"],
 ]);
+
+const API_TOPOLOGY_STATUS_PATH = "/api/topology/status";
 
 export function parseArguments(argv: readonly string[]): ControlPlaneOptions {
   const options = { host: "127.0.0.1", port: 7345 } as {
@@ -59,6 +62,27 @@ function requestedFile(url = "/"): string | null {
 
 export function createControlPlaneServer(staticRoot = defaultStaticRoot()): Server {
   return createServer(async (request, response) => {
+    if (
+      request.url &&
+      new URL(request.url, "http://127.0.0.1").pathname === API_TOPOLOGY_STATUS_PATH
+    ) {
+      if (request.method !== "GET") {
+        response.writeHead(405, {
+          allow: "GET",
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+        return;
+      }
+      response.writeHead(200, {
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify(createTopologyStatus()));
+      return;
+    }
+
     const file = requestedFile(request.url);
     if (!file) {
       response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
