@@ -38,6 +38,29 @@ const data = {
       ],
       plans: [{ plan_id: "plan-preview", state: "proposed", worker_count: 2, has_synthesis: true }],
       receipts_count: 1,
+      tasks: [
+        {
+          id: "YKP-CP-252",
+          title: "Expose manager detail without leaking private task bodies",
+          owner: "manager",
+          state: "review",
+          priority: "high",
+        },
+        {
+          id: "YKP-CP-253",
+          title: "Design command center overview for operators",
+          owner: "frontend-worker",
+          state: "in_progress",
+          priority: "high",
+        },
+        {
+          id: "YKP-CP-254",
+          title: "Add provider/model configuration after read-only flow is understandable",
+          owner: "delivery-manager",
+          state: "ready",
+          priority: "medium",
+        },
+      ],
     },
     {
       id: "team-task-board-smoke",
@@ -58,6 +81,15 @@ const data = {
       ],
       plans: [],
       receipts_count: 2,
+      tasks: [
+        {
+          id: "YKP-SMOKE-001",
+          title: "Verify coordinator launches a worker and validates the answer receipt",
+          owner: "agent-b",
+          state: "done",
+          priority: "medium",
+        },
+      ],
     },
   ],
   topology: [
@@ -157,9 +189,50 @@ const teamGoal = (team) => team.goal ?? `goal ${team.goal_digest.slice(0, 19)}�
 const teamMode = (team) => team.mode ?? team.manager_runtime ?? "manager runtime";
 const agentName = (agent) => agent.name ?? `${agent.kind}:${agent.role}`;
 const agentProvider = (agent) => agent.provider ?? agent.runtime;
+const agentStateClass = (state) =>
+  ["answered", "completed", "done"].includes(state) ? "ok" : "warn";
 const teamManager = (team) =>
   team.agents.find((agent) => agent.kind === "manager") ?? team.agents[0];
 const teamWorkers = (team) => team.agents.filter((agent) => agent !== teamManager(team));
+const taskStateRank = { ready: 0, in_progress: 1, review: 2, done: 3 };
+const teamTasks = (team) =>
+  team.tasks ?? [
+    ...(team.plans ?? []).map((plan) => ({
+      id: plan.plan_id,
+      title: `Plan ${plan.state} with ${plan.worker_count} proposed workers`,
+      owner: teamManager(team)?.role ?? "manager",
+      state: plan.state === "approved" ? "in_progress" : "ready",
+      priority: "medium",
+    })),
+    ...teamWorkers(team).map((worker) => ({
+      id: worker.agent_id,
+      title: `${worker.role} worker lifecycle`,
+      owner: agentName(worker),
+      state: worker.state === "completed" || worker.state === "answered" ? "done" : "in_progress",
+      priority: "medium",
+    })),
+  ];
+const allTasks = teams
+  .flatMap((team) => teamTasks(team).map((task) => ({ ...task, team_id: teamId(team) })))
+  .sort((a, b) => (taskStateRank[a.state] ?? 9) - (taskStateRank[b.state] ?? 9));
+const conversations = [
+  ...data.transcript.map((event) => ({
+    id: event.eventId,
+    label: `${event.from} → ${event.to}`,
+    state: event.kind,
+    body: event.body,
+  })),
+  ...teams.flatMap((team) =>
+    (team.agents ?? [])
+      .filter((agent) => (agent.missing_required_actions ?? []).length > 0)
+      .map((agent) => ({
+        id: `${teamId(team)}:${agentName(agent)}:missing`,
+        label: `${agentName(agent)} · required actions`,
+        state: "missing",
+        body: `Missing ${agent.missing_required_actions.join(", ")}`,
+      })),
+  ),
+].slice(0, 5);
 const activeTeams = teams.filter((team) => !["complete", "stopped"].includes(team.state));
 const agents = teams.flatMap((team) => team.agents);
 const used = teams.reduce(
@@ -177,6 +250,74 @@ byId("metric-agents").textContent = String(agents.length);
 byId("metric-budget").textContent =
   allocated > 0 ? `${Math.round((used / allocated) * 100)}% used` : "no budget";
 byId("metric-providers").textContent = "CLI + SDK";
+
+byId("manager-count").textContent = `${activeTeams.length} active`;
+byId("manager-list").innerHTML = teams
+  .map((team) => {
+    const manager = teamManager(team);
+    const workers = teamWorkers(team);
+    const budget = teamBudget(team);
+    const budgetTotal = budget?.allocated ?? budget?.budget ?? 0;
+    const budgetUsed = budget?.used ?? budget?.observed ?? 0;
+    const percentage = budgetTotal > 0 ? Math.round((budgetUsed / budgetTotal) * 100) : 0;
+    const missing = manager?.missing_required_actions ?? [];
+    return `
+      <article class="manager-card">
+        <div class="manager-card-main">
+          <p class="eyebrow">${teamMode(team)}</p>
+          <h4>${manager?.role ?? "manager pending"}</h4>
+          <p class="muted clamp-2">${teamGoal(team)}</p>
+        </div>
+        <div class="manager-card-meta">
+          <span class="status-pill small"><span class="dot ${team.state === "complete" ? "ok" : "warn"}"></span>${team.state}</span>
+          <span>${workers.length} workers</span>
+          <span>${percentage}% budget</span>
+          <span>${missing.length === 0 ? "receipts ok" : `${missing.length} missing`}</span>
+        </div>
+      </article>
+    `;
+  })
+  .join("");
+
+byId("task-board").innerHTML = ["ready", "in_progress", "review", "done"]
+  .map((state) => {
+    const tasks = allTasks.filter((task) => task.state === state);
+    return `
+      <section class="task-column">
+        <div class="task-column-title">
+          <strong>${state.replaceAll("_", " ")}</strong>
+          <span>${tasks.length}</span>
+        </div>
+        ${tasks
+          .map(
+            (task) => `
+              <article class="task-card">
+                <span class="chip">${task.id}</span>
+                <h4>${task.title}</h4>
+                <p class="muted">${task.team_id} · ${task.owner}</p>
+                <span class="priority ${task.priority}">${task.priority}</span>
+              </article>
+            `,
+          )
+          .join("")}
+      </section>
+    `;
+  })
+  .join("");
+
+byId("conversation-feed").innerHTML = conversations
+  .map(
+    (event) => `
+      <article class="conversation-event">
+        <div>
+          <span class="chip">${event.state}</span>
+          <strong>${event.label}</strong>
+        </div>
+        <p class="muted clamp-2">${event.body}</p>
+      </article>
+    `,
+  )
+  .join("");
 
 const topology = await loadTopology();
 byId("topology-panels").innerHTML = topology
@@ -284,7 +425,7 @@ if (selectedTeam) {
                 <strong>${agent.role}</strong>
                 <span class="muted">${agentName(agent)} · ${agentProvider(agent)} · ${agent.coordination_participant ?? "coordination pending"}</span>
               </div>
-              <span class="status-pill small"><span class="dot ${["answered", "completed"].includes(agent.state) ? "ok" : "warn"}"></span>${agent.state}</span>
+              <span class="status-pill small"><span class="dot ${agentStateClass(agent.state)}"></span>${agent.state}</span>
             </article>
           `,
         )

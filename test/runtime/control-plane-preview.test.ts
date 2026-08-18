@@ -182,18 +182,15 @@ test("control plane preview exposes redacted live team status", async () => {
     assert.match(body.teams[0].goal_digest, /^sha-256:[a-f0-9]{64}$/u);
     assert.equal(body.teams[0].receipts_count, 1);
     assert.equal(body.teams[0].agents.length, 2);
-    assert.equal(body.teams[0].agents[0].kind, "manager");
-    assert.deepEqual(body.teams[0].agents[0].required_actions, [
-      "team.status",
-      "agent.engage",
-      "agent.await",
-    ]);
-    assert.deepEqual(body.teams[0].agents[0].missing_required_actions, [
-      "agent.engage",
-      "agent.await",
-    ]);
-    assert.equal(body.teams[0].agents[1].role, "frontend-worker");
-    assert.equal(body.teams[0].agents[1].state, "running");
+    const manager = body.teams[0].agents.find((item: { kind: string }) => item.kind === "manager");
+    const worker = body.teams[0].agents.find(
+      (item: { role: string }) => item.role === "frontend-worker",
+    );
+    assert.ok(manager);
+    assert.ok(worker);
+    assert.deepEqual(manager.required_actions, ["team.status", "agent.engage", "agent.await"]);
+    assert.deepEqual(manager.missing_required_actions, ["agent.engage", "agent.await"]);
+    assert.equal(worker.state, "running");
     assert.equal(body.teams[0].tokens.budget, 90_000);
     assert.equal(body.teams[0].tokens.allocated, 35_000);
 
@@ -213,6 +210,11 @@ test("control plane preview explains runtime topology without Mermaid", async ()
 
   assert.match(html, /Runtime topology/u);
   assert.match(html, /Who owns what/u);
+  assert.match(html, /Command center/u);
+  assert.match(html, /Managers, teams and work in motion/u);
+  assert.match(html, /Active managers/u);
+  assert.match(html, /Task flow/u);
+  assert.match(html, /Communication/u);
   assert.match(html, /Yukh Projects/u);
   assert.match(html, /Yukh MCP/u);
   assert.match(html, /Coordination/u);
@@ -222,7 +224,22 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/topology\/status/u);
   assert.match(data, /api\/teams\/status/u);
   assert.match(data, /missing_required_actions/u);
+  assert.match(data, /task-board/u);
+  assert.match(data, /conversation-feed/u);
   assert.match(data, /YKP_WORK_EVENTS_V1/u);
   assert.match(data, /message is evidence, not work authority/u);
   assert.doesNotMatch(`${html}\n${data}`, /mermaid/iu);
+});
+
+test("control plane preview has bounded text containers for operator UI", async () => {
+  const css = await readFile("apps/control-plane-preview/static/styles.css", "utf8");
+
+  assert.match(css, /overflow-wrap: anywhere/u);
+  assert.match(css, /\.clamp-2/u);
+  assert.match(css, /max-width: 100%/u);
+  assert.match(css, /white-space: normal/u);
+  assert.match(css, /\.task-board/u);
+  assert.match(css, /\.manager-card/u);
+  assert.match(css, /\.conversation-event/u);
+  assert.match(css, /@media \(max-width: 640px\)/u);
 });
