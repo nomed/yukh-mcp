@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Yukh Control Plane Preview</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">Y</span>
+        <div>
+          <p class="eyebrow">Yukh suite</p>
+          <h1>Control Plane</h1>
+        </div>
+      </div>
+      <div class="status-pill"><span class="dot ok"></span>Local preview</div>
+    </header>
+
+    <main class="shell">
+      <aside class="sidebar" aria-label="Projects">
+        <button class="primary">Start team</button>
+        <nav>
+          <a class="active" href="#dashboard">Dashboard</a>
+          <a href="#teams">Teams</a>
+          <a href="#transcript">Transcript</a>
+          <a href="#budgets">Budgets</a>
+          <a href="#settings">Providers</a>
+        </nav>
+        <section class="card compact">
+          <p class="eyebrow">Current workspace</p>
+          <strong id="workspace-name">yukh-task-board</strong>
+          <span class="muted">/Users/nomed/Code/yulh-workspace/yukh-task-board</span>
+        </section>
+      </aside>
+
+      <section class="content" id="dashboard">
+        <section class="hero card">
+          <div>
+            <p class="eyebrow">Manager-first run</p>
+            <h2>Use Yukh without manual agent ping-pong.</h2>
+            <p>
+              Start from a goal, inspect the manager plan, approve delegation only when budget,
+              worker roles and provider choices are clear.
+            </p>
+          </div>
+          <div class="hero-actions">
+            <button class="primary">New plan-first run</button>
+            <button class="secondary">Open latest logs</button>
+          </div>
+        </section>
+
+        <section class="grid metrics" aria-label="Run summary">
+          <article class="metric card">
+            <span>Active teams</span><strong id="metric-teams">—</strong>
+          </article>
+          <article class="metric card">
+            <span>Running agents</span><strong id="metric-agents">—</strong>
+          </article>
+          <article class="metric card">
+            <span>Token budget</span><strong id="metric-budget">—</strong>
+          </article>
+          <article class="metric card">
+            <span>Provider mix</span><strong id="metric-providers">—</strong>
+          </article>
+        </section>
+
+        <section class="two-column" id="teams">
+          <article class="card">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">Teams</p>
+                <h3>Live work</h3>
+              </div>
+              <span class="muted">mock data</span>
+            </div>
+            <div id="team-list" class="team-list"></div>
+          </article>
+
+          <article class="card" id="budgets">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">Budget</p>
+                <h3>Token control</h3>
+              </div>
+              <span class="status-pill small"><span class="dot warn"></span>reviewable</span>
+            </div>
+            <div id="budget-panel"></div>
+          </article>
+        </section>
+
+        <section class="two-column wide-left">
+          <article class="card" id="transcript">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">Coordination</p>
+                <h3>Verified transcript</h3>
+              </div>
+              <button class="secondary small-button">Full bodies</button>
+            </div>
+            <div id="transcript-list" class="transcript"></div>
+          </article>
+
+          <article class="card" id="settings">
+            <div class="section-title">
+              <div>
+                <p class="eyebrow">Start</p>
+                <h3>New team</h3>
+              </div>
+            </div>
+            <form class="start-form">
+              <label
+                >Goal<textarea>
+Improve the Yukh control plane with one bounded UI increment.</textarea>
+              </label>
+              <label
+                >Mode<select>
+                  <option>plan-first</option>
+                  <option>delegate, explicit workers</option>
+                </select></label
+              >
+              <label
+                >Provider<select>
+                  <option>Copilot SDK workers</option>
+                  <option>Codex manager CLI</option>
+                  <option>Codex SDK, planned</option>
+                </select></label
+              >
+              <label>Budget<input value="120000" inputmode="numeric" /></label>
+              <button type="button" class="primary">Create manager plan</button>
+            </form>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="./mock-data.js"></script>
+  </body>
+</html>

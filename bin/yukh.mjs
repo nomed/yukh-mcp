@@ -13,6 +13,14 @@ if (process.argv[2] === "conversation" && process.argv[3] === "watch") {
   process.argv.splice(2, 2);
   const { main } = await import("../dist/apps/team-start/src/main.js");
   main(process.argv.slice(2));
+} else if (process.argv[2] === "team" && process.argv[3] === "start-from-handoff") {
+  process.argv.splice(2, 2);
+  const { main } = await import("../dist/apps/team-start/src/handoff-main.js");
+  main(process.argv.slice(2));
+} else if (process.argv[2] === "control" && process.argv[3] === "start") {
+  process.argv.splice(2, 2);
+  const { main } = await import("../dist/apps/control-plane-preview/src/main.js");
+  main(process.argv.slice(2));
 } else if (process.argv[2] === "team" && process.argv[3] === "preflight-engage") {
   process.argv.splice(2, 2);
   await import("../dist/apps/team-preflight/src/main.js");
@@ -35,8 +43,9 @@ if (process.argv[2] === "conversation" && process.argv[3] === "watch") {
   process.stderr.write(
     "usage: yukh conversation watch [--full] [--verbose]\n       yukh suite baseline [--workspace path] [--format json|text]\n       yukh team serve\n       yukh team propose [--preset suite-qualification|suite-readonly-verifier|micro-doc-edit|micro-code-edit] [--role backend-reviewer] [--work-profile implementation] [--worker-budget N] [--worker-max-commands N] [--worker-timeout-ms N]\n       yukh team preflight-engage [--preset suite-qualification|suite-readonly-verifier|micro-doc-edit|micro-code-edit] [--role backend-reviewer] [--work-profile implementation] [--worker-budget N] [--worker-max-commands N] [--worker-timeout-ms N] [--format json|text] [--output preflight.json]\n       yukh team run-approved --preflight file --approved-digest sha-256:... [--allow-micro-launch true] [--format json|text]\n" +
       "       yukh team start --goal text [--workspace path] [--mode plan-first|delegate] [--runtime codex|copilot] [--team-budget N] [--manager-budget N] [--format json|text]\n" +
+      "       yukh team start-from-handoff --handoff file [--workspace path] [--goal text] [--dry-run true] [--allow-dynamic-workers true] [--format json|text]\n" +
       "       yukh team run-plan-approved --team team-... --plan plan-... --approved-digest sha-256:... [--format json|text]\n" +
-      "       yukh team status --team team-... [--workspace path] [--format json|text]\n       yukh team stop --team team-... [--workspace path] [--format json|text]\n",
+      "       yukh team status --team team-... [--workspace path] [--format json|text]\n       yukh team stop --team team-... [--workspace path] [--format json|text]\n       yukh control start [--host 127.0.0.1] [--port 7345]\n",
   );
   process.exitCode = 2;
 }
