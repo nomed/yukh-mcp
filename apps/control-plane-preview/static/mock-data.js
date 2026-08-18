@@ -10,23 +10,34 @@ const data = {
       agents: [
         {
           name: "manager",
+          kind: "manager",
           role: "product-engineering manager",
           provider: "Codex CLI",
           state: "planned",
+          required_actions: ["team.status", "agent.engage", "agent.await"],
+          missing_required_actions: ["agent.engage", "agent.await"],
         },
         {
           name: "frontend-worker",
+          kind: "worker",
           role: "UI implementer",
           provider: "Copilot SDK",
           state: "proposed",
+          required_actions: [],
+          missing_required_actions: [],
         },
         {
           name: "qa-worker",
+          kind: "worker",
           role: "runtime verifier",
           provider: "Codex SDK planned",
           state: "not launched",
+          required_actions: [],
+          missing_required_actions: [],
         },
       ],
+      plans: [{ plan_id: "plan-preview", state: "proposed", worker_count: 2, has_synthesis: true }],
+      receipts_count: 1,
     },
     {
       id: "team-task-board-smoke",
@@ -35,8 +46,18 @@ const data = {
       state: "complete",
       budget: { allocated: 80000, reserved: 55000, used: 31200 },
       agents: [
-        { name: "agent-b", role: "frontend worker", provider: "Copilot CLI", state: "answered" },
+        {
+          name: "agent-b",
+          kind: "worker",
+          role: "frontend worker",
+          provider: "Copilot CLI",
+          state: "answered",
+          required_actions: [],
+          missing_required_actions: [],
+        },
       ],
+      plans: [],
+      receipts_count: 2,
     },
   ],
   topology: [
@@ -136,6 +157,9 @@ const teamGoal = (team) => team.goal ?? `goal ${team.goal_digest.slice(0, 19)}鈥
 const teamMode = (team) => team.mode ?? team.manager_runtime ?? "manager runtime";
 const agentName = (agent) => agent.name ?? `${agent.kind}:${agent.role}`;
 const agentProvider = (agent) => agent.provider ?? agent.runtime;
+const teamManager = (team) =>
+  team.agents.find((agent) => agent.kind === "manager") ?? team.agents[0];
+const teamWorkers = (team) => team.agents.filter((agent) => agent !== teamManager(team));
 const activeTeams = teams.filter((team) => !["complete", "stopped"].includes(team.state));
 const agents = teams.flatMap((team) => team.agents);
 const used = teams.reduce(
@@ -217,6 +241,60 @@ byId("budget-panel").innerHTML = teams
     `;
   })
   .join("");
+
+const selectedTeam = activeTeams[0] ?? teams[0];
+if (selectedTeam) {
+  const manager = teamManager(selectedTeam);
+  const workers = teamWorkers(selectedTeam);
+  const plans = selectedTeam.plans ?? [];
+  const missing = manager?.missing_required_actions ?? [];
+  byId("manager-detail-panel").innerHTML = `
+    <article class="manager-summary">
+      <div>
+        <p class="eyebrow">${teamMode(selectedTeam)}</p>
+        <h3>${manager ? `${manager.role} 路 ${agentProvider(manager)}` : "No manager registered"}</h3>
+        <p class="muted">${teamGoal(selectedTeam)}</p>
+      </div>
+      <span class="status-pill small"><span class="dot ${selectedTeam.state === "complete" ? "ok" : "warn"}"></span>${selectedTeam.state}</span>
+    </article>
+    <div class="manager-grid">
+      <article>
+        <span>Required receipts</span>
+        <strong>${manager?.required_actions?.length ?? 0}</strong>
+        <p class="muted">${missing.length === 0 ? "none missing" : `missing: ${missing.join(", ")}`}</p>
+      </article>
+      <article>
+        <span>Workers</span>
+        <strong>${workers.length}</strong>
+        <p class="muted">${workers.map((worker) => `${worker.role}: ${worker.state}`).join(" 路 ") || "none"}</p>
+      </article>
+      <article>
+        <span>Plans</span>
+        <strong>${plans.length}</strong>
+        <p class="muted">${plans.map((plan) => `${plan.state}, workers=${plan.worker_count}`).join(" 路 ") || "no plan"}</p>
+      </article>
+    </div>
+    <div class="worker-table">
+      ${[manager, ...workers]
+        .filter(Boolean)
+        .map(
+          (agent) => `
+            <article>
+              <div>
+                <strong>${agent.role}</strong>
+                <span class="muted">${agentName(agent)} 路 ${agentProvider(agent)} 路 ${agent.coordination_participant ?? "coordination pending"}</span>
+              </div>
+              <span class="status-pill small"><span class="dot ${["answered", "completed"].includes(agent.state) ? "ok" : "warn"}"></span>${agent.state}</span>
+            </article>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+} else {
+  byId("manager-detail-panel").innerHTML =
+    '<p class="muted">No team state yet. Start from a manager plan to populate this view.</p>';
+}
 
 byId("transcript-list").innerHTML = data.transcript
   .map(

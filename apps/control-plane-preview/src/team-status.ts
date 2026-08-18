@@ -38,6 +38,8 @@ export type ControlPlaneTeamSummary = {
     readonly coordination_participant: string;
     readonly token_budget: number;
     readonly observed_tokens: number;
+    readonly required_actions: readonly string[];
+    readonly missing_required_actions: readonly string[];
     readonly budget_outcome?: string;
     readonly completion_outcome?: string;
   }[];
@@ -82,6 +84,13 @@ export function createTeamStatus(store?: Pick<TeamStore, "teams">): ControlPlane
         coordination_participant: agent.coordination_participant,
         token_budget: agent.token_budget,
         observed_tokens: agent.usage?.total_tokens ?? 0,
+        required_actions: agent.required_actions,
+        missing_required_actions: status.receipts
+          .filter((receipt) => receipt.actor_agent_id === agent.agent_id)
+          .reduce(
+            (missing, receipt) => missing.filter((action) => action !== receipt.action),
+            [...agent.required_actions],
+          ),
         ...(agent.usage ? { budget_outcome: agent.usage.budget_outcome } : {}),
         ...(agent.completion ? { completion_outcome: agent.completion.outcome } : {}),
       })),

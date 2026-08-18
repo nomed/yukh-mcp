@@ -116,15 +116,36 @@ test("control plane preview exposes redacted live team status", async () => {
 
   const workspace = await mkdtemp(join(tmpdir(), "yukh-control-plane-workspace-"));
   const store = new TeamStore(workspace);
-  const team = store.create(
+  const managed = store.createManaged(
     "Deliver sensitive-but-redacted control-plane work",
     "codex",
     4,
     2,
     90_000,
-    { role: "delivery-manager", mission: "Coordinate a bounded increment" },
+    {
+      role: "delivery-manager",
+      profile: {
+        schema: 1,
+        mission: "Coordinate a bounded increment",
+        model: "gpt-5.6-sol",
+        skills: ["testing"],
+        instructions: "Keep output bounded and evidence-oriented.",
+      },
+      task: "Manage sensitive UI task text",
+      token_budget: 15_000,
+      required_actions: ["team.status", "agent.engage", "agent.await"],
+      max_commands: 0,
+      timeout_ms: 60_000,
+    },
   );
-  const agent = store.spawn(team.team_id, {
+  store.receipt(
+    managed.team.team_id,
+    "team.status",
+    managed.manager.agent_id,
+    managed.manager.agent_id,
+  );
+  const agent = store.spawn(managed.team.team_id, {
+    parent_agent_id: managed.manager.agent_id,
     runtime: "copilot",
     role: "frontend-worker",
     task: "Implement sensitive UI task text",
@@ -132,7 +153,7 @@ test("control plane preview exposes redacted live team status", async () => {
     max_commands: 0,
     timeout_ms: 60_000,
   });
-  store.transition(team.team_id, agent.agent_id, "running");
+  store.transition(managed.team.team_id, agent.agent_id, "running");
 
   const server = createControlPlaneServer(root, { teamStore: store });
   await new Promise<void>((resolve, reject) => {
@@ -156,17 +177,28 @@ test("control plane preview exposes redacted live team status", async () => {
     assert.equal(body.schema, "yukh-control-plane-team-status-v1");
     assert.equal(body.source, "local-team-store");
     assert.equal(body.teams.length, 1);
-    assert.equal(body.teams[0].team_id, team.team_id);
+    assert.equal(body.teams[0].team_id, managed.team.team_id);
     assert.equal(body.teams[0].manager_role, "delivery-manager");
     assert.match(body.teams[0].goal_digest, /^sha-256:[a-f0-9]{64}$/u);
-    assert.equal(body.teams[0].agents.length, 1);
-    assert.equal(body.teams[0].agents[0].role, "frontend-worker");
-    assert.equal(body.teams[0].agents[0].state, "running");
+    assert.equal(body.teams[0].receipts_count, 1);
+    assert.equal(body.teams[0].agents.length, 2);
+    assert.equal(body.teams[0].agents[0].kind, "manager");
+    assert.deepEqual(body.teams[0].agents[0].required_actions, [
+      "team.status",
+      "agent.engage",
+      "agent.await",
+    ]);
+    assert.deepEqual(body.teams[0].agents[0].missing_required_actions, [
+      "agent.engage",
+      "agent.await",
+    ]);
+    assert.equal(body.teams[0].agents[1].role, "frontend-worker");
+    assert.equal(body.teams[0].agents[1].state, "running");
     assert.equal(body.teams[0].tokens.budget, 90_000);
-    assert.equal(body.teams[0].tokens.allocated, 20_000);
+    assert.equal(body.teams[0].tokens.allocated, 35_000);
 
     const serialized = JSON.stringify(body);
-    assert.doesNotMatch(serialized, /sensitive-but-redacted|sensitive UI task/iu);
+    assert.doesNotMatch(serialized, /sensitive-but-redacted|sensitive UI task|Manage sensitive/iu);
     assert.doesNotMatch(serialized, /secret|credential|private/iu);
   } finally {
     await new Promise<void>((resolve, reject) => {
@@ -185,8 +217,11 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(html, /Yukh MCP/u);
   assert.match(html, /Coordination/u);
   assert.match(html, /NATS JetStream runtime/u);
+  assert.match(html, /Manager detail/u);
+  assert.match(html, /Current orchestration/u);
   assert.match(data, /api\/topology\/status/u);
   assert.match(data, /api\/teams\/status/u);
+  assert.match(data, /missing_required_actions/u);
   assert.match(data, /YKP_WORK_EVENTS_V1/u);
   assert.match(data, /message is evidence, not work authority/u);
   assert.doesNotMatch(`${html}\n${data}`, /mermaid/iu);

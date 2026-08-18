@@ -294,6 +294,61 @@ nav a:hover {
 .topology-node dd {
   margin: 2px 0 0;
 }
+.manager-detail {
+  display: grid;
+  gap: 14px;
+}
+.manager-summary {
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 16px;
+}
+.manager-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.manager-grid article {
+  background: #0d121c;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+.manager-grid span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.manager-grid strong {
+  font-size: 26px;
+}
+.worker-table {
+  display: grid;
+  gap: 10px;
+}
+.worker-table article {
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px 14px;
+}
+.worker-table article > div span {
+  display: block;
+  margin-top: 4px;
+}
 .section-title {
   align-items: center;
   display: flex;
@@ -308,6 +363,7 @@ nav a:hover {
   display: inline-flex;
   gap: 8px;
   padding: 8px 11px;
+  white-space: nowrap;
 }
 .status-pill.small {
   font-size: 12px;
@@ -423,6 +479,9 @@ textarea {
   .two-column,
   .wide-left,
   .topology-layout,
+  .manager-grid,
+  .manager-summary,
+  .worker-table article,
   .metrics {
     grid-template-columns: 1fr;
   }
