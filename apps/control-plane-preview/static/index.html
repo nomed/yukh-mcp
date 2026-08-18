@@ -22,9 +22,11 @@
       <aside class="sidebar" aria-label="Projects">
         <button class="primary">Start team</button>
         <nav>
-          <a class="active" href="#dashboard">Dashboard</a>
+          <a class="active" href="#dashboard">Command center</a>
           <a href="#topology">Runtime topology</a>
+          <a href="#managers">Managers</a>
           <a href="#teams">Teams</a>
+          <a href="#tasks">Tasks</a>
           <a href="#transcript">Transcript</a>
           <a href="#budgets">Budgets</a>
           <a href="#settings">Providers</a>
@@ -65,6 +67,41 @@
           <article class="metric card">
             <span>Provider mix</span><strong id="metric-providers">—</strong>
           </article>
+        </section>
+
+        <section class="card command-center-card" id="managers">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Command center</p>
+              <h3>Managers, teams and work in motion</h3>
+            </div>
+            <span class="status-pill small"><span class="dot warn"></span>read only</span>
+          </div>
+          <div class="command-center">
+            <section class="manager-lane" aria-label="Active managers">
+              <div class="subsection-title">
+                <h4>Active managers</h4>
+                <span id="manager-count" class="muted">—</span>
+              </div>
+              <div id="manager-list" class="manager-list"></div>
+            </section>
+
+            <section class="task-lane" id="tasks" aria-label="Task flow">
+              <div class="subsection-title">
+                <h4>Task flow</h4>
+                <span class="muted">claim · run · evidence</span>
+              </div>
+              <div id="task-board" class="task-board"></div>
+            </section>
+
+            <section class="conversation-lane" aria-label="Team communication">
+              <div class="subsection-title">
+                <h4>Communication</h4>
+                <span class="muted">latest verified events</span>
+              </div>
+              <div id="conversation-feed" class="conversation-feed"></div>
+            </section>
+          </div>
         </section>
 
         <section class="card topology-card" id="topology">

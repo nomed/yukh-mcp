@@ -21,6 +21,11 @@
 * {
   box-sizing: border-box;
 }
+*,
+*::before,
+*::after {
+  min-width: 0;
+}
 body {
   margin: 0;
   min-height: 100vh;
@@ -38,6 +43,7 @@ textarea {
 h1,
 h2,
 h3,
+h4,
 p {
   margin: 0;
 }
@@ -57,6 +63,23 @@ h3 {
 h4 {
   font-size: 15px;
   margin: 0;
+}
+p,
+dd,
+span,
+strong,
+a,
+button,
+input,
+select,
+textarea {
+  overflow-wrap: anywhere;
+}
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 .topbar {
   align-items: center;
@@ -361,15 +384,18 @@ nav a:hover {
   border: 1px solid var(--line);
   border-radius: 999px;
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 8px;
+  max-width: 100%;
   padding: 8px 11px;
-  white-space: nowrap;
+  white-space: normal;
 }
 .status-pill.small {
   font-size: 12px;
   padding: 6px 9px;
 }
 .dot {
+  flex: 0 0 auto;
   border-radius: 50%;
   display: inline-block;
   height: 9px;
@@ -386,6 +412,109 @@ nav a:hover {
 #budget-panel {
   display: grid;
   gap: 12px;
+}
+.command-center {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.6fr) minmax(280px, 0.85fr);
+}
+.subsection-title {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.manager-lane,
+.task-lane,
+.conversation-lane {
+  background: rgba(13, 18, 28, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  min-height: 100%;
+  padding: 14px;
+}
+.manager-list,
+.conversation-feed {
+  display: grid;
+  gap: 10px;
+}
+.manager-card,
+.conversation-event,
+.task-card {
+  background: var(--panel-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+}
+.manager-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+.manager-card-main {
+  display: grid;
+  gap: 6px;
+}
+.manager-card-meta {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 8px;
+}
+.task-board {
+  align-items: start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.task-column {
+  background: #0b1019;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+.task-column-title {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  justify-content: space-between;
+  text-transform: capitalize;
+}
+.task-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.priority {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.priority.high {
+  color: var(--warn);
+}
+.priority.medium {
+  color: var(--accent-2);
+}
+.conversation-event {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.conversation-event > div {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .team-row,
 .event-row,
@@ -411,8 +540,13 @@ nav a:hover {
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
+  display: inline-block;
   font-size: 12px;
+  line-height: 1.3;
+  max-width: 100%;
   padding: 5px 8px;
+  vertical-align: middle;
+  white-space: normal;
 }
 .chip.good {
   color: var(--accent);
@@ -482,10 +616,28 @@ textarea {
   .manager-grid,
   .manager-summary,
   .worker-table article,
+  .command-center,
   .metrics {
     grid-template-columns: 1fr;
   }
+  .task-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .hero-actions {
     flex-wrap: wrap;
+  }
+}
+@media (max-width: 640px) {
+  .shell {
+    padding: 14px;
+  }
+  .topbar,
+  .section-title,
+  .team-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .task-board {
+    grid-template-columns: 1fr;
   }
 }
