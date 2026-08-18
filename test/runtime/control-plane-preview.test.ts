@@ -217,6 +217,8 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(html, /Communication/u);
   assert.match(html, /Team detail/u);
   assert.match(html, /Plan, workers, tokens and next action/u);
+  assert.match(html, /manager-plan-form/u);
+  assert.match(html, /plan-preview/u);
   assert.match(html, /Yukh Projects/u);
   assert.match(html, /Yukh MCP/u);
   assert.match(html, /Coordination/u);
@@ -230,6 +232,9 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /conversation-feed/u);
   assert.match(data, /team-detail-panel/u);
   assert.match(data, /renderTeamDetail/u);
+  assert.match(data, /renderPlanPreview/u);
+  assert.match(data, /Dry-run manager plan/u);
+  assert.match(data, /no workers launched/u);
   assert.match(data, /data-team-id/u);
   assert.match(data, /aria-current/u);
   assert.match(data, /Next required action/u);
@@ -256,5 +261,7 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.team-detail/u);
   assert.match(css, /\.detail-grid/u);
   assert.match(css, /\.timeline/u);
+  assert.match(css, /\.plan-preview/u);
+  assert.match(css, /\.preview-grid/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });

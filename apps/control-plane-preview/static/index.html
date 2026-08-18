@@ -262,27 +262,28 @@
                 <h3>New team</h3>
               </div>
             </div>
-            <form class="start-form">
+            <form class="start-form" id="manager-plan-form">
               <label
-                >Goal<textarea>
+                >Goal<textarea id="plan-goal">
 Improve the Yukh control plane with one bounded UI increment.</textarea>
               </label>
               <label
-                >Mode<select>
+                >Mode<select id="plan-mode">
                   <option>plan-first</option>
                   <option>delegate, explicit workers</option>
                 </select></label
               >
               <label
-                >Provider<select>
+                >Provider<select id="plan-provider">
                   <option>Copilot SDK workers</option>
                   <option>Codex manager CLI</option>
                   <option>Codex SDK, planned</option>
                 </select></label
               >
-              <label>Budget<input value="120000" inputmode="numeric" /></label>
-              <button type="button" class="primary">Create manager plan</button>
+              <label>Budget<input id="plan-budget" value="120000" inputmode="numeric" /></label>
+              <button type="submit" class="primary">Create manager plan</button>
             </form>
+            <div id="plan-preview" class="plan-preview" aria-live="polite"></div>
           </article>
         </section>
       </section>
