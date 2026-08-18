@@ -30,6 +30,22 @@ export type ControlPlanePlanPreviewStoreStatus = {
   readonly previews: readonly ControlPlanePlanPreviewRecord[];
 };
 
+export type ControlPlaneLaunchReadinessStatus = {
+  readonly schema: "yukh-control-plane-launch-readiness-v1";
+  readonly source: "local-control-plane-store";
+  readonly outcome: "ready" | "blocked";
+  readonly preview?: ControlPlanePlanPreviewRecord;
+  readonly reasons: readonly {
+    readonly code:
+      | "missing_plan_preview"
+      | "plan_not_approved"
+      | "missing_preview_receipt"
+      | "invalid_budget"
+      | "missing_workers";
+    readonly message: string;
+  }[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -99,6 +115,68 @@ export class ControlPlanePlanPreviewStore {
       schema: "yukh-control-plane-plan-previews-v1",
       source: "local-control-plane-store",
       previews: this.#read().previews,
+    };
+  }
+
+  launchReadiness(): ControlPlaneLaunchReadinessStatus {
+    const preview = this.#read().previews[0];
+    if (!preview) {
+      return {
+        schema: "yukh-control-plane-launch-readiness-v1",
+        source: "local-control-plane-store",
+        outcome: "blocked",
+        reasons: [
+          {
+            code: "missing_plan_preview",
+            message: "Create and approve a manager plan preview before launch readiness can pass.",
+          },
+        ],
+      };
+    }
+    const reasons: ControlPlaneLaunchReadinessStatus["reasons"] = [
+      ...(preview.state !== "approved-preview"
+        ? [
+            {
+              code: "plan_not_approved" as const,
+              message: "The latest manager plan preview has not been approved.",
+            },
+          ]
+        : []),
+      ...(!preview.receipt_id
+        ? [
+            {
+              code: "missing_preview_receipt" as const,
+              message: "The latest manager plan preview has no local approval receipt.",
+            },
+          ]
+        : []),
+      ...(preview.token_budget < 1_000 ||
+      preview.manager_reserve < 1 ||
+      preview.worker_reserve < 1 ||
+      preview.safety_reserve < 0
+        ? [
+            {
+              code: "invalid_budget" as const,
+              message: "The token budget split is invalid.",
+            },
+          ]
+        : []),
+      ...(preview.proposed_workers.length < 1 ||
+      preview.proposed_workers.some((worker) => worker.token_budget < 1)
+        ? [
+            {
+              code: "missing_workers" as const,
+              message: "The manager plan preview has no budgeted workers.",
+            },
+          ]
+        : []),
+    ];
+    return {
+      schema: "yukh-control-plane-launch-readiness-v1",
+      source: "local-control-plane-store",
+      outcome: reasons.length === 0 ? "ready" : "blocked",
+      preview,
+      reasons,
     };
   }
 

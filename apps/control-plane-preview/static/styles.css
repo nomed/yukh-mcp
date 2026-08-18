@@ -753,6 +753,41 @@ nav a:hover {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.readiness-panel {
+  border-radius: 16px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.readiness-panel.ready {
+  background: rgba(119, 240, 178, 0.08);
+  border: 1px solid rgba(119, 240, 178, 0.28);
+}
+.readiness-panel.blocked {
+  background: rgba(255, 209, 102, 0.08);
+  border: 1px solid rgba(255, 209, 102, 0.28);
+}
+.readiness-panel > div {
+  display: grid;
+  gap: 5px;
+}
+.readiness-panel span {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.readiness-panel.blocked span {
+  color: var(--warn);
+}
+.readiness-panel ul {
+  color: var(--muted);
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+}
 .preview-card.approved-preview {
   border-color: rgba(119, 240, 178, 0.48);
 }

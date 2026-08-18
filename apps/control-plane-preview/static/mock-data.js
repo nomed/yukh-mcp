@@ -649,7 +649,34 @@ const loadPersistedPlanPreview = async () => {
   }
 };
 
-const renderPersistedPlanPreview = (preview) => {
+const loadLaunchReadiness = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/launch-readiness", { cache: "no-store" });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+};
+
+const readinessPanel = (readiness) => {
+  if (!readiness) return "";
+  return `
+    <div class="readiness-panel ${readiness.outcome}">
+      <div>
+        <span>Launch readiness</span>
+        <strong>${escapeHtml(readiness.outcome)}</strong>
+      </div>
+      ${
+        readiness.reasons.length === 0
+          ? '<p class="muted">Ready for the next explicit launch step. This panel still launches nothing.</p>'
+          : `<ul>${readiness.reasons.map((reason) => `<li>${escapeHtml(reason.message)}</li>`).join("")}</ul>`
+      }
+    </div>
+  `;
+};
+
+const renderPersistedPlanPreview = (preview, readiness = null) => {
   byId("plan-preview").innerHTML = `
     <article class="preview-card ${preview.state === "approved-preview" ? "approved-preview" : ""}">
       <div class="section-title">
@@ -686,6 +713,7 @@ const renderPersistedPlanPreview = (preview) => {
             </div>`
           : ""
       }
+      ${readinessPanel(readiness)}
     </article>
   `;
 };
@@ -775,6 +803,10 @@ byId("plan-preview").addEventListener("click", async (event) => {
   }
   button.setAttribute("disabled", "true");
   button.textContent = "Preview approved";
+  const readiness = await loadLaunchReadiness();
+  if (readiness) {
+    card?.insertAdjacentHTML("beforeend", readinessPanel(readiness));
+  }
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
@@ -789,5 +821,5 @@ byId("manager-plan-form").addEventListener("submit", (event) => {
 
 const persistedPlan = await loadPersistedPlanPreview();
 if (persistedPlan) {
-  renderPersistedPlanPreview(persistedPlan);
+  renderPersistedPlanPreview(persistedPlan, await loadLaunchReadiness());
 }
