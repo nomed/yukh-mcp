@@ -7,6 +7,7 @@ import {
   createControlPlaneServer,
   parseArguments,
 } from "../../apps/control-plane-preview/src/main.js";
+import { ControlPlanePlanPreviewStore } from "../../apps/control-plane-preview/src/plan-preview-store.js";
 import { TeamStore } from "../../packages/team-control/src/store.js";
 
 test("control plane preview parses bounded local server options", () => {
@@ -204,6 +205,84 @@ test("control plane preview exposes redacted live team status", async () => {
   }
 });
 
+test("control plane preview persists local manager plan previews without leaking goal text", async () => {
+  const root = await mkdtemp(join(tmpdir(), "yukh-control-plane-preview-plan-api-"));
+  await writeFile(join(root, "index.html"), "<h1>Control</h1>");
+  await writeFile(join(root, "styles.css"), "body{}");
+  await writeFile(join(root, "mock-data.js"), "export {};");
+
+  const workspace = await mkdtemp(join(tmpdir(), "yukh-control-plane-plan-workspace-"));
+  const planPreviewStore = new ControlPlanePlanPreviewStore(workspace);
+  const server = createControlPlaneServer(root, { planPreviewStore });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  try {
+    const address = server.address();
+    if (typeof address !== "object" || address === null) {
+      throw new TypeError("expected TCP server address");
+    }
+    const base = `http://127.0.0.1:${address.port}`;
+
+    const initial = await fetch(`${base}/api/manager-plan/previews`);
+    assert.equal(initial.status, 200);
+    assert.equal(initial.headers.get("cache-control"), "no-store");
+    assert.deepEqual((await initial.json()).previews, []);
+
+    const goal = "Persist this sensitive manager plan preview locally";
+    const proposed = await fetch(`${base}/api/manager-plan/previews`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        goal,
+        mode: "plan-first",
+        provider: "Copilot SDK workers",
+        token_budget: 120_000,
+      }),
+    });
+    assert.equal(proposed.status, 201);
+    const proposedBody = await proposed.json();
+    assert.equal(proposedBody.preview.state, "proposed");
+    assert.equal(proposedBody.preview.manager_reserve, 30_000);
+    assert.equal(proposedBody.preview.proposed_workers.length, 2);
+    assert.match(proposedBody.preview.goal_digest, /^sha-256:[a-f0-9]{64}$/u);
+
+    const approved = await fetch(`${base}/api/manager-plan/previews`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        goal,
+        mode: "plan-first",
+        provider: "Copilot SDK workers",
+        token_budget: 120_000,
+        state: "approved-preview",
+      }),
+    });
+    assert.equal(approved.status, 201);
+    const approvedBody = await approved.json();
+    assert.equal(approvedBody.preview.state, "approved-preview");
+    assert.match(approvedBody.preview.receipt_id, /^preview-receipt-/u);
+
+    const persisted = await fetch(`${base}/api/manager-plan/previews`);
+    const persistedBody = await persisted.json();
+    assert.equal(persistedBody.previews.length, 2);
+    assert.equal(persistedBody.previews[0].state, "approved-preview");
+    assert.doesNotMatch(JSON.stringify(persistedBody), /sensitive manager plan preview/iu);
+
+    const denied = await fetch(`${base}/api/manager-plan/previews`, { method: "DELETE" });
+    assert.equal(denied.status, 405);
+    assert.equal(denied.headers.get("allow"), "GET, POST");
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
 test("control plane preview explains runtime topology without Mermaid", async () => {
   const html = await readFile("apps/control-plane-preview/static/index.html", "utf8");
   const data = await readFile("apps/control-plane-preview/static/mock-data.js", "utf8");
@@ -233,6 +312,8 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /team-detail-panel/u);
   assert.match(data, /renderTeamDetail/u);
   assert.match(data, /renderPlanPreview/u);
+  assert.match(data, /api\/manager-plan\/previews/u);
+  assert.match(data, /Persisted manager plan/u);
   assert.match(data, /Dry-run manager plan/u);
   assert.match(data, /no workers launched/u);
   assert.match(data, /Approve plan preview/u);

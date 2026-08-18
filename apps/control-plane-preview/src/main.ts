@@ -1,8 +1,12 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
+import {
+  ControlPlanePlanPreviewStore,
+  type ControlPlanePlanPreviewInput,
+} from "./plan-preview-store.js";
 import { createTeamStatus } from "./team-status.js";
 import { createTopologyStatus } from "./topology-status.js";
 
@@ -21,6 +25,7 @@ const CONTENT_TYPES = new Map([
 
 const API_TOPOLOGY_STATUS_PATH = "/api/topology/status";
 const API_TEAM_STATUS_PATH = "/api/teams/status";
+const API_PLAN_PREVIEWS_PATH = "/api/manager-plan/previews";
 
 export function parseArguments(argv: readonly string[]): ControlPlaneOptions {
   const options = { host: "127.0.0.1", port: 7345 } as {
@@ -68,11 +73,75 @@ function requestedFile(url = "/"): string | null {
   return null;
 }
 
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.byteLength;
+    if (size > 32_768) throw new TypeError("request body too large");
+    chunks.push(buffer);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
 export function createControlPlaneServer(
   staticRoot = defaultStaticRoot(),
-  options: { readonly teamStore?: Pick<TeamStore, "teams"> } = {},
+  options: {
+    readonly teamStore?: Pick<TeamStore, "teams">;
+    readonly planPreviewStore?: ControlPlanePlanPreviewStore;
+  } = {},
 ): Server {
   return createServer(async (request, response) => {
+    if (
+      request.url &&
+      new URL(request.url, "http://127.0.0.1").pathname === API_PLAN_PREVIEWS_PATH
+    ) {
+      if (!options.planPreviewStore) {
+        response.writeHead(503, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ schema: 1, status: "error", code: "store_unconfigured" }));
+        return;
+      }
+      if (request.method === "GET") {
+        response.writeHead(200, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify(options.planPreviewStore.status()));
+        return;
+      }
+      if (request.method === "POST") {
+        try {
+          const body = await readJsonBody(request);
+          const record = options.planPreviewStore.create(body as ControlPlanePlanPreviewInput);
+          response.writeHead(201, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(JSON.stringify({ schema: 1, status: "ok", preview: record }));
+        } catch {
+          response.writeHead(400, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(
+            JSON.stringify({ schema: 1, status: "error", code: "invalid_plan_preview" }),
+          );
+        }
+        return;
+      }
+      response.writeHead(405, {
+        allow: "GET, POST",
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+      return;
+    }
+
     if (request.url && new URL(request.url, "http://127.0.0.1").pathname === API_TEAM_STATUS_PATH) {
       if (request.method !== "GET") {
         response.writeHead(405, {
@@ -137,6 +206,7 @@ export async function startControlPlane(options: ControlPlaneOptions): Promise<S
     options.workspace ?? process.env.YUKH_CONVERSATION_WORKSPACE ?? process.env.YUKH_TEAM_WORKSPACE;
   const server = createControlPlaneServer(options.staticRoot, {
     ...(workspace ? { teamStore: new TeamStore(workspace) } : {}),
+    ...(workspace ? { planPreviewStore: new ControlPlanePlanPreviewStore(workspace) } : {}),
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -155,7 +225,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const port = typeof address === "object" && address !== null ? address.port : options.port;
   process.stdout.write(
     `Yukh Control Plane preview: http://${options.host}:${port}\n` +
-      "Static mock UI only: no runtime mutations are exposed.\n",
+      "Bounded preview controls only: no provider calls or worker launches are exposed.\n",
   );
 }
 
