@@ -241,6 +241,7 @@ const conversations = [
 ].slice(0, 5);
 const activeTeams = teams.filter((team) => !["complete", "stopped"].includes(team.state));
 const agents = teams.flatMap((team) => team.agents);
+let selectedTeamId = teamId(activeTeams[0] ?? teams[0] ?? { id: "" });
 const used = teams.reduce(
   (sum, team) => sum + (teamBudget(team)?.used ?? teamBudget(team)?.observed ?? 0),
   0,
@@ -268,7 +269,7 @@ byId("manager-list").innerHTML = teams
     const percentage = budgetTotal > 0 ? Math.round((budgetUsed / budgetTotal) * 100) : 0;
     const missing = manager?.missing_required_actions ?? [];
     return `
-      <article class="manager-card">
+      <article class="manager-card selectable" data-team-id="${teamId(team)}" role="button" tabindex="0" aria-controls="team-detail-panel">
         <div class="manager-card-main">
           <p class="eyebrow">${teamMode(team)}</p>
           <h4>${manager?.role ?? "manager pending"}</h4>
@@ -297,7 +298,7 @@ byId("task-board").innerHTML = ["ready", "in_progress", "review", "done"]
         ${tasks
           .map(
             (task) => `
-              <article class="task-card">
+              <article class="task-card selectable" data-team-id="${task.team_id}" role="button" tabindex="0" aria-controls="team-detail-panel">
                 <span class="chip">${task.id}</span>
                 <h4>${task.title}</h4>
                 <p class="muted">${task.team_id} · ${task.owner}</p>
@@ -349,7 +350,7 @@ byId("topology-panels").innerHTML = topology
 byId("team-list").innerHTML = teams
   .map(
     (team) => `
-      <article class="team-row">
+      <article class="team-row selectable" data-team-id="${teamId(team)}" role="button" tabindex="0" aria-controls="team-detail-panel">
         <div>
           <p class="eyebrow">${teamMode(team)}</p>
           <h3>${teamId(team)}</h3>
@@ -389,8 +390,50 @@ byId("budget-panel").innerHTML = teams
   })
   .join("");
 
-const selectedTeam = activeTeams[0] ?? teams[0];
-if (selectedTeam) {
+const setSelectedMarkers = () => {
+  document.querySelectorAll("[data-team-id]").forEach((element) => {
+    const active = element.getAttribute("data-team-id") === selectedTeamId;
+    element.classList.toggle("selected", active);
+    element.setAttribute("aria-current", active ? "true" : "false");
+  });
+};
+
+const timelineForTeam = (team, plans, tasks, missing) => [
+  {
+    label: "team created",
+    detail: `${teamMode(team)} · ${team.state}`,
+    state: "done",
+  },
+  ...plans.map((plan) => ({
+    label: `plan ${plan.state}`,
+    detail: `${plan.worker_count} workers · synthesis ${plan.has_synthesis ? "present" : "missing"}`,
+    state: plan.state,
+  })),
+  ...tasks.slice(0, 4).map((task) => ({
+    label: task.title,
+    detail: `${task.state} · owner ${task.owner}`,
+    state: task.state,
+  })),
+  {
+    label: missing.length === 0 ? "required actions satisfied" : "required action pending",
+    detail: missing.length === 0 ? "manager receipts complete" : missing.join(", "),
+    state: missing.length === 0 ? "done" : "waiting",
+  },
+];
+
+const renderTeamDetail = (id) => {
+  const selectedTeam = teams.find((team) => teamId(team) === id) ?? activeTeams[0] ?? teams[0];
+  selectedTeamId = selectedTeam ? teamId(selectedTeam) : "";
+  setSelectedMarkers();
+
+  if (!selectedTeam) {
+    byId("manager-detail-panel").innerHTML =
+      '<p class="muted">No team state yet. Start from a manager plan to populate this view.</p>';
+    byId("team-detail-panel").innerHTML =
+      '<p class="muted">No team selected yet. Start from a manager plan to populate this view.</p>';
+    return;
+  }
+
   const manager = teamManager(selectedTeam);
   const workers = teamWorkers(selectedTeam);
   const plans = selectedTeam.plans ?? [];
@@ -398,28 +441,8 @@ if (selectedTeam) {
   const missing = manager?.missing_required_actions ?? [];
   const nextAction =
     missing[0] ?? (plans.length > 0 ? "approve or revise manager plan" : "inspect latest evidence");
-  const timeline = [
-    {
-      label: "team created",
-      detail: `${teamMode(selectedTeam)} · ${selectedTeam.state}`,
-      state: "done",
-    },
-    ...plans.map((plan) => ({
-      label: `plan ${plan.state}`,
-      detail: `${plan.worker_count} workers · synthesis ${plan.has_synthesis ? "present" : "missing"}`,
-      state: plan.state,
-    })),
-    ...tasks.slice(0, 4).map((task) => ({
-      label: task.title,
-      detail: `${task.state} · owner ${task.owner}`,
-      state: task.state,
-    })),
-    {
-      label: missing.length === 0 ? "required actions satisfied" : "required action pending",
-      detail: missing.length === 0 ? "manager receipts complete" : missing.join(", "),
-      state: missing.length === 0 ? "done" : "waiting",
-    },
-  ];
+  const timeline = timelineForTeam(selectedTeam, plans, tasks, missing);
+
   byId("manager-detail-panel").innerHTML = `
     <article class="manager-summary">
       <div>
@@ -547,12 +570,20 @@ if (selectedTeam) {
       </section>
     </div>
   `;
-} else {
-  byId("manager-detail-panel").innerHTML =
-    '<p class="muted">No team state yet. Start from a manager plan to populate this view.</p>';
-  byId("team-detail-panel").innerHTML =
-    '<p class="muted">No team selected yet. Start from a manager plan to populate this view.</p>';
-}
+};
+
+document.querySelectorAll("[data-team-id]").forEach((element) => {
+  const select = () => renderTeamDetail(element.getAttribute("data-team-id") ?? "");
+  element.addEventListener("click", select);
+  element.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      select();
+    }
+  });
+});
+
+renderTeamDetail(selectedTeamId);
 
 byId("transcript-list").innerHTML = data.transcript
   .map(

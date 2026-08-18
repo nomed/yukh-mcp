@@ -529,6 +529,26 @@ nav a:hover {
   gap: 12px;
   padding: 14px;
 }
+.selectable {
+  cursor: pointer;
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+.selectable:hover,
+.selectable:focus-visible,
+.selectable.selected {
+  border-color: rgba(119, 240, 178, 0.7);
+  box-shadow: 0 0 0 1px rgba(119, 240, 178, 0.22);
+}
+.selectable:focus-visible {
+  transform: translateY(-1px);
+}
+.selectable.selected {
+  background: linear-gradient(135deg, rgba(119, 240, 178, 0.11), transparent 48%), var(--panel-2);
+}
 .manager-card-main {
   display: grid;
   gap: 6px;
