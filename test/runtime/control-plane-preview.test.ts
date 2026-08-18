@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -50,4 +50,19 @@ test("control plane preview serves only fixed static assets", async () => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   }
+});
+
+test("control plane preview explains runtime topology without Mermaid", async () => {
+  const html = await readFile("apps/control-plane-preview/static/index.html", "utf8");
+  const data = await readFile("apps/control-plane-preview/static/mock-data.js", "utf8");
+
+  assert.match(html, /Runtime topology/u);
+  assert.match(html, /Who owns what/u);
+  assert.match(html, /Yukh Projects/u);
+  assert.match(html, /Yukh MCP/u);
+  assert.match(html, /Coordination/u);
+  assert.match(html, /NATS JetStream runtime/u);
+  assert.match(data, /YKP_WORK_EVENTS_V1/u);
+  assert.match(data, /message is evidence, not work authority/u);
+  assert.doesNotMatch(`${html}\n${data}`, /mermaid/iu);
 });

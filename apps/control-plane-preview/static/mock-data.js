@@ -39,6 +39,36 @@ const data = {
       ],
     },
   ],
+  topology: [
+    {
+      name: "Projects governance",
+      owner: "yukh-projects",
+      state: "ready for handoff",
+      writes: "YKP_WORK_EVENTS_V1 and rebuildable KV projections",
+      rule: "Admits claims, leases, budgets, roadmap and result evidence.",
+    },
+    {
+      name: "Orchestration",
+      owner: "yukh-mcp / Control Plane",
+      state: "preview",
+      writes: "team state, action receipts and worker lifecycle",
+      rule: "Consumes Projects handoffs and starts bounded managers or workers.",
+    },
+    {
+      name: "Agent communication",
+      owner: "yukh-coordination",
+      state: "local preview",
+      writes: "Coordination transcript and receipt store",
+      rule: "Carries join, ask, answer and replay. A message is evidence, not work authority.",
+    },
+    {
+      name: "JetStream runtime",
+      owner: "NATS",
+      state: "shared service",
+      writes: "separate stream and bucket namespaces",
+      rule: "May be one physical runtime, never one shared logical contract.",
+    },
+  ],
   transcript: [
     {
       time: "12:31:18",
@@ -78,6 +108,26 @@ byId("metric-teams").textContent = String(activeTeams.length);
 byId("metric-agents").textContent = String(agents.length);
 byId("metric-budget").textContent = `${Math.round((used / allocated) * 100)}% used`;
 byId("metric-providers").textContent = "CLI + SDK";
+
+byId("topology-panels").innerHTML = data.topology
+  .map(
+    (node) => `
+      <article class="topology-node">
+        <div class="section-title">
+          <div>
+            <p class="eyebrow">${node.owner}</p>
+            <h4>${node.name}</h4>
+          </div>
+          <span class="status-pill small"><span class="dot ${node.state.includes("ready") ? "ok" : "warn"}"></span>${node.state}</span>
+        </div>
+        <dl>
+          <div><dt>Writes</dt><dd>${node.writes}</dd></div>
+          <div><dt>Rule</dt><dd>${node.rule}</dd></div>
+        </dl>
+      </article>
+    `,
+  )
+  .join("");
 
 byId("team-list").innerHTML = data.teams
   .map(
