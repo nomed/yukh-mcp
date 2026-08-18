@@ -46,6 +46,29 @@ export type ControlPlaneLaunchReadinessStatus = {
   }[];
 };
 
+export type ControlPlaneLaunchIntentRecord = {
+  readonly schema: 1;
+  readonly launch_intent_id: string;
+  readonly preview_id: string;
+  readonly preview_receipt_id: string;
+  readonly readiness_outcome: "ready";
+  readonly token_budget: number;
+  readonly manager_reserve: number;
+  readonly worker_reserve: number;
+  readonly safety_reserve: number;
+  readonly proposed_workers: readonly {
+    readonly role: string;
+    readonly token_budget: number;
+  }[];
+  readonly created_at: string;
+};
+
+export type ControlPlaneLaunchIntentStatus = {
+  readonly schema: "yukh-control-plane-launch-intents-v1";
+  readonly source: "local-control-plane-store";
+  readonly intents: readonly ControlPlaneLaunchIntentRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -57,6 +80,7 @@ export type ControlPlanePlanPreviewInput = {
 type Document = {
   readonly schema: 1;
   readonly previews: readonly ControlPlanePlanPreviewRecord[];
+  readonly launch_intents?: readonly ControlPlaneLaunchIntentRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -180,6 +204,46 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
+  launchIntents(): ControlPlaneLaunchIntentStatus {
+    return {
+      schema: "yukh-control-plane-launch-intents-v1",
+      source: "local-control-plane-store",
+      intents: this.#read().launch_intents ?? [],
+    };
+  }
+
+  createLaunchIntent(): ControlPlaneLaunchIntentRecord {
+    const readiness = this.launchReadiness();
+    if (readiness.outcome !== "ready" || !readiness.preview?.receipt_id) {
+      throw new TypeError("launch readiness blocked");
+    }
+    const preview = readiness.preview;
+    const previewReceiptId = preview.receipt_id;
+    if (!previewReceiptId) {
+      throw new TypeError("launch readiness blocked");
+    }
+    const record: ControlPlaneLaunchIntentRecord = {
+      schema: 1,
+      launch_intent_id: `launch-intent-${randomUUID()}`,
+      preview_id: preview.preview_id,
+      preview_receipt_id: previewReceiptId,
+      readiness_outcome: "ready",
+      token_budget: preview.token_budget,
+      manager_reserve: preview.manager_reserve,
+      worker_reserve: preview.worker_reserve,
+      safety_reserve: preview.safety_reserve,
+      proposed_workers: preview.proposed_workers,
+      created_at: new Date().toISOString(),
+    };
+    const document = this.#read();
+    this.#write({
+      schema: 1,
+      previews: document.previews,
+      launch_intents: [record, ...(document.launch_intents ?? [])].slice(0, 20),
+    });
+    return record;
+  }
+
   create(input: ControlPlanePlanPreviewInput): ControlPlanePlanPreviewRecord {
     validateInput(input);
     const managerReserve = Math.floor(input.token_budget * 0.25);
@@ -204,7 +268,11 @@ export class ControlPlanePlanPreviewStore {
       ...(state === "approved-preview" ? { approved_at: now } : {}),
     };
     const document = this.#read();
-    this.#write({ schema: 1, previews: [record, ...document.previews].slice(0, 20) });
+    this.#write({
+      schema: 1,
+      previews: [record, ...document.previews].slice(0, 20),
+      launch_intents: document.launch_intents ?? [],
+    });
     return record;
   }
 
@@ -214,9 +282,15 @@ export class ControlPlanePlanPreviewStore {
       if (parsed.schema !== 1 || !Array.isArray(parsed.previews)) {
         return { schema: 1, previews: [] };
       }
-      return { schema: 1, previews: parsed.previews.filter((item) => item?.schema === 1) };
+      return {
+        schema: 1,
+        previews: parsed.previews.filter((item) => item?.schema === 1),
+        launch_intents: Array.isArray(parsed.launch_intents)
+          ? parsed.launch_intents.filter((item) => item?.schema === 1)
+          : [],
+      };
     } catch {
-      return { schema: 1, previews: [] };
+      return { schema: 1, previews: [], launch_intents: [] };
     }
   }
 

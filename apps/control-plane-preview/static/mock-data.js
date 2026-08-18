@@ -659,6 +659,32 @@ const loadLaunchReadiness = async () => {
   }
 };
 
+const createLaunchIntent = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/launch-intents", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.launch_intent ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const renderLaunchIntent = (intent) => {
+  if (!intent) return "";
+  return `
+    <div class="launch-intent">
+      <span>Launch intent recorded</span>
+      <strong>${escapeHtml(intent.launch_intent_id)}</strong>
+      <p class="muted">Local receipt only. No provider call and no worker process has been started.</p>
+    </div>
+  `;
+};
+
 const readinessPanel = (readiness) => {
   if (!readiness) return "";
   return `
@@ -671,6 +697,11 @@ const readinessPanel = (readiness) => {
         readiness.reasons.length === 0
           ? '<p class="muted">Ready for the next explicit launch step. This panel still launches nothing.</p>'
           : `<ul>${readiness.reasons.map((reason) => `<li>${escapeHtml(reason.message)}</li>`).join("")}</ul>`
+      }
+      ${
+        readiness.outcome === "ready"
+          ? '<button type="button" class="secondary launch-intent-button">Record launch intent</button>'
+          : ""
       }
     </div>
   `;
@@ -807,6 +838,20 @@ byId("plan-preview").addEventListener("click", async (event) => {
   if (readiness) {
     card?.insertAdjacentHTML("beforeend", readinessPanel(readiness));
   }
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".launch-intent-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const intent = await createLaunchIntent();
+  if (!intent) {
+    button.removeAttribute("disabled");
+    button.textContent = "Launch readiness blocked";
+    return;
+  }
+  button.textContent = "Launch intent recorded";
+  button.closest(".readiness-panel")?.insertAdjacentHTML("afterend", renderLaunchIntent(intent));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
