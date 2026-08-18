@@ -2,12 +2,15 @@ import { createServer, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { TeamStore } from "../../../packages/team-control/src/store.js";
+import { createTeamStatus } from "./team-status.js";
 import { createTopologyStatus } from "./topology-status.js";
 
 type ControlPlaneOptions = {
   readonly host: string;
   readonly port: number;
   readonly staticRoot?: string;
+  readonly workspace?: string;
 };
 
 const CONTENT_TYPES = new Map([
@@ -17,12 +20,14 @@ const CONTENT_TYPES = new Map([
 ]);
 
 const API_TOPOLOGY_STATUS_PATH = "/api/topology/status";
+const API_TEAM_STATUS_PATH = "/api/teams/status";
 
 export function parseArguments(argv: readonly string[]): ControlPlaneOptions {
   const options = { host: "127.0.0.1", port: 7345 } as {
     host: string;
     port: number;
     staticRoot?: string;
+    workspace?: string;
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -39,6 +44,9 @@ export function parseArguments(argv: readonly string[]): ControlPlaneOptions {
       i += 1;
     } else if (arg === "--static-root" && next) {
       options.staticRoot = next;
+      i += 1;
+    } else if (arg === "--workspace" && next) {
+      options.workspace = next;
       i += 1;
     } else {
       throw new TypeError("invalid control plane arguments");
@@ -60,8 +68,29 @@ function requestedFile(url = "/"): string | null {
   return null;
 }
 
-export function createControlPlaneServer(staticRoot = defaultStaticRoot()): Server {
+export function createControlPlaneServer(
+  staticRoot = defaultStaticRoot(),
+  options: { readonly teamStore?: Pick<TeamStore, "teams"> } = {},
+): Server {
   return createServer(async (request, response) => {
+    if (request.url && new URL(request.url, "http://127.0.0.1").pathname === API_TEAM_STATUS_PATH) {
+      if (request.method !== "GET") {
+        response.writeHead(405, {
+          allow: "GET",
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+        return;
+      }
+      response.writeHead(200, {
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify(createTeamStatus(options.teamStore)));
+      return;
+    }
+
     if (
       request.url &&
       new URL(request.url, "http://127.0.0.1").pathname === API_TOPOLOGY_STATUS_PATH
@@ -104,7 +133,11 @@ export function createControlPlaneServer(staticRoot = defaultStaticRoot()): Serv
 }
 
 export async function startControlPlane(options: ControlPlaneOptions): Promise<Server> {
-  const server = createControlPlaneServer(options.staticRoot);
+  const workspace =
+    options.workspace ?? process.env.YUKH_CONVERSATION_WORKSPACE ?? process.env.YUKH_TEAM_WORKSPACE;
+  const server = createControlPlaneServer(options.staticRoot, {
+    ...(workspace ? { teamStore: new TeamStore(workspace) } : {}),
+  });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(options.port, options.host, () => {

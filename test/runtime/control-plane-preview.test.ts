@@ -7,6 +7,7 @@ import {
   createControlPlaneServer,
   parseArguments,
 } from "../../apps/control-plane-preview/src/main.js";
+import { TeamStore } from "../../packages/team-control/src/store.js";
 
 test("control plane preview parses bounded local server options", () => {
   assert.deepEqual(parseArguments([]), { host: "127.0.0.1", port: 7345 });
@@ -93,6 +94,80 @@ test("control plane preview exposes closed read-only topology status", async () 
 
     const unknownApi = await fetch(`${base}/api/topology/secrets`);
     assert.equal(unknownApi.status, 404);
+
+    const teams = await fetch(`${base}/api/teams/status`);
+    assert.equal(teams.status, 200);
+    const empty = await teams.json();
+    assert.equal(empty.schema, "yukh-control-plane-team-status-v1");
+    assert.equal(empty.source, "unconfigured");
+    assert.deepEqual(empty.teams, []);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
+test("control plane preview exposes redacted live team status", async () => {
+  const root = await mkdtemp(join(tmpdir(), "yukh-control-plane-preview-team-"));
+  await writeFile(join(root, "index.html"), "<h1>Control</h1>");
+  await writeFile(join(root, "styles.css"), "body{}");
+  await writeFile(join(root, "mock-data.js"), "export {};");
+
+  const workspace = await mkdtemp(join(tmpdir(), "yukh-control-plane-workspace-"));
+  const store = new TeamStore(workspace);
+  const team = store.create(
+    "Deliver sensitive-but-redacted control-plane work",
+    "codex",
+    4,
+    2,
+    90_000,
+    { role: "delivery-manager", mission: "Coordinate a bounded increment" },
+  );
+  const agent = store.spawn(team.team_id, {
+    runtime: "copilot",
+    role: "frontend-worker",
+    task: "Implement sensitive UI task text",
+    token_budget: 20_000,
+    max_commands: 0,
+    timeout_ms: 60_000,
+  });
+  store.transition(team.team_id, agent.agent_id, "running");
+
+  const server = createControlPlaneServer(root, { teamStore: store });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  try {
+    const address = server.address();
+    if (typeof address !== "object" || address === null) {
+      throw new TypeError("expected TCP server address");
+    }
+    const base = `http://127.0.0.1:${address.port}`;
+
+    const response = await fetch(`${base}/api/teams/status`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const body = await response.json();
+    assert.equal(body.schema, "yukh-control-plane-team-status-v1");
+    assert.equal(body.source, "local-team-store");
+    assert.equal(body.teams.length, 1);
+    assert.equal(body.teams[0].team_id, team.team_id);
+    assert.equal(body.teams[0].manager_role, "delivery-manager");
+    assert.match(body.teams[0].goal_digest, /^sha-256:[a-f0-9]{64}$/u);
+    assert.equal(body.teams[0].agents.length, 1);
+    assert.equal(body.teams[0].agents[0].role, "frontend-worker");
+    assert.equal(body.teams[0].agents[0].state, "running");
+    assert.equal(body.teams[0].tokens.budget, 90_000);
+    assert.equal(body.teams[0].tokens.allocated, 20_000);
+
+    const serialized = JSON.stringify(body);
+    assert.doesNotMatch(serialized, /sensitive-but-redacted|sensitive UI task/iu);
+    assert.doesNotMatch(serialized, /secret|credential|private/iu);
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -111,6 +186,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(html, /Coordination/u);
   assert.match(html, /NATS JetStream runtime/u);
   assert.match(data, /api\/topology\/status/u);
+  assert.match(data, /api\/teams\/status/u);
   assert.match(data, /YKP_WORK_EVENTS_V1/u);
   assert.match(data, /message is evidence, not work authority/u);
   assert.doesNotMatch(`${html}\n${data}`, /mermaid/iu);

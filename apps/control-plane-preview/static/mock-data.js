@@ -115,16 +115,43 @@ const loadTopology = async () => {
     return data.topology;
   }
 };
+const loadTeams = async () => {
+  try {
+    const response = await fetch("./api/teams/status", { cache: "no-store" });
+    if (!response.ok) return data.teams;
+    const status = await response.json();
+    if (status?.schema !== "yukh-control-plane-team-status-v1" || !Array.isArray(status.teams)) {
+      return data.teams;
+    }
+    return status.teams;
+  } catch {
+    return data.teams;
+  }
+};
 
-const activeTeams = data.teams.filter((team) => team.state !== "complete");
-const agents = data.teams.flatMap((team) => team.agents);
-const used = data.teams.reduce((sum, team) => sum + team.budget.used, 0);
-const allocated = data.teams.reduce((sum, team) => sum + team.budget.allocated, 0);
+const teams = await loadTeams();
+const teamBudget = (team) => team.budget ?? team.tokens;
+const teamId = (team) => team.id ?? team.team_id;
+const teamGoal = (team) => team.goal ?? `goal ${team.goal_digest.slice(0, 19)}…`;
+const teamMode = (team) => team.mode ?? team.manager_runtime ?? "manager runtime";
+const agentName = (agent) => agent.name ?? `${agent.kind}:${agent.role}`;
+const agentProvider = (agent) => agent.provider ?? agent.runtime;
+const activeTeams = teams.filter((team) => !["complete", "stopped"].includes(team.state));
+const agents = teams.flatMap((team) => team.agents);
+const used = teams.reduce(
+  (sum, team) => sum + (teamBudget(team)?.used ?? teamBudget(team)?.observed ?? 0),
+  0,
+);
+const allocated = teams.reduce(
+  (sum, team) => sum + (teamBudget(team)?.allocated ?? teamBudget(team)?.budget ?? 0),
+  0,
+);
 
 byId("workspace-name").textContent = data.workspace;
 byId("metric-teams").textContent = String(activeTeams.length);
 byId("metric-agents").textContent = String(agents.length);
-byId("metric-budget").textContent = `${Math.round((used / allocated) * 100)}% used`;
+byId("metric-budget").textContent =
+  allocated > 0 ? `${Math.round((used / allocated) * 100)}% used` : "no budget";
 byId("metric-providers").textContent = "CLI + SDK";
 
 const topology = await loadTopology();
@@ -148,19 +175,19 @@ byId("topology-panels").innerHTML = topology
   )
   .join("");
 
-byId("team-list").innerHTML = data.teams
+byId("team-list").innerHTML = teams
   .map(
     (team) => `
       <article class="team-row">
         <div>
-          <p class="eyebrow">${team.mode}</p>
-          <h3>${team.id}</h3>
-          <p class="muted">${team.goal}</p>
+          <p class="eyebrow">${teamMode(team)}</p>
+          <h3>${teamId(team)}</h3>
+          <p class="muted">${teamGoal(team)}</p>
           <div class="agent-stack">
             ${team.agents
               .map(
                 (agent) =>
-                  `<span class="chip ${agent.state === "answered" ? "good" : ""}">${agent.name}: ${agent.provider}</span>`,
+                  `<span class="chip ${["answered", "completed"].includes(agent.state) ? "good" : ""}">${agentName(agent)}: ${agentProvider(agent)}</span>`,
               )
               .join("")}
           </div>
@@ -171,17 +198,21 @@ byId("team-list").innerHTML = data.teams
   )
   .join("");
 
-byId("budget-panel").innerHTML = data.teams
+byId("budget-panel").innerHTML = teams
   .map((team) => {
-    const percentage = Math.round((team.budget.used / team.budget.allocated) * 100);
+    const budget = teamBudget(team);
+    const budgetTotal = budget?.allocated ?? budget?.budget ?? 0;
+    const budgetUsed = budget?.used ?? budget?.observed ?? 0;
+    const budgetReserved = budget?.reserved ?? budget?.allocated ?? 0;
+    const percentage = budgetTotal > 0 ? Math.round((budgetUsed / budgetTotal) * 100) : 0;
     return `
       <article class="budget-row">
         <div class="section-title">
-          <strong>${team.id}</strong>
-          <span class="muted">${team.budget.used.toLocaleString()} / ${team.budget.allocated.toLocaleString()}</span>
+          <strong>${teamId(team)}</strong>
+          <span class="muted">${budgetUsed.toLocaleString()} / ${budgetTotal.toLocaleString()}</span>
         </div>
         <div class="bar" aria-label="${percentage}% token budget used"><span style="width: ${percentage}%"></span></div>
-        <span class="muted">Reserved: ${team.budget.reserved.toLocaleString()} tokens</span>
+        <span class="muted">Reserved: ${budgetReserved.toLocaleString()} tokens</span>
       </article>
     `;
   })
