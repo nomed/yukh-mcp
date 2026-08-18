@@ -215,6 +215,12 @@ const teamTasks = (team) =>
 const allTasks = teams
   .flatMap((team) => teamTasks(team).map((task) => ({ ...task, team_id: teamId(team) })))
   .sort((a, b) => (taskStateRank[a.state] ?? 9) - (taskStateRank[b.state] ?? 9));
+const tokenBudget = (agent) => agent.token_budget ?? 0;
+const observedTokens = (agent) => agent.observed_tokens ?? 0;
+const tokenPercent = (agent) =>
+  tokenBudget(agent) > 0
+    ? Math.min(100, Math.round((observedTokens(agent) / tokenBudget(agent)) * 100))
+    : 0;
 const conversations = [
   ...data.transcript.map((event) => ({
     id: event.eventId,
@@ -388,7 +394,32 @@ if (selectedTeam) {
   const manager = teamManager(selectedTeam);
   const workers = teamWorkers(selectedTeam);
   const plans = selectedTeam.plans ?? [];
+  const tasks = teamTasks(selectedTeam);
   const missing = manager?.missing_required_actions ?? [];
+  const nextAction =
+    missing[0] ?? (plans.length > 0 ? "approve or revise manager plan" : "inspect latest evidence");
+  const timeline = [
+    {
+      label: "team created",
+      detail: `${teamMode(selectedTeam)} · ${selectedTeam.state}`,
+      state: "done",
+    },
+    ...plans.map((plan) => ({
+      label: `plan ${plan.state}`,
+      detail: `${plan.worker_count} workers · synthesis ${plan.has_synthesis ? "present" : "missing"}`,
+      state: plan.state,
+    })),
+    ...tasks.slice(0, 4).map((task) => ({
+      label: task.title,
+      detail: `${task.state} · owner ${task.owner}`,
+      state: task.state,
+    })),
+    {
+      label: missing.length === 0 ? "required actions satisfied" : "required action pending",
+      detail: missing.length === 0 ? "manager receipts complete" : missing.join(", "),
+      state: missing.length === 0 ? "done" : "waiting",
+    },
+  ];
   byId("manager-detail-panel").innerHTML = `
     <article class="manager-summary">
       <div>
@@ -432,9 +463,95 @@ if (selectedTeam) {
         .join("")}
     </div>
   `;
+  byId("team-detail-panel").innerHTML = `
+    <article class="detail-hero">
+      <div>
+        <p class="eyebrow">${teamId(selectedTeam)}</p>
+        <h3>${manager?.role ?? "manager pending"} coordinating ${workers.length} workers</h3>
+        <p class="muted clamp-2">${teamGoal(selectedTeam)}</p>
+      </div>
+      <div class="next-action">
+        <span>Next required action</span>
+        <strong>${nextAction}</strong>
+      </div>
+    </article>
+
+    <div class="detail-grid">
+      <section class="detail-panel">
+        <div class="subsection-title">
+          <h4>Plan</h4>
+          <span class="muted">${plans.length} records</span>
+        </div>
+        <div class="plan-list">
+          ${
+            plans.length === 0
+              ? '<p class="muted">No plan recorded yet.</p>'
+              : plans
+                  .map(
+                    (plan) => `
+                      <article>
+                        <span class="chip">${plan.plan_id}</span>
+                        <strong>${plan.state}</strong>
+                        <p class="muted">${plan.worker_count} workers · synthesis ${plan.has_synthesis ? "present" : "missing"}</p>
+                      </article>
+                    `,
+                  )
+                  .join("")
+          }
+        </div>
+      </section>
+
+      <section class="detail-panel">
+        <div class="subsection-title">
+          <h4>Worker tokens</h4>
+          <span class="muted">${workers.length} workers</span>
+        </div>
+        <div class="token-list">
+          ${[manager, ...workers]
+            .filter(Boolean)
+            .map(
+              (agent) => `
+                <article>
+                  <div>
+                    <strong>${agent.role}</strong>
+                    <p class="muted">${agentName(agent)} · ${agentProvider(agent)} · ${observedTokens(agent).toLocaleString()} / ${tokenBudget(agent).toLocaleString()} tokens</p>
+                  </div>
+                  <div class="bar" aria-label="${tokenPercent(agent)}% token budget used"><span style="width: ${tokenPercent(agent)}%"></span></div>
+                </article>
+              `,
+            )
+            .join("")}
+        </div>
+      </section>
+
+      <section class="detail-panel timeline-panel">
+        <div class="subsection-title">
+          <h4>Timeline</h4>
+          <span class="muted">${timeline.length} events</span>
+        </div>
+        <div class="timeline">
+          ${timeline
+            .map(
+              (event) => `
+                <article>
+                  <span class="timeline-dot ${event.state === "done" ? "ok" : "warn"}"></span>
+                  <div>
+                    <strong>${event.label}</strong>
+                    <p class="muted">${event.detail}</p>
+                  </div>
+                </article>
+              `,
+            )
+            .join("")}
+        </div>
+      </section>
+    </div>
+  `;
 } else {
   byId("manager-detail-panel").innerHTML =
     '<p class="muted">No team state yet. Start from a manager plan to populate this view.</p>';
+  byId("team-detail-panel").innerHTML =
+    '<p class="muted">No team selected yet. Start from a manager plan to populate this view.</p>';
 }
 
 byId("transcript-list").innerHTML = data.transcript
