@@ -151,6 +151,13 @@ const data = {
 };
 
 const byId = (id) => document.getElementById(id);
+const escapeHtml = (value) =>
+  String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 const topologyStateLabel = (state) => state.replaceAll("_", " ");
 const loadTopology = async () => {
   try {
@@ -600,3 +607,70 @@ byId("transcript-list").innerHTML = data.transcript
     `,
   )
   .join("");
+
+const suggestWorkers = (goal) => {
+  const normalized = goal.toLowerCase();
+  const roles = [
+    normalized.includes("ui") || normalized.includes("control plane")
+      ? "frontend-control-plane-worker"
+      : "implementation-worker",
+    normalized.includes("test") || normalized.includes("verify")
+      ? "qa-verification-worker"
+      : "runtime-verification-worker",
+  ];
+  return [...new Set(roles)];
+};
+
+const renderPlanPreview = ({ goal, mode, provider, budget }) => {
+  const safeBudget = Number.isFinite(budget) && budget > 0 ? Math.floor(budget) : 0;
+  const managerReserve = Math.floor(safeBudget * 0.25);
+  const workerReserve = Math.floor(safeBudget * 0.55);
+  const safetyReserve = Math.max(0, safeBudget - managerReserve - workerReserve);
+  const workers = suggestWorkers(goal);
+  const perWorker = workers.length > 0 ? Math.floor(workerReserve / workers.length) : 0;
+
+  byId("plan-preview").innerHTML = `
+    <article class="preview-card">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">Dry-run manager plan</p>
+          <h4>${escapeHtml(mode)}</h4>
+        </div>
+        <span class="status-pill small"><span class="dot warn"></span>no workers launched</span>
+      </div>
+      <p class="muted clamp-2">${escapeHtml(goal)}</p>
+      <div class="preview-grid">
+        <article>
+          <span>Manager</span>
+          <strong>${escapeHtml(provider)}</strong>
+          <p class="muted">${managerReserve.toLocaleString()} tokens reserved for plan, synthesis and receipts.</p>
+        </article>
+        <article>
+          <span>Workers proposed</span>
+          <strong>${workers.length}</strong>
+          <p class="muted">${workers.map((worker) => `${worker}: ${perWorker.toLocaleString()}`).join(" · ")}</p>
+        </article>
+        <article>
+          <span>Safety reserve</span>
+          <strong>${safetyReserve.toLocaleString()}</strong>
+          <p class="muted">Held back until operator approval.</p>
+        </article>
+      </div>
+      <ol class="preview-steps">
+        <li>Review goal, budget split and proposed workers.</li>
+        <li>Approve or edit the plan before any provider call.</li>
+        <li>Launch workers only after receipts and limits are visible.</li>
+      </ol>
+    </article>
+  `;
+};
+
+byId("manager-plan-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  renderPlanPreview({
+    goal: byId("plan-goal").value.trim() || "Untitled Yukh manager plan",
+    mode: byId("plan-mode").value,
+    provider: byId("plan-provider").value,
+    budget: Number.parseInt(byId("plan-budget").value.replaceAll(/[^\d]/g, ""), 10),
+  });
+});
