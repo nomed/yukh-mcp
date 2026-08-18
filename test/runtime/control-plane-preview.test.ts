@@ -235,6 +235,10 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /renderPlanPreview/u);
   assert.match(data, /Dry-run manager plan/u);
   assert.match(data, /no workers launched/u);
+  assert.match(data, /Approve plan preview/u);
+  assert.match(data, /approved preview/u);
+  assert.match(data, /Local preview receipt/u);
+  assert.match(data, /no provider call, no worker launch, no external write/u);
   assert.match(data, /data-team-id/u);
   assert.match(data, /aria-current/u);
   assert.match(data, /Next required action/u);
@@ -263,5 +267,8 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.timeline/u);
   assert.match(css, /\.plan-preview/u);
   assert.match(css, /\.preview-grid/u);
+  assert.match(css, /\.preview-actions/u);
+  assert.match(css, /\.approval-receipt/u);
+  assert.match(css, /\.approved-preview/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });
