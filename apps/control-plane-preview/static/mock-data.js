@@ -628,15 +628,16 @@ const renderPlanPreview = ({ goal, mode, provider, budget }) => {
   const safetyReserve = Math.max(0, safeBudget - managerReserve - workerReserve);
   const workers = suggestWorkers(goal);
   const perWorker = workers.length > 0 ? Math.floor(workerReserve / workers.length) : 0;
+  const receiptId = `preview-receipt-${Date.now().toString(36)}`;
 
   byId("plan-preview").innerHTML = `
-    <article class="preview-card">
+    <article class="preview-card" data-preview-receipt-id="${receiptId}">
       <div class="section-title">
         <div>
           <p class="eyebrow">Dry-run manager plan</p>
           <h4>${escapeHtml(mode)}</h4>
         </div>
-        <span class="status-pill small"><span class="dot warn"></span>no workers launched</span>
+        <span class="status-pill small preview-status"><span class="dot warn"></span>no workers launched</span>
       </div>
       <p class="muted clamp-2">${escapeHtml(goal)}</p>
       <div class="preview-grid">
@@ -661,9 +662,38 @@ const renderPlanPreview = ({ goal, mode, provider, budget }) => {
         <li>Approve or edit the plan before any provider call.</li>
         <li>Launch workers only after receipts and limits are visible.</li>
       </ol>
+      <div class="preview-actions">
+        <button type="button" class="secondary approve-preview-button">Approve plan preview</button>
+        <span class="muted">Preview only: no provider call, no worker launch, no external write.</span>
+      </div>
+      <div class="approval-receipt" hidden></div>
     </article>
   `;
 };
+
+byId("plan-preview").addEventListener("click", (event) => {
+  const button = event.target.closest(".approve-preview-button");
+  if (!button) return;
+
+  const card = button.closest(".preview-card");
+  const receiptId = card?.getAttribute("data-preview-receipt-id") ?? "preview-receipt";
+  card?.classList.add("approved-preview");
+  const status = card?.querySelector(".preview-status");
+  if (status) {
+    status.innerHTML = '<span class="dot ok"></span>approved preview';
+  }
+  const receipt = card?.querySelector(".approval-receipt");
+  if (receipt) {
+    receipt.hidden = false;
+    receipt.innerHTML = `
+      <span>Local preview receipt</span>
+      <strong>${escapeHtml(receiptId)}</strong>
+      <p class="muted">Recorded only in this browser preview. Workers remain stopped until an explicit real launch is added.</p>
+    `;
+  }
+  button.setAttribute("disabled", "true");
+  button.textContent = "Preview approved";
+});
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
   event.preventDefault();
