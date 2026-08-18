@@ -54,6 +54,10 @@ h2 {
 h3 {
   font-size: 18px;
 }
+h4 {
+  font-size: 15px;
+  margin: 0;
+}
 .topbar {
   align-items: center;
   background: rgba(11, 13, 18, 0.86);
@@ -198,6 +202,98 @@ nav a:hover {
 .wide-left {
   grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
 }
+.topology-layout {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+}
+.topology-map {
+  background:
+    linear-gradient(135deg, rgba(119, 240, 178, 0.09), transparent 38%),
+    linear-gradient(315deg, rgba(140, 181, 255, 0.09), transparent 42%), #0d121c;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 22px;
+  margin: 0;
+  min-height: 280px;
+  padding: 12px;
+}
+.topology-map svg {
+  display: block;
+  height: 100%;
+  min-height: 260px;
+  width: 100%;
+}
+.plane {
+  stroke-width: 1.5;
+}
+.plane.projects {
+  fill: rgba(119, 240, 178, 0.11);
+  stroke: rgba(119, 240, 178, 0.6);
+}
+.plane.mcp {
+  fill: rgba(140, 181, 255, 0.12);
+  stroke: rgba(140, 181, 255, 0.65);
+}
+.plane.coordination {
+  fill: rgba(255, 209, 102, 0.1);
+  stroke: rgba(255, 209, 102, 0.62);
+}
+.plane.nats {
+  fill: rgba(255, 255, 255, 0.06);
+  stroke: rgba(255, 255, 255, 0.18);
+}
+.node-title {
+  fill: var(--text);
+  font-size: 24px;
+  font-weight: 800;
+}
+.node-copy,
+.flow-label {
+  fill: var(--muted);
+  font-size: 15px;
+}
+.flow {
+  fill: none;
+  marker-end: url("#arrow");
+  stroke: var(--accent-2);
+  stroke-linecap: round;
+  stroke-width: 3;
+}
+.flow.soft {
+  stroke: rgba(119, 240, 178, 0.7);
+  stroke-dasharray: 7 7;
+}
+#arrow path {
+  fill: var(--accent-2);
+}
+.topology-panels {
+  display: grid;
+  gap: 12px;
+}
+.topology-node {
+  background: var(--panel-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  padding: 14px;
+}
+.topology-node .section-title {
+  gap: 12px;
+}
+.topology-node dl {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+}
+.topology-node dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.topology-node dd {
+  margin: 2px 0 0;
+}
 .section-title {
   align-items: center;
   display: flex;
@@ -326,6 +422,7 @@ textarea {
   .hero,
   .two-column,
   .wide-left,
+  .topology-layout,
   .metrics {
     grid-template-columns: 1fr;
   }

@@ -23,6 +23,7 @@
         <button class="primary">Start team</button>
         <nav>
           <a class="active" href="#dashboard">Dashboard</a>
+          <a href="#topology">Runtime topology</a>
           <a href="#teams">Teams</a>
           <a href="#transcript">Transcript</a>
           <a href="#budgets">Budgets</a>
@@ -64,6 +65,94 @@
           <article class="metric card">
             <span>Provider mix</span><strong id="metric-providers">—</strong>
           </article>
+        </section>
+
+        <section class="card topology-card" id="topology">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Runtime topology</p>
+              <h3>Who owns what</h3>
+            </div>
+            <span class="status-pill small"><span class="dot ok"></span>preview model</span>
+          </div>
+
+          <div class="topology-layout">
+            <figure class="topology-map" aria-label="Yukh suite runtime topology">
+              <svg viewBox="0 0 900 360" role="img" aria-labelledby="topology-title topology-desc">
+                <title id="topology-title">
+                  Yukh Projects, MCP, Coordination, and JetStream topology
+                </title>
+                <desc id="topology-desc">
+                  Projects admits governed work, MCP starts managers and workers, Coordination
+                  carries messages, and Projects plus Coordination use isolated JetStream storage
+                  areas.
+                </desc>
+                <defs>
+                  <marker
+                    id="arrow"
+                    viewBox="0 0 10 10"
+                    refX="8"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z"></path>
+                  </marker>
+                </defs>
+
+                <rect class="plane projects" x="34" y="48" width="230" height="116" rx="22"></rect>
+                <text class="node-title" x="62" y="90">Yukh Projects</text>
+                <text class="node-copy" x="62" y="118">work items · claims · roadmap</text>
+                <text class="node-copy" x="62" y="142">authoritative governance</text>
+
+                <rect class="plane mcp" x="335" y="48" width="230" height="116" rx="22"></rect>
+                <text class="node-title" x="363" y="90">Yukh MCP</text>
+                <text class="node-copy" x="363" y="118">manager · workers · tools</text>
+                <text class="node-copy" x="363" y="142">budgeted orchestration</text>
+
+                <rect
+                  class="plane coordination"
+                  x="636"
+                  y="48"
+                  width="230"
+                  height="116"
+                  rx="22"
+                ></rect>
+                <text class="node-title" x="664" y="90">Coordination</text>
+                <text class="node-copy" x="664" y="118">join · ask · answer · replay</text>
+                <text class="node-copy" x="664" y="142">verified transcript</text>
+
+                <rect class="plane nats" x="186" y="236" width="528" height="82" rx="24"></rect>
+                <text class="node-title" x="218" y="274">NATS JetStream runtime</text>
+                <text class="node-copy" x="218" y="300">
+                  shared physical service, isolated logical streams and buckets
+                </text>
+
+                <path class="flow" d="M264 106 H335" marker-end="url(#arrow)"></path>
+                <text class="flow-label" x="276" y="92">handoff</text>
+
+                <path class="flow" d="M565 106 H636" marker-end="url(#arrow)"></path>
+                <text class="flow-label" x="576" y="92">messages</text>
+
+                <path
+                  class="flow soft"
+                  d="M149 164 C149 214 305 210 318 236"
+                  marker-end="url(#arrow)"
+                ></path>
+                <text class="flow-label" x="122" y="206">YKP_WORK_EVENTS_V1</text>
+
+                <path
+                  class="flow soft"
+                  d="M751 164 C751 214 601 210 585 236"
+                  marker-end="url(#arrow)"
+                ></path>
+                <text class="flow-label" x="635" y="206">transcript stream</text>
+              </svg>
+            </figure>
+
+            <div class="topology-panels" id="topology-panels"></div>
+          </div>
         </section>
 
         <section class="two-column" id="teams">
