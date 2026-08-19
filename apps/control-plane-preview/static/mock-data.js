@@ -779,6 +779,21 @@ const preflightApprovedWorkerLaunch = async () => {
   }
 };
 
+const probeProviderRuntime = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/provider-runtime-probes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.provider_runtime_probe ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderLaunchIntent = (intent) => {
   if (!intent) return "";
   return `
@@ -902,6 +917,25 @@ const renderWorkerLaunchPreflight = (preflight) => {
       </div>
       <p class="muted">Worker launch: ${escapeHtml(preflight.worker_launch)} · Coordination write: ${escapeHtml(preflight.coordination_write)} · Projects write: ${escapeHtml(preflight.projects_write)}.</p>
       <p class="muted">Next required action: ${escapeHtml(preflight.next_required_action)}.</p>
+      <button type="button" class="secondary provider-probe-button">Probe provider runtime</button>
+    </div>
+  `;
+};
+
+const renderProviderRuntimeProbe = (probe) => {
+  if (!probe) return "";
+  return `
+    <div class="provider-runtime-probe">
+      <span>Provider runtime probe</span>
+      <strong>${escapeHtml(probe.provider_runtime_probe_id)}</strong>
+      <p class="muted">${escapeHtml(probe.provider)} · outcome ${escapeHtml(probe.outcome)} · scope ${escapeHtml(probe.probe_scope)}.</p>
+      <div class="preflight-grid">
+        <article><span>Adapter</span><strong>${escapeHtml(probe.provider_adapter)}</strong></article>
+        <article><span>Executable</span><strong>${escapeHtml(probe.executable_check)}</strong></article>
+        <article><span>Capabilities</span><strong>${escapeHtml(probe.capability_inventory)}</strong></article>
+      </div>
+      <p class="muted">Worker launch: ${escapeHtml(probe.worker_launch)} · Coordination write: ${escapeHtml(probe.coordination_write)} · Projects write: ${escapeHtml(probe.projects_write)}.</p>
+      <p class="muted">Next required action: ${escapeHtml(probe.next_required_action)}.</p>
     </div>
   `;
 };
@@ -1183,6 +1217,22 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".worker-delegation-approval")
     ?.insertAdjacentHTML("afterend", renderWorkerLaunchPreflight(preflight));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".provider-probe-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const probe = await probeProviderRuntime();
+  if (!probe) {
+    button.removeAttribute("disabled");
+    button.textContent = "Worker launch preflight required";
+    return;
+  }
+  button.textContent = "Provider runtime probe recorded";
+  button
+    .closest(".worker-launch-preflight")
+    ?.insertAdjacentHTML("afterend", renderProviderRuntimeProbe(probe));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
