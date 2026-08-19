@@ -13,6 +13,7 @@ import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js
 import { inheritedWorkerActivityEnvironment } from "../../../packages/team-control/src/profile-environment.js";
 import {
   WorkerActivityJetStreamBus,
+  WORKER_ACTIVITY_PREVIEW_NATS_URL,
   WORKER_ACTIVITY_SCHEMA,
   workerActivitySubject,
 } from "../../../packages/runtime-events/src/worker-activity.js";
@@ -262,7 +263,7 @@ async function createConfiguredWorkerActivityBus(): Promise<
   if (process.env.YUKH_WORKER_ACTIVITY_JETSTREAM !== "1") return undefined;
   try {
     return await WorkerActivityJetStreamBus.connect({
-      servers: process.env.YUKH_NATS_URL ?? "nats://127.0.0.1:4222",
+      servers: process.env.YUKH_NATS_URL ?? WORKER_ACTIVITY_PREVIEW_NATS_URL,
       createStream: process.env.YUKH_WORKER_ACTIVITY_CREATE_STREAM !== "0",
     });
   } catch (error) {

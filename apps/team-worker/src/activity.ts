@@ -6,6 +6,7 @@ import type {
 } from "../../../packages/team-control/src/store.js";
 import {
   WORKER_ACTIVITY_SCHEMA,
+  WORKER_ACTIVITY_PREVIEW_NATS_URL,
   WorkerActivityJetStreamBus,
   workerActivitySubject,
   type WorkerActivityEvent,
@@ -50,7 +51,7 @@ export async function createConfiguredWorkerActivityEmitter(
   if (env.YUKH_WORKER_ACTIVITY_JETSTREAM !== "1") return createNoopWorkerActivityEmitter();
   try {
     const bus = await WorkerActivityJetStreamBus.connect({
-      servers: env.YUKH_NATS_URL ?? "nats://127.0.0.1:4222",
+      servers: env.YUKH_NATS_URL ?? WORKER_ACTIVITY_PREVIEW_NATS_URL,
       createStream: env.YUKH_WORKER_ACTIVITY_CREATE_STREAM !== "0",
     });
     return createWorkerActivityEmitter(agent, bus, {
