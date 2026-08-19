@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { accessSync, constants, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
 export type ControlPlanePlanPreviewState = "proposed" | "approved-preview";
@@ -244,21 +244,52 @@ export type ControlPlaneProviderRuntimeProbeRecord = {
   readonly manager_run_id: string;
   readonly provider: string;
   readonly probe_scope: "local_control_plane_configuration";
-  readonly provider_adapter: "not_configured";
-  readonly executable_check: "not_performed";
-  readonly capability_inventory: "not_requested";
-  readonly outcome: "blocked_provider_adapter_not_configured";
+  readonly provider_adapter: "configured" | "not_configured";
+  readonly executable_check:
+    "executable_found" | "executable_missing" | "not_performed" | "not_required";
+  readonly capability_inventory: "local_inventory_available" | "not_requested";
+  readonly outcome:
+    | "ready_for_worker_launch"
+    | "blocked_provider_adapter_not_configured"
+    | "blocked_provider_executable_missing";
   readonly worker_launch: "not_performed";
   readonly coordination_write: "not_performed";
   readonly projects_write: "not_performed";
   readonly created_at: string;
-  readonly next_required_action: "configure_provider_adapter";
+  readonly next_required_action:
+    "launch_workers" | "configure_provider_adapter" | "fix_provider_executable";
 };
 
 export type ControlPlaneProviderRuntimeProbeStatus = {
   readonly schema: "yukh-control-plane-provider-runtime-probes-v1";
   readonly source: "local-control-plane-store";
   readonly probes: readonly ControlPlaneProviderRuntimeProbeRecord[];
+};
+
+export type ControlPlaneProviderAdapterRecord = {
+  readonly schema: 1;
+  readonly provider_adapter_id: string;
+  readonly provider: string;
+  readonly adapter_kind: "cli" | "sdk";
+  readonly executable_path?: string;
+  readonly models: readonly string[];
+  readonly max_run_token_budget: number;
+  readonly command_policy: "bounded_control_plane_only";
+  readonly configured_at: string;
+};
+
+export type ControlPlaneProviderAdapterStatus = {
+  readonly schema: "yukh-control-plane-provider-adapters-v1";
+  readonly source: "local-control-plane-store";
+  readonly adapters: readonly ControlPlaneProviderAdapterRecord[];
+};
+
+export type ControlPlaneProviderAdapterInput = {
+  readonly provider: string;
+  readonly adapter_kind: "cli" | "sdk";
+  readonly executable_path?: string;
+  readonly models: readonly string[];
+  readonly max_run_token_budget: number;
 };
 
 export type ControlPlanePlanPreviewInput = {
@@ -281,6 +312,7 @@ type Document = {
   readonly worker_delegation_approvals?: readonly ControlPlaneWorkerDelegationApprovalRecord[];
   readonly worker_launch_preflights?: readonly ControlPlaneWorkerLaunchPreflightRecord[];
   readonly provider_runtime_probes?: readonly ControlPlaneProviderRuntimeProbeRecord[];
+  readonly provider_adapters?: readonly ControlPlaneProviderAdapterRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -327,6 +359,47 @@ function validateInput(input: ControlPlanePlanPreviewInput): void {
     (input.state !== undefined && !["proposed", "approved-preview"].includes(input.state))
   ) {
     throw new TypeError("invalid plan preview input");
+  }
+}
+
+function validateProviderAdapterInput(input: ControlPlaneProviderAdapterInput): void {
+  if (
+    !validProvider.has(input.provider) ||
+    !["cli", "sdk"].includes(input.adapter_kind) ||
+    (input.adapter_kind === "cli" &&
+      (!input.executable_path || !isAbsolute(input.executable_path))) ||
+    (input.executable_path !== undefined &&
+      (input.executable_path.length < 1 ||
+        input.executable_path.length > 4_096 ||
+        !isAbsolute(input.executable_path))) ||
+    !Array.isArray(input.models) ||
+    input.models.length < 1 ||
+    input.models.length > 20 ||
+    input.models.some(
+      (model) =>
+        typeof model !== "string" ||
+        model.trim() !== model ||
+        model.length < 1 ||
+        model.length > 128,
+    ) ||
+    !Number.isSafeInteger(input.max_run_token_budget) ||
+    input.max_run_token_budget < 1_000 ||
+    input.max_run_token_budget > 10_000_000
+  ) {
+    throw new TypeError("invalid provider adapter input");
+  }
+}
+
+function executableCheck(
+  adapter: ControlPlaneProviderAdapterRecord,
+): ControlPlaneProviderRuntimeProbeRecord["executable_check"] {
+  if (adapter.adapter_kind === "sdk") return "not_required";
+  if (!adapter.executable_path) return "executable_missing";
+  try {
+    accessSync(adapter.executable_path, constants.X_OK);
+    return "executable_found";
+  } catch {
+    return "executable_missing";
   }
 }
 
@@ -482,6 +555,40 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
+  providerAdapters(): ControlPlaneProviderAdapterStatus {
+    return {
+      schema: "yukh-control-plane-provider-adapters-v1",
+      source: "local-control-plane-store",
+      adapters: this.#read().provider_adapters ?? [],
+    };
+  }
+
+  configureProviderAdapter(
+    input: ControlPlaneProviderAdapterInput,
+  ): ControlPlaneProviderAdapterRecord {
+    validateProviderAdapterInput(input);
+    const document = this.#read();
+    const record: ControlPlaneProviderAdapterRecord = {
+      schema: 1,
+      provider_adapter_id: `provider-adapter-${randomUUID()}`,
+      provider: input.provider,
+      adapter_kind: input.adapter_kind,
+      ...(input.executable_path ? { executable_path: input.executable_path } : {}),
+      models: [...input.models],
+      max_run_token_budget: input.max_run_token_budget,
+      command_policy: "bounded_control_plane_only",
+      configured_at: new Date().toISOString(),
+    };
+    const retained = (document.provider_adapters ?? []).filter(
+      (adapter) => adapter.provider !== input.provider,
+    );
+    this.#write({
+      ...document,
+      provider_adapters: [record, ...retained].slice(0, 20),
+    });
+    return record;
+  }
+
   probeProviderRuntime(): ControlPlaneProviderRuntimeProbeRecord {
     const document = this.#read();
     const preflight = document.worker_launch_preflights?.[0];
@@ -498,6 +605,12 @@ export class ControlPlanePlanPreviewStore {
     if (!plan) {
       throw new TypeError("missing worker delegation plan");
     }
+    const adapter = document.provider_adapters?.find(
+      (candidate) => candidate.provider === plan.provider,
+    );
+    const check = adapter ? executableCheck(adapter) : "not_performed";
+    const ready =
+      adapter !== undefined && (check === "executable_found" || check === "not_required");
     const record: ControlPlaneProviderRuntimeProbeRecord = {
       schema: 1,
       provider_runtime_probe_id: `provider-runtime-probe-${randomUUID()}`,
@@ -508,27 +621,26 @@ export class ControlPlanePlanPreviewStore {
       manager_run_id: preflight.manager_run_id,
       provider: plan.provider,
       probe_scope: "local_control_plane_configuration",
-      provider_adapter: "not_configured",
-      executable_check: "not_performed",
-      capability_inventory: "not_requested",
-      outcome: "blocked_provider_adapter_not_configured",
+      provider_adapter: adapter ? "configured" : "not_configured",
+      executable_check: check,
+      capability_inventory: adapter ? "local_inventory_available" : "not_requested",
+      outcome: ready
+        ? "ready_for_worker_launch"
+        : adapter
+          ? "blocked_provider_executable_missing"
+          : "blocked_provider_adapter_not_configured",
       worker_launch: "not_performed",
       coordination_write: "not_performed",
       projects_write: "not_performed",
       created_at: new Date().toISOString(),
-      next_required_action: "configure_provider_adapter",
+      next_required_action: ready
+        ? "launch_workers"
+        : adapter
+          ? "fix_provider_executable"
+          : "configure_provider_adapter",
     };
     this.#write({
-      schema: 1,
-      previews: document.previews,
-      launch_intents: document.launch_intents ?? [],
-      manager_runs: document.manager_runs ?? [],
-      manager_runtime_connections: document.manager_runtime_connections ?? [],
-      manager_processes: document.manager_processes ?? [],
-      manager_ready_receipts: document.manager_ready_receipts ?? [],
-      worker_delegation_plans: document.worker_delegation_plans ?? [],
-      worker_delegation_approvals: document.worker_delegation_approvals ?? [],
-      worker_launch_preflights: document.worker_launch_preflights ?? [],
+      ...document,
       provider_runtime_probes: [record, ...(document.provider_runtime_probes ?? [])].slice(0, 20),
     });
     return record;
@@ -971,6 +1083,9 @@ export class ControlPlanePlanPreviewStore {
         provider_runtime_probes: Array.isArray(parsed.provider_runtime_probes)
           ? parsed.provider_runtime_probes.filter((item) => item?.schema === 1)
           : [],
+        provider_adapters: Array.isArray(parsed.provider_adapters)
+          ? parsed.provider_adapters.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
       return {
@@ -985,13 +1100,19 @@ export class ControlPlanePlanPreviewStore {
         worker_delegation_approvals: [],
         worker_launch_preflights: [],
         provider_runtime_probes: [],
+        provider_adapters: [],
       };
     }
   }
 
   #write(document: Document): void {
+    const current = this.#read();
+    const normalized: Document = {
+      ...document,
+      provider_adapters: document.provider_adapters ?? current.provider_adapters ?? [],
+    };
     const tmp = `${this.#path}.${process.pid}.${Date.now()}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600 });
+    writeFileSync(tmp, `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 });
     renameSync(tmp, this.#path);
   }
 }

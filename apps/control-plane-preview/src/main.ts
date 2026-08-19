@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import {
   ControlPlanePlanPreviewStore,
+  type ControlPlaneProviderAdapterInput,
   type ControlPlanePlanPreviewInput,
 } from "./plan-preview-store.js";
 import { createTeamStatus } from "./team-status.js";
@@ -36,6 +37,7 @@ const API_WORKER_DELEGATION_PLANS_PATH = "/api/manager-plan/worker-delegation-pl
 const API_WORKER_DELEGATION_APPROVALS_PATH = "/api/manager-plan/worker-delegation-approvals";
 const API_WORKER_LAUNCH_PREFLIGHTS_PATH = "/api/manager-plan/worker-launch-preflights";
 const API_PROVIDER_RUNTIME_PROBES_PATH = "/api/manager-plan/provider-runtime-probes";
+const API_PROVIDER_ADAPTERS_PATH = "/api/manager-plan/provider-adapters";
 
 export function parseArguments(argv: readonly string[]): ControlPlaneOptions {
   const options = { host: "127.0.0.1", port: 7345 } as {
@@ -566,6 +568,60 @@ export function createControlPlaneServer(
               schema: 1,
               status: "error",
               code: "worker_launch_preflight_required",
+            }),
+          );
+        }
+        return;
+      }
+      response.writeHead(405, {
+        allow: "GET, POST",
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+      return;
+    }
+
+    if (
+      request.url &&
+      new URL(request.url, "http://127.0.0.1").pathname === API_PROVIDER_ADAPTERS_PATH
+    ) {
+      if (!options.planPreviewStore) {
+        response.writeHead(503, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ schema: 1, status: "error", code: "store_unconfigured" }));
+        return;
+      }
+      if (request.method === "GET") {
+        response.writeHead(200, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify(options.planPreviewStore.providerAdapters()));
+        return;
+      }
+      if (request.method === "POST") {
+        try {
+          const record = options.planPreviewStore.configureProviderAdapter(
+            (await readJsonBody(request)) as ControlPlaneProviderAdapterInput,
+          );
+          response.writeHead(201, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(JSON.stringify({ schema: 1, status: "ok", provider_adapter: record }));
+        } catch {
+          response.writeHead(400, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(
+            JSON.stringify({
+              schema: 1,
+              status: "error",
+              code: "invalid_provider_adapter",
             }),
           );
         }

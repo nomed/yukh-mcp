@@ -779,6 +779,27 @@ const preflightApprovedWorkerLaunch = async () => {
   }
 };
 
+const configureProviderAdapter = async ({ provider, kind, executablePath, models, budget }) => {
+  try {
+    const response = await fetch("./api/manager-plan/provider-adapters", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider,
+        adapter_kind: kind,
+        ...(executablePath ? { executable_path: executablePath } : {}),
+        models,
+        max_run_token_budget: budget,
+      }),
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.provider_adapter ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const probeProviderRuntime = async () => {
   try {
     const response = await fetch("./api/manager-plan/provider-runtime-probes", {
@@ -792,6 +813,19 @@ const probeProviderRuntime = async () => {
   } catch {
     return null;
   }
+};
+
+const renderProviderAdapter = (adapter) => {
+  if (!adapter) return "";
+  return `
+    <div class="provider-adapter">
+      <span>Provider adapter configured</span>
+      <strong>${escapeHtml(adapter.provider_adapter_id)}</strong>
+      <p class="muted">${escapeHtml(adapter.provider)} · ${escapeHtml(adapter.adapter_kind)} · max ${adapter.max_run_token_budget.toLocaleString()} tokens.</p>
+      <p class="muted">Models: ${adapter.models.map((model) => escapeHtml(model)).join(", ")}</p>
+      <p class="muted">${adapter.executable_path ? `Executable: ${escapeHtml(adapter.executable_path)}` : "SDK adapter: no executable path required at this stage."}</p>
+    </div>
+  `;
 };
 
 const renderLaunchIntent = (intent) => {
@@ -1243,6 +1277,23 @@ byId("manager-plan-form").addEventListener("submit", (event) => {
     provider: byId("plan-provider").value,
     budget: Number.parseInt(byId("plan-budget").value.replaceAll(/[^\d]/g, ""), 10),
   });
+});
+
+byId("provider-adapter-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const adapter = await configureProviderAdapter({
+    provider: byId("adapter-provider").value,
+    kind: byId("adapter-kind").value,
+    executablePath: byId("adapter-executable").value.trim(),
+    models: byId("adapter-models")
+      .value.split(",")
+      .map((model) => model.trim())
+      .filter(Boolean),
+    budget: Number.parseInt(byId("adapter-budget").value.replaceAll(/[^\d]/g, ""), 10),
+  });
+  byId("provider-adapter-status").innerHTML = adapter
+    ? renderProviderAdapter(adapter)
+    : '<div class="provider-adapter"><span>Provider adapter rejected</span><p class="muted">Check provider, adapter kind, absolute CLI path and model list.</p></div>';
 });
 
 const persistedPlan = await loadPersistedPlanPreview();
