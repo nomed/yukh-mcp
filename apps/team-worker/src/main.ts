@@ -6,6 +6,7 @@ import { RuntimeOutput } from "../../../packages/team-control/src/runtime-output
 import { buildWorkerPrompt } from "./prompt.js";
 import { runCodexPythonWorker } from "./codex-python-runner.js";
 import { runCopilotSdkWorker } from "./copilot-sdk-runner.js";
+import { createConfiguredWorkerActivityEmitter } from "./activity.js";
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -19,6 +20,7 @@ if (!teamID || !agentID) throw new TypeError("invalid team worker arguments");
 const workspace = required("YUKH_TEAM_WORKSPACE");
 const store = new TeamStore(workspace);
 const agent = store.agent(teamID, agentID);
+const activity = await createConfiguredWorkerActivityEmitter(agent, process.env);
 
 const node = process.execPath;
 const launcher = required("YUKH_COORDINATION_LAUNCHER");
@@ -274,9 +276,11 @@ const joined =
 if (!joined) {
   process.stderr.write("yukh-team-worker: coordination bootstrap or join failed\n");
   store.transition(teamID, agentID, "failed");
+  await activity.terminal("failed", "Coordination bootstrap or join failed.");
   process.exitCode = 1;
 } else {
   store.transition(teamID, agentID, "running");
+  await activity.running();
 }
 
 const outcome = !joined
@@ -368,6 +372,7 @@ let wrapperExitCode = outcome.stopped ? 0 : outcome.exitCode;
 if (joined && "output" in outcome) {
   if (outcome.stopped) {
     store.transition(teamID, agentID, "stopped");
+    await activity.terminal("stopped", "Worker stopped by team request.");
   } else {
     const summary = outcome.output.summary();
     const usage = outcome.output.usage(agent.token_budget);
@@ -418,8 +423,16 @@ if (joined && "output" in outcome) {
                           summary,
                           ...(proposedPlan ? { plan_id: proposedPlan.plan_id } : {}),
                         };
-    store.finish(teamID, agentID, completion, usage);
+    const terminal = store.finish(teamID, agentID, completion, usage);
+    if (usage) await activity.tokens(usage);
+    if (
+      terminal.state === "completed" ||
+      terminal.state === "failed" ||
+      terminal.state === "stopped"
+    )
+      await activity.terminal(terminal.state, completion.summary);
     if (completion.outcome !== "succeeded") wrapperExitCode = 1;
   }
 }
+await activity.close();
 process.exitCode = wrapperExitCode;
