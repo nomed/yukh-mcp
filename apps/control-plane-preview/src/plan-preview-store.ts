@@ -329,6 +329,35 @@ export type ControlPlaneProviderCapabilityInventoryStatus = {
   readonly inventories: readonly ControlPlaneProviderCapabilityInventoryRecord[];
 };
 
+export type ControlPlaneWorkerLaunchCandidateRecord = {
+  readonly schema: 1;
+  readonly worker_launch_candidate_id: string;
+  readonly provider_runtime_probe_id: string;
+  readonly provider_capability_inventory_id: string;
+  readonly worker_launch_preflight_id: string;
+  readonly worker_delegation_approval_id: string;
+  readonly worker_delegation_plan_id: string;
+  readonly manager_process_id: string;
+  readonly manager_run_id: string;
+  readonly provider: string;
+  readonly approved_worker_count: number;
+  readonly approved_worker_token_budget: number;
+  readonly models: readonly string[];
+  readonly outcome: "ready_for_explicit_worker_launch";
+  readonly provider_process_start: "not_performed";
+  readonly worker_launch: "not_performed";
+  readonly coordination_write: "not_performed";
+  readonly projects_write: "not_performed";
+  readonly created_at: string;
+  readonly next_required_action: "explicit_worker_launch";
+};
+
+export type ControlPlaneWorkerLaunchCandidateStatus = {
+  readonly schema: "yukh-control-plane-worker-launch-candidates-v1";
+  readonly source: "local-control-plane-store";
+  readonly candidates: readonly ControlPlaneWorkerLaunchCandidateRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -351,6 +380,7 @@ type Document = {
   readonly provider_runtime_probes?: readonly ControlPlaneProviderRuntimeProbeRecord[];
   readonly provider_adapters?: readonly ControlPlaneProviderAdapterRecord[];
   readonly provider_capability_inventories?: readonly ControlPlaneProviderCapabilityInventoryRecord[];
+  readonly worker_launch_candidates?: readonly ControlPlaneWorkerLaunchCandidateRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -612,6 +642,67 @@ export class ControlPlanePlanPreviewStore {
       source: "local-control-plane-store",
       inventories: this.#read().provider_capability_inventories ?? [],
     };
+  }
+
+  workerLaunchCandidates(): ControlPlaneWorkerLaunchCandidateStatus {
+    return {
+      schema: "yukh-control-plane-worker-launch-candidates-v1",
+      source: "local-control-plane-store",
+      candidates: this.#read().worker_launch_candidates ?? [],
+    };
+  }
+
+  createWorkerLaunchCandidate(): ControlPlaneWorkerLaunchCandidateRecord {
+    const document = this.#read();
+    const probe = document.provider_runtime_probes?.[0];
+    if (!probe || probe.outcome !== "ready_for_worker_launch") {
+      throw new TypeError("provider runtime probe not ready");
+    }
+    const inventory = document.provider_capability_inventories?.find(
+      (candidate) => candidate.provider === probe.provider,
+    );
+    if (!inventory || inventory.models.length < 1) {
+      throw new TypeError("provider capability inventory required");
+    }
+    const preflight = document.worker_launch_preflights?.find(
+      (candidate) => candidate.worker_launch_preflight_id === probe.worker_launch_preflight_id,
+    );
+    if (!preflight) {
+      throw new TypeError("worker launch preflight required");
+    }
+    const existing = document.worker_launch_candidates?.find(
+      (candidate) =>
+        candidate.provider_runtime_probe_id === probe.provider_runtime_probe_id &&
+        candidate.provider_capability_inventory_id === inventory.provider_capability_inventory_id,
+    );
+    if (existing) return existing;
+    const record: ControlPlaneWorkerLaunchCandidateRecord = {
+      schema: 1,
+      worker_launch_candidate_id: `worker-launch-candidate-${randomUUID()}`,
+      provider_runtime_probe_id: probe.provider_runtime_probe_id,
+      provider_capability_inventory_id: inventory.provider_capability_inventory_id,
+      worker_launch_preflight_id: preflight.worker_launch_preflight_id,
+      worker_delegation_approval_id: preflight.worker_delegation_approval_id,
+      worker_delegation_plan_id: preflight.worker_delegation_plan_id,
+      manager_process_id: preflight.manager_process_id,
+      manager_run_id: preflight.manager_run_id,
+      provider: probe.provider,
+      approved_worker_count: preflight.approved_worker_count,
+      approved_worker_token_budget: preflight.approved_worker_token_budget,
+      models: inventory.models.map((model) => model.model),
+      outcome: "ready_for_explicit_worker_launch",
+      provider_process_start: "not_performed",
+      worker_launch: "not_performed",
+      coordination_write: "not_performed",
+      projects_write: "not_performed",
+      created_at: new Date().toISOString(),
+      next_required_action: "explicit_worker_launch",
+    };
+    this.#write({
+      ...document,
+      worker_launch_candidates: [record, ...(document.worker_launch_candidates ?? [])].slice(0, 20),
+    });
+    return record;
   }
 
   async inventoryProviderCapabilities(): Promise<ControlPlaneProviderCapabilityInventoryRecord> {
@@ -1195,6 +1286,9 @@ export class ControlPlanePlanPreviewStore {
         provider_capability_inventories: Array.isArray(parsed.provider_capability_inventories)
           ? parsed.provider_capability_inventories.filter((item) => item?.schema === 1)
           : [],
+        worker_launch_candidates: Array.isArray(parsed.worker_launch_candidates)
+          ? parsed.worker_launch_candidates.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
       return {
@@ -1211,6 +1305,7 @@ export class ControlPlanePlanPreviewStore {
         provider_runtime_probes: [],
         provider_adapters: [],
         provider_capability_inventories: [],
+        worker_launch_candidates: [],
       };
     }
   }
@@ -1222,6 +1317,8 @@ export class ControlPlanePlanPreviewStore {
       provider_adapters: document.provider_adapters ?? current.provider_adapters ?? [],
       provider_capability_inventories:
         document.provider_capability_inventories ?? current.provider_capability_inventories ?? [],
+      worker_launch_candidates:
+        document.worker_launch_candidates ?? current.worker_launch_candidates ?? [],
     };
     const tmp = `${this.#path}.${process.pid}.${Date.now()}.tmp`;
     writeFileSync(tmp, `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 });

@@ -830,6 +830,21 @@ const probeProviderRuntime = async () => {
   }
 };
 
+const createWorkerLaunchCandidate = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/worker-launch-candidates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.worker_launch_candidate ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderProviderAdapter = (adapter) => {
   if (!adapter) return "";
   return `
@@ -1011,6 +1026,25 @@ const renderProviderRuntimeProbe = (probe) => {
       </div>
       <p class="muted">Worker launch: ${escapeHtml(probe.worker_launch)} · Coordination write: ${escapeHtml(probe.coordination_write)} · Projects write: ${escapeHtml(probe.projects_write)}.</p>
       <p class="muted">Next required action: ${escapeHtml(probe.next_required_action)}.</p>
+      <button type="button" class="secondary worker-launch-candidate-button">Create launch candidate</button>
+    </div>
+  `;
+};
+
+const renderWorkerLaunchCandidate = (candidate) => {
+  if (!candidate) return "";
+  return `
+    <div class="worker-launch-candidate">
+      <span>Worker launch candidate</span>
+      <strong>${escapeHtml(candidate.worker_launch_candidate_id)}</strong>
+      <p class="muted">${candidate.approved_worker_count.toLocaleString()} workers · ${candidate.approved_worker_token_budget.toLocaleString()} worker tokens · outcome ${escapeHtml(candidate.outcome)}.</p>
+      <div class="preflight-grid">
+        <article><span>Provider</span><strong>${escapeHtml(candidate.provider)}</strong></article>
+        <article><span>Models</span><strong>${candidate.models.map((model) => escapeHtml(model)).join(", ")}</strong></article>
+        <article><span>Process</span><strong>${escapeHtml(candidate.provider_process_start)}</strong></article>
+      </div>
+      <p class="muted">Worker launch: ${escapeHtml(candidate.worker_launch)} · Coordination write: ${escapeHtml(candidate.coordination_write)} · Projects write: ${escapeHtml(candidate.projects_write)}.</p>
+      <p class="muted">Next required action: ${escapeHtml(candidate.next_required_action)}.</p>
     </div>
   `;
 };
@@ -1308,6 +1342,22 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".worker-launch-preflight")
     ?.insertAdjacentHTML("afterend", renderProviderRuntimeProbe(probe));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".worker-launch-candidate-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const candidate = await createWorkerLaunchCandidate();
+  if (!candidate) {
+    button.removeAttribute("disabled");
+    button.textContent = "Runtime probe and capability inventory required";
+    return;
+  }
+  button.textContent = "Worker launch candidate recorded";
+  button
+    .closest(".provider-runtime-probe")
+    ?.insertAdjacentHTML("afterend", renderWorkerLaunchCandidate(candidate));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
