@@ -78,6 +78,20 @@ Local files are preview adapters only. A local path may help one-node
 development, but it is not a distributed contract and must not be required by
 the Control Plane.
 
+The Control Plane can publish and read runtime activity through the JetStream
+adapter when explicitly enabled:
+
+```text
+YUKH_WORKER_ACTIVITY_JETSTREAM=1
+YUKH_NATS_URL=nats://127.0.0.1:4222
+YUKH_WORKER_ACTIVITY_CREATE_STREAM=1
+```
+
+If the adapter is not enabled, the preview UI keeps using the local preview
+adapter and labels the source accordingly. Enabling JetStream creates or uses
+`YKR_WORKER_EVENTS_V1` with subject `yukh.*.*.runtime.worker.*.*.v1`; events
+are published with `msgID = event.id` for idempotent delivery.
+
 ## Resource and resilience policy
 
 - Emit compact activity events; do not publish every stdout byte as an event.

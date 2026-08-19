@@ -1,6 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { accessSync, constants, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import {
+  type WorkerActivityEvent,
+  type WorkerActivityEventBus,
+} from "../../../packages/runtime-events/src/worker-activity.js";
 
 export type ControlPlanePlanPreviewState = "proposed" | "approved-preview";
 
@@ -460,35 +464,7 @@ export type ControlPlaneProviderRunnerAttachmentStatus = {
   readonly attachments: readonly ControlPlaneProviderRunnerAttachmentRecord[];
 };
 
-export type ControlPlaneWorkerActivityEvent = {
-  readonly specversion: "1.0";
-  readonly id: string;
-  readonly source: string;
-  readonly type: "worker.activity.v1";
-  readonly subject: string;
-  readonly time: string;
-  readonly datacontenttype: "application/json";
-  readonly dataschema: "https://yukh.example/schemas/runtime/v1/worker-activity.schema.json";
-  readonly correlationid?: string;
-  readonly causationid?: string;
-  readonly data: {
-    readonly aggregate_type: "WorkerSession";
-    readonly aggregate_id: string;
-    readonly producer_id: string;
-    readonly sequence: number;
-    readonly activity_kind:
-      "heartbeat" | "log-chunked" | "status-changed" | "tokens-observed" | "artifact-recorded";
-    readonly observed_at: string;
-    readonly worker_state?: "defined" | "running" | "completed" | "failed" | "stopped";
-    readonly summary?: string;
-    readonly artifact_ref?: string;
-    readonly tokens?: {
-      readonly observed: number;
-      readonly budget: number;
-      readonly budget_outcome?: "within" | "exceeded";
-    };
-  };
-};
+export type ControlPlaneWorkerActivityEvent = WorkerActivityEvent;
 
 export type ControlPlaneWorkerActivityInput = {
   readonly attachment: ControlPlaneProviderRunnerAttachmentRecord;
@@ -501,7 +477,7 @@ export type ControlPlaneWorkerActivityAdapter = (
 
 export type ControlPlaneWorkerActivityStatus = {
   readonly schema: "yukh-control-plane-worker-activities-v1";
-  readonly source: "worker.activity.v1-preview-adapter";
+  readonly source: "worker.activity.v1-preview-adapter" | "worker.activity.v1-jetstream";
   readonly activities: readonly ControlPlaneWorkerActivityEvent[];
 };
 
@@ -627,6 +603,7 @@ export class ControlPlanePlanPreviewStore {
   readonly #discoverProviderModels: ControlPlaneProviderModelDiscoverer;
   readonly #providerRunner: ControlPlaneProviderRunner | undefined;
   readonly #workerActivityAdapter: ControlPlaneWorkerActivityAdapter | undefined;
+  readonly #workerActivityBus: WorkerActivityEventBus | undefined;
 
   constructor(
     workspace: string,
@@ -634,6 +611,7 @@ export class ControlPlanePlanPreviewStore {
       readonly discoverProviderModels?: ControlPlaneProviderModelDiscoverer;
       readonly providerRunner?: ControlPlaneProviderRunner;
       readonly workerActivityAdapter?: ControlPlaneWorkerActivityAdapter;
+      readonly workerActivityBus?: WorkerActivityEventBus;
     } = {},
   ) {
     if (!isAbsolute(workspace)) throw new TypeError("invalid control plane workspace");
@@ -643,6 +621,7 @@ export class ControlPlanePlanPreviewStore {
     this.#discoverProviderModels = options.discoverProviderModels ?? (async () => undefined);
     this.#providerRunner = options.providerRunner;
     this.#workerActivityAdapter = options.workerActivityAdapter;
+    this.#workerActivityBus = options.workerActivityBus;
   }
 
   status(): ControlPlanePlanPreviewStoreStatus {
@@ -835,7 +814,14 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
-  workerActivities(): ControlPlaneWorkerActivityStatus {
+  async workerActivities(): Promise<ControlPlaneWorkerActivityStatus> {
+    if (this.#workerActivityBus) {
+      return {
+        schema: "yukh-control-plane-worker-activities-v1",
+        source: "worker.activity.v1-jetstream",
+        activities: await this.#workerActivityBus.recent(50),
+      };
+    }
     return {
       schema: "yukh-control-plane-worker-activities-v1",
       source: "worker.activity.v1-preview-adapter",
@@ -854,6 +840,7 @@ export class ControlPlanePlanPreviewStore {
       attachment,
       sequence: (document.worker_activities ?? []).length + 1,
     });
+    await this.#workerActivityBus?.publish(event);
     this.#write({
       ...document,
       worker_activities: [event, ...(document.worker_activities ?? [])].slice(0, 50),

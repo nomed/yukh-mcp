@@ -11,6 +11,11 @@ import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { teamRuntimeEntrypoints } from "../../../packages/team-control/src/entrypoints.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
 import {
+  WorkerActivityJetStreamBus,
+  WORKER_ACTIVITY_SCHEMA,
+  workerActivitySubject,
+} from "../../../packages/runtime-events/src/worker-activity.js";
+import {
   ControlPlanePlanPreviewStore,
   type ControlPlaneProviderAdapterInput,
   type ControlPlaneProviderModelDiscoverer,
@@ -214,10 +219,15 @@ function createConfiguredWorkerActivityAdapter(
       id: randomUUID(),
       source: `yukh://runtime/local-preview/worker/${agent.agent_id}`,
       type: "worker.activity.v1",
-      subject: `yukh.local.tenant-local.runtime.worker.${agent.agent_id}.${activityKind}.v1`,
+      subject: workerActivitySubject({
+        env: "local",
+        tenant: "tenant-local",
+        workerId: agent.agent_id,
+        kind: activityKind,
+      }),
       time: observed,
       datacontenttype: "application/json",
-      dataschema: "https://yukh.example/schemas/runtime/v1/worker-activity.schema.json",
+      dataschema: WORKER_ACTIVITY_SCHEMA,
       correlationid: attachment.provider_runner_attachment_id,
       causationid: attachment.provider_worker_process_id,
       data: {
@@ -242,6 +252,25 @@ function createConfiguredWorkerActivityAdapter(
       },
     };
   };
+}
+
+async function createConfiguredWorkerActivityBus(): Promise<
+  WorkerActivityJetStreamBus | undefined
+> {
+  if (process.env.YUKH_WORKER_ACTIVITY_JETSTREAM !== "1") return undefined;
+  try {
+    return await WorkerActivityJetStreamBus.connect({
+      servers: process.env.YUKH_NATS_URL ?? "nats://127.0.0.1:4222",
+      createStream: process.env.YUKH_WORKER_ACTIVITY_CREATE_STREAM !== "0",
+    });
+  } catch (error) {
+    process.stderr.write(
+      `Yukh Control Plane worker activity JetStream unavailable; using preview adapter only: ${
+        error instanceof Error ? error.message : "unknown error"
+      }\n`,
+    );
+    return undefined;
+  }
 }
 
 export function createControlPlaneServer(
@@ -454,7 +483,7 @@ export function createControlPlaneServer(
           "cache-control": "no-store",
           "content-type": "application/json; charset=utf-8",
         });
-        response.end(JSON.stringify(options.planPreviewStore.workerActivities()));
+        response.end(JSON.stringify(await options.planPreviewStore.workerActivities()));
         return;
       }
       if (request.method === "POST") {
@@ -1217,6 +1246,7 @@ export async function startControlPlane(options: ControlPlaneOptions): Promise<S
   const teamStore = workspace ? new TeamStore(workspace) : undefined;
   const providerRunner =
     workspace && teamStore ? createConfiguredProviderRunner(workspace, teamStore) : undefined;
+  const workerActivityBus = await createConfiguredWorkerActivityBus();
   const server = createControlPlaneServer(options.staticRoot, {
     ...(teamStore ? { teamStore } : {}),
     ...(workspace && teamStore
@@ -1225,9 +1255,13 @@ export async function startControlPlane(options: ControlPlaneOptions): Promise<S
             discoverProviderModels: discoverConfiguredProviderModels,
             ...(providerRunner ? { providerRunner } : {}),
             workerActivityAdapter: createConfiguredWorkerActivityAdapter(teamStore),
+            ...(workerActivityBus ? { workerActivityBus } : {}),
           }),
         }
       : {}),
+  });
+  server.on("close", () => {
+    void workerActivityBus?.close();
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
