@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +15,7 @@ import {
   type ControlPlaneProviderAdapterInput,
   type ControlPlaneProviderModelDiscoverer,
   type ControlPlaneProviderRunner,
+  type ControlPlaneWorkerActivityAdapter,
   type ControlPlanePlanPreviewInput,
 } from "./plan-preview-store.js";
 import { createTeamStatus } from "./team-status.js";
@@ -52,6 +54,7 @@ const API_WORKER_LAUNCH_CANDIDATES_PATH = "/api/manager-plan/worker-launch-candi
 const API_WORKER_LAUNCH_RECEIPTS_PATH = "/api/manager-plan/worker-launch-receipts";
 const API_PROVIDER_WORKER_PROCESSES_PATH = "/api/manager-plan/provider-worker-processes";
 const API_PROVIDER_RUNNER_ATTACHMENTS_PATH = "/api/manager-plan/provider-runner-attachments";
+const API_WORKER_ACTIVITIES_PATH = "/api/manager-plan/worker-activities";
 
 export function parseArguments(argv: readonly string[]): ControlPlaneOptions {
   const options = { host: "127.0.0.1", port: 7345 } as {
@@ -195,6 +198,48 @@ function createConfiguredProviderRunner(
       agent_id: agent.agent_id,
       pid: launched.pid,
       log_path: launched.log,
+    };
+  };
+}
+
+function createConfiguredWorkerActivityAdapter(
+  teamStore: TeamStore,
+): ControlPlaneWorkerActivityAdapter {
+  return async ({ attachment, sequence }) => {
+    const agent = teamStore.agent(attachment.team_id, attachment.agent_id);
+    const observed = new Date().toISOString();
+    const activityKind = agent.usage ? "tokens-observed" : "status-changed";
+    return {
+      specversion: "1.0",
+      id: randomUUID(),
+      source: `yukh://runtime/local-preview/worker/${agent.agent_id}`,
+      type: "worker.activity.v1",
+      subject: `yukh.local.tenant-local.runtime.worker.${agent.agent_id}.${activityKind}.v1`,
+      time: observed,
+      datacontenttype: "application/json",
+      dataschema: "https://yukh.example/schemas/runtime/v1/worker-activity.schema.json",
+      correlationid: attachment.provider_runner_attachment_id,
+      causationid: attachment.provider_worker_process_id,
+      data: {
+        aggregate_type: "WorkerSession",
+        aggregate_id: agent.agent_id,
+        producer_id: "control-plane-preview-adapter",
+        sequence,
+        activity_kind: activityKind,
+        observed_at: observed,
+        worker_state: agent.state,
+        summary:
+          "Preview adapter snapshot; JetStream worker.activity.v1 remains the distributed contract.",
+        ...(agent.usage
+          ? {
+              tokens: {
+                observed: agent.usage.total_tokens,
+                budget: agent.token_budget,
+                budget_outcome: agent.usage.budget_outcome,
+              },
+            }
+          : {}),
+      },
     };
   };
 }
@@ -375,6 +420,58 @@ export function createControlPlaneServer(
               : error instanceof TypeError
                 ? "provider_worker_process_required"
                 : "provider_runner_attachment_failed";
+          response.writeHead(409, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(JSON.stringify({ schema: 1, status: "error", code }));
+        }
+        return;
+      }
+      response.writeHead(405, {
+        allow: "GET, POST",
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+      return;
+    }
+
+    if (
+      request.url &&
+      new URL(request.url, "http://127.0.0.1").pathname === API_WORKER_ACTIVITIES_PATH
+    ) {
+      if (!options.planPreviewStore) {
+        response.writeHead(503, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ schema: 1, status: "error", code: "store_unconfigured" }));
+        return;
+      }
+      if (request.method === "GET") {
+        response.writeHead(200, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify(options.planPreviewStore.workerActivities()));
+        return;
+      }
+      if (request.method === "POST") {
+        try {
+          const record = await options.planPreviewStore.recordWorkerActivity();
+          response.writeHead(201, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(JSON.stringify({ schema: 1, status: "ok", worker_activity: record }));
+        } catch (error) {
+          const code =
+            error instanceof Error && error.message === "worker_activity_adapter_unconfigured"
+              ? "worker_activity_adapter_unconfigured"
+              : error instanceof TypeError
+                ? "provider_runner_attachment_required"
+                : "worker_activity_failed";
           response.writeHead(409, {
             "cache-control": "no-store",
             "content-type": "application/json; charset=utf-8",
@@ -1127,6 +1224,7 @@ export async function startControlPlane(options: ControlPlaneOptions): Promise<S
           planPreviewStore: new ControlPlanePlanPreviewStore(workspace, {
             discoverProviderModels: discoverConfiguredProviderModels,
             ...(providerRunner ? { providerRunner } : {}),
+            workerActivityAdapter: createConfiguredWorkerActivityAdapter(teamStore),
           }),
         }
       : {}),
