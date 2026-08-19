@@ -890,6 +890,21 @@ const attachProviderRunner = async () => {
   }
 };
 
+const recordWorkerActivity = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/worker-activities", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.worker_activity ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderProviderAdapter = (adapter) => {
   if (!adapter) return "";
   return `
@@ -1146,7 +1161,25 @@ const renderProviderRunnerAttachment = (attachment) => {
         <article><span>Launch</span><strong>${escapeHtml(attachment.worker_launch)}</strong></article>
       </div>
       <p class="muted">Log: ${escapeHtml(attachment.log_path)}</p>
-      <p class="muted">Tokens reserved: ${attachment.token_budget.toLocaleString()} · next: ${escapeHtml(attachment.next_required_action)}.</p>
+      <p class="muted">Tokens reserved: ${attachment.token_budget.toLocaleString()} · next: read worker.activity.v1.</p>
+      <button type="button" class="secondary worker-activity-button">Read worker activity</button>
+    </div>
+  `;
+};
+
+const renderWorkerActivity = (activity) => {
+  if (!activity) return "";
+  return `
+    <div class="worker-activity">
+      <span>worker.activity.v1</span>
+      <strong>${escapeHtml(activity.id)}</strong>
+      <p class="muted">${escapeHtml(activity.subject)} · source ${escapeHtml(activity.source)}.</p>
+      <div class="preflight-grid">
+        <article><span>Kind</span><strong>${escapeHtml(activity.data.activity_kind)}</strong></article>
+        <article><span>State</span><strong>${escapeHtml(activity.data.worker_state ?? "pending")}</strong></article>
+        <article><span>Tokens</span><strong>${activity.data.tokens ? `${activity.data.tokens.observed.toLocaleString()}/${activity.data.tokens.budget.toLocaleString()}` : "pending"}</strong></article>
+      </div>
+      <p class="muted">${escapeHtml(activity.data.summary ?? "Activity snapshot from the preview adapter.")}</p>
     </div>
   `;
 };
@@ -1508,6 +1541,23 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".provider-worker-process")
     ?.insertAdjacentHTML("afterend", renderProviderRunnerAttachment(attachment));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".worker-activity-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const activity = await recordWorkerActivity();
+  if (!activity) {
+    button.removeAttribute("disabled");
+    button.textContent = "Worker activity unavailable";
+    return;
+  }
+  button.removeAttribute("disabled");
+  button.textContent = "Read worker activity again";
+  button
+    .closest(".provider-runner-attachment")
+    ?.insertAdjacentHTML("afterend", renderWorkerActivity(activity));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {

@@ -460,6 +460,51 @@ export type ControlPlaneProviderRunnerAttachmentStatus = {
   readonly attachments: readonly ControlPlaneProviderRunnerAttachmentRecord[];
 };
 
+export type ControlPlaneWorkerActivityEvent = {
+  readonly specversion: "1.0";
+  readonly id: string;
+  readonly source: string;
+  readonly type: "worker.activity.v1";
+  readonly subject: string;
+  readonly time: string;
+  readonly datacontenttype: "application/json";
+  readonly dataschema: "https://yukh.example/schemas/runtime/v1/worker-activity.schema.json";
+  readonly correlationid?: string;
+  readonly causationid?: string;
+  readonly data: {
+    readonly aggregate_type: "WorkerSession";
+    readonly aggregate_id: string;
+    readonly producer_id: string;
+    readonly sequence: number;
+    readonly activity_kind:
+      "heartbeat" | "log-chunked" | "status-changed" | "tokens-observed" | "artifact-recorded";
+    readonly observed_at: string;
+    readonly worker_state?: "defined" | "running" | "completed" | "failed" | "stopped";
+    readonly summary?: string;
+    readonly artifact_ref?: string;
+    readonly tokens?: {
+      readonly observed: number;
+      readonly budget: number;
+      readonly budget_outcome?: "within" | "exceeded";
+    };
+  };
+};
+
+export type ControlPlaneWorkerActivityInput = {
+  readonly attachment: ControlPlaneProviderRunnerAttachmentRecord;
+  readonly sequence: number;
+};
+
+export type ControlPlaneWorkerActivityAdapter = (
+  input: ControlPlaneWorkerActivityInput,
+) => Promise<ControlPlaneWorkerActivityEvent>;
+
+export type ControlPlaneWorkerActivityStatus = {
+  readonly schema: "yukh-control-plane-worker-activities-v1";
+  readonly source: "worker.activity.v1-preview-adapter";
+  readonly activities: readonly ControlPlaneWorkerActivityEvent[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -486,6 +531,7 @@ type Document = {
   readonly worker_launch_receipts?: readonly ControlPlaneWorkerLaunchReceiptRecord[];
   readonly provider_worker_processes?: readonly ControlPlaneProviderWorkerProcessRecord[];
   readonly provider_runner_attachments?: readonly ControlPlaneProviderRunnerAttachmentRecord[];
+  readonly worker_activities?: readonly ControlPlaneWorkerActivityEvent[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -580,12 +626,14 @@ export class ControlPlanePlanPreviewStore {
   readonly #path: string;
   readonly #discoverProviderModels: ControlPlaneProviderModelDiscoverer;
   readonly #providerRunner: ControlPlaneProviderRunner | undefined;
+  readonly #workerActivityAdapter: ControlPlaneWorkerActivityAdapter | undefined;
 
   constructor(
     workspace: string,
     options: {
       readonly discoverProviderModels?: ControlPlaneProviderModelDiscoverer;
       readonly providerRunner?: ControlPlaneProviderRunner;
+      readonly workerActivityAdapter?: ControlPlaneWorkerActivityAdapter;
     } = {},
   ) {
     if (!isAbsolute(workspace)) throw new TypeError("invalid control plane workspace");
@@ -594,6 +642,7 @@ export class ControlPlanePlanPreviewStore {
     this.#path = join(root, "plan-previews.json");
     this.#discoverProviderModels = options.discoverProviderModels ?? (async () => undefined);
     this.#providerRunner = options.providerRunner;
+    this.#workerActivityAdapter = options.workerActivityAdapter;
   }
 
   status(): ControlPlanePlanPreviewStoreStatus {
@@ -784,6 +833,32 @@ export class ControlPlanePlanPreviewStore {
       source: "local-control-plane-store",
       attachments: this.#read().provider_runner_attachments ?? [],
     };
+  }
+
+  workerActivities(): ControlPlaneWorkerActivityStatus {
+    return {
+      schema: "yukh-control-plane-worker-activities-v1",
+      source: "worker.activity.v1-preview-adapter",
+      activities: this.#read().worker_activities ?? [],
+    };
+  }
+
+  async recordWorkerActivity(): Promise<ControlPlaneWorkerActivityEvent> {
+    const document = this.#read();
+    const attachment = document.provider_runner_attachments?.[0];
+    if (!attachment || attachment.worker_launch !== "running") {
+      throw new TypeError("provider runner attachment required");
+    }
+    if (!this.#workerActivityAdapter) throw new Error("worker_activity_adapter_unconfigured");
+    const event = await this.#workerActivityAdapter({
+      attachment,
+      sequence: (document.worker_activities ?? []).length + 1,
+    });
+    this.#write({
+      ...document,
+      worker_activities: [event, ...(document.worker_activities ?? [])].slice(0, 50),
+    });
+    return event;
   }
 
   async attachProviderRunner(): Promise<ControlPlaneProviderRunnerAttachmentRecord> {
@@ -1556,6 +1631,9 @@ export class ControlPlanePlanPreviewStore {
         provider_runner_attachments: Array.isArray(parsed.provider_runner_attachments)
           ? parsed.provider_runner_attachments.filter((item) => item?.schema === 1)
           : [],
+        worker_activities: Array.isArray(parsed.worker_activities)
+          ? parsed.worker_activities.filter((item) => item?.type === "worker.activity.v1")
+          : [],
       };
     } catch {
       return {
@@ -1576,6 +1654,7 @@ export class ControlPlanePlanPreviewStore {
         worker_launch_receipts: [],
         provider_worker_processes: [],
         provider_runner_attachments: [],
+        worker_activities: [],
       };
     }
   }
@@ -1595,6 +1674,7 @@ export class ControlPlanePlanPreviewStore {
         document.provider_worker_processes ?? current.provider_worker_processes ?? [],
       provider_runner_attachments:
         document.provider_runner_attachments ?? current.provider_runner_attachments ?? [],
+      worker_activities: document.worker_activities ?? current.worker_activities ?? [],
     };
     const tmp = `${this.#path}.${process.pid}.${Date.now()}.tmp`;
     writeFileSync(tmp, `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 });
