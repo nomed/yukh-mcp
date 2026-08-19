@@ -460,6 +460,52 @@ export type ControlPlaneProviderRunnerAttachmentStatus = {
   readonly attachments: readonly ControlPlaneProviderRunnerAttachmentRecord[];
 };
 
+export type ControlPlaneProviderWorkerObservationInput = {
+  readonly attachment: ControlPlaneProviderRunnerAttachmentRecord;
+};
+
+export type ControlPlaneProviderWorkerObservationResult = {
+  readonly worker_state: "defined" | "running" | "completed" | "failed" | "stopped";
+  readonly completion_outcome?: string;
+  readonly observed_tokens: number;
+  readonly budget_outcome?: "within" | "exceeded";
+};
+
+export type ControlPlaneProviderWorkerObserver = (
+  input: ControlPlaneProviderWorkerObservationInput,
+) => Promise<ControlPlaneProviderWorkerObservationResult>;
+
+export type ControlPlaneProviderWorkerObservationRecord = {
+  readonly schema: 1;
+  readonly provider_worker_observation_id: string;
+  readonly provider_runner_attachment_id: string;
+  readonly provider_worker_process_id: string;
+  readonly worker_launch_receipt_id: string;
+  readonly provider: string;
+  readonly runtime: "codex" | "copilot";
+  readonly team_id: string;
+  readonly agent_id: string;
+  readonly pid: number;
+  readonly log_path: string;
+  readonly worker_state: "defined" | "running" | "completed" | "failed" | "stopped";
+  readonly worker_launch: "running" | "completed" | "failed" | "stopped";
+  readonly completion_outcome?: string;
+  readonly observed_tokens: number;
+  readonly token_budget: number;
+  readonly budget_outcome?: "within" | "exceeded";
+  readonly provider_process_start: "observed";
+  readonly coordination_write: "not_performed";
+  readonly projects_write: "not_performed";
+  readonly created_at: string;
+  readonly next_required_action: "continue_observing" | "review_worker_output";
+};
+
+export type ControlPlaneProviderWorkerObservationStatus = {
+  readonly schema: "yukh-control-plane-provider-worker-observations-v1";
+  readonly source: "local-control-plane-store";
+  readonly observations: readonly ControlPlaneProviderWorkerObservationRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -486,6 +532,7 @@ type Document = {
   readonly worker_launch_receipts?: readonly ControlPlaneWorkerLaunchReceiptRecord[];
   readonly provider_worker_processes?: readonly ControlPlaneProviderWorkerProcessRecord[];
   readonly provider_runner_attachments?: readonly ControlPlaneProviderRunnerAttachmentRecord[];
+  readonly provider_worker_observations?: readonly ControlPlaneProviderWorkerObservationRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -580,12 +627,14 @@ export class ControlPlanePlanPreviewStore {
   readonly #path: string;
   readonly #discoverProviderModels: ControlPlaneProviderModelDiscoverer;
   readonly #providerRunner: ControlPlaneProviderRunner | undefined;
+  readonly #providerWorkerObserver: ControlPlaneProviderWorkerObserver | undefined;
 
   constructor(
     workspace: string,
     options: {
       readonly discoverProviderModels?: ControlPlaneProviderModelDiscoverer;
       readonly providerRunner?: ControlPlaneProviderRunner;
+      readonly providerWorkerObserver?: ControlPlaneProviderWorkerObserver;
     } = {},
   ) {
     if (!isAbsolute(workspace)) throw new TypeError("invalid control plane workspace");
@@ -594,6 +643,7 @@ export class ControlPlanePlanPreviewStore {
     this.#path = join(root, "plan-previews.json");
     this.#discoverProviderModels = options.discoverProviderModels ?? (async () => undefined);
     this.#providerRunner = options.providerRunner;
+    this.#providerWorkerObserver = options.providerWorkerObserver;
   }
 
   status(): ControlPlanePlanPreviewStoreStatus {
@@ -784,6 +834,65 @@ export class ControlPlanePlanPreviewStore {
       source: "local-control-plane-store",
       attachments: this.#read().provider_runner_attachments ?? [],
     };
+  }
+
+  providerWorkerObservations(): ControlPlaneProviderWorkerObservationStatus {
+    return {
+      schema: "yukh-control-plane-provider-worker-observations-v1",
+      source: "local-control-plane-store",
+      observations: this.#read().provider_worker_observations ?? [],
+    };
+  }
+
+  async observeProviderWorker(): Promise<ControlPlaneProviderWorkerObservationRecord> {
+    const document = this.#read();
+    const attachment = document.provider_runner_attachments?.[0];
+    if (!attachment || attachment.worker_launch !== "running") {
+      throw new TypeError("provider runner attachment required");
+    }
+    if (!this.#providerWorkerObserver) throw new Error("provider_worker_observer_unconfigured");
+    const observed = await this.#providerWorkerObserver({ attachment });
+    const workerLaunch =
+      observed.worker_state === "completed"
+        ? "completed"
+        : observed.worker_state === "failed"
+          ? "failed"
+          : observed.worker_state === "stopped"
+            ? "stopped"
+            : "running";
+    const record: ControlPlaneProviderWorkerObservationRecord = {
+      schema: 1,
+      provider_worker_observation_id: `provider-worker-observation-${randomUUID()}`,
+      provider_runner_attachment_id: attachment.provider_runner_attachment_id,
+      provider_worker_process_id: attachment.provider_worker_process_id,
+      worker_launch_receipt_id: attachment.worker_launch_receipt_id,
+      provider: attachment.provider,
+      runtime: attachment.runtime,
+      team_id: attachment.team_id,
+      agent_id: attachment.agent_id,
+      pid: attachment.pid,
+      log_path: attachment.log_path,
+      worker_state: observed.worker_state,
+      worker_launch: workerLaunch,
+      ...(observed.completion_outcome ? { completion_outcome: observed.completion_outcome } : {}),
+      observed_tokens: observed.observed_tokens,
+      token_budget: attachment.token_budget,
+      ...(observed.budget_outcome ? { budget_outcome: observed.budget_outcome } : {}),
+      provider_process_start: "observed",
+      coordination_write: "not_performed",
+      projects_write: "not_performed",
+      created_at: new Date().toISOString(),
+      next_required_action:
+        workerLaunch === "running" ? "continue_observing" : "review_worker_output",
+    };
+    this.#write({
+      ...document,
+      provider_worker_observations: [
+        record,
+        ...(document.provider_worker_observations ?? []),
+      ].slice(0, 50),
+    });
+    return record;
   }
 
   async attachProviderRunner(): Promise<ControlPlaneProviderRunnerAttachmentRecord> {
@@ -1556,6 +1665,9 @@ export class ControlPlanePlanPreviewStore {
         provider_runner_attachments: Array.isArray(parsed.provider_runner_attachments)
           ? parsed.provider_runner_attachments.filter((item) => item?.schema === 1)
           : [],
+        provider_worker_observations: Array.isArray(parsed.provider_worker_observations)
+          ? parsed.provider_worker_observations.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
       return {
@@ -1576,6 +1688,7 @@ export class ControlPlanePlanPreviewStore {
         worker_launch_receipts: [],
         provider_worker_processes: [],
         provider_runner_attachments: [],
+        provider_worker_observations: [],
       };
     }
   }
@@ -1595,6 +1708,8 @@ export class ControlPlanePlanPreviewStore {
         document.provider_worker_processes ?? current.provider_worker_processes ?? [],
       provider_runner_attachments:
         document.provider_runner_attachments ?? current.provider_runner_attachments ?? [],
+      provider_worker_observations:
+        document.provider_worker_observations ?? current.provider_worker_observations ?? [],
     };
     const tmp = `${this.#path}.${process.pid}.${Date.now()}.tmp`;
     writeFileSync(tmp, `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 });
