@@ -69,6 +69,27 @@ export type ControlPlaneLaunchIntentStatus = {
   readonly intents: readonly ControlPlaneLaunchIntentRecord[];
 };
 
+export type ControlPlaneManagerRunRecord = {
+  readonly schema: 1;
+  readonly manager_run_id: string;
+  readonly receipt_id: string;
+  readonly state: "planned";
+  readonly launch_intent_id: string;
+  readonly preview_id: string;
+  readonly provider: string;
+  readonly manager_token_budget: number;
+  readonly team_token_budget: number;
+  readonly worker_count: number;
+  readonly created_at: string;
+  readonly next_required_action: "connect_manager_runtime";
+};
+
+export type ControlPlaneManagerRunStatus = {
+  readonly schema: "yukh-control-plane-manager-runs-v1";
+  readonly source: "local-control-plane-store";
+  readonly runs: readonly ControlPlaneManagerRunRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -81,6 +102,7 @@ type Document = {
   readonly schema: 1;
   readonly previews: readonly ControlPlanePlanPreviewRecord[];
   readonly launch_intents?: readonly ControlPlaneLaunchIntentRecord[];
+  readonly manager_runs?: readonly ControlPlaneManagerRunRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -212,6 +234,51 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
+  managerRuns(): ControlPlaneManagerRunStatus {
+    return {
+      schema: "yukh-control-plane-manager-runs-v1",
+      source: "local-control-plane-store",
+      runs: this.#read().manager_runs ?? [],
+    };
+  }
+
+  createManagerRun(): ControlPlaneManagerRunRecord {
+    const document = this.#read();
+    const launchIntent = document.launch_intents?.[0];
+    if (!launchIntent) {
+      throw new TypeError("missing launch intent");
+    }
+    const existing = document.manager_runs?.find(
+      (run) => run.launch_intent_id === launchIntent.launch_intent_id,
+    );
+    if (existing) return existing;
+    const preview = document.previews.find((item) => item.preview_id === launchIntent.preview_id);
+    if (!preview) {
+      throw new TypeError("missing launch preview");
+    }
+    const record: ControlPlaneManagerRunRecord = {
+      schema: 1,
+      manager_run_id: `manager-run-${randomUUID()}`,
+      receipt_id: `manager-run-receipt-${randomUUID()}`,
+      state: "planned",
+      launch_intent_id: launchIntent.launch_intent_id,
+      preview_id: launchIntent.preview_id,
+      provider: preview.provider,
+      manager_token_budget: launchIntent.manager_reserve,
+      team_token_budget: launchIntent.token_budget,
+      worker_count: launchIntent.proposed_workers.length,
+      created_at: new Date().toISOString(),
+      next_required_action: "connect_manager_runtime",
+    };
+    this.#write({
+      schema: 1,
+      previews: document.previews,
+      launch_intents: document.launch_intents ?? [],
+      manager_runs: [record, ...(document.manager_runs ?? [])].slice(0, 20),
+    });
+    return record;
+  }
+
   createLaunchIntent(): ControlPlaneLaunchIntentRecord {
     const readiness = this.launchReadiness();
     if (readiness.outcome !== "ready" || !readiness.preview?.receipt_id) {
@@ -240,6 +307,7 @@ export class ControlPlanePlanPreviewStore {
       schema: 1,
       previews: document.previews,
       launch_intents: [record, ...(document.launch_intents ?? [])].slice(0, 20),
+      manager_runs: document.manager_runs ?? [],
     });
     return record;
   }
@@ -272,6 +340,7 @@ export class ControlPlanePlanPreviewStore {
       schema: 1,
       previews: [record, ...document.previews].slice(0, 20),
       launch_intents: document.launch_intents ?? [],
+      manager_runs: document.manager_runs ?? [],
     });
     return record;
   }
@@ -288,9 +357,12 @@ export class ControlPlanePlanPreviewStore {
         launch_intents: Array.isArray(parsed.launch_intents)
           ? parsed.launch_intents.filter((item) => item?.schema === 1)
           : [],
+        manager_runs: Array.isArray(parsed.manager_runs)
+          ? parsed.manager_runs.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
-      return { schema: 1, previews: [], launch_intents: [] };
+      return { schema: 1, previews: [], launch_intents: [], manager_runs: [] };
     }
   }
 
