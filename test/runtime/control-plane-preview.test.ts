@@ -270,6 +270,12 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(blockedReady.status, 409);
     assert.equal((await blockedReady.json()).code, "manager_process_required");
 
+    const blockedWorkerPlan = await fetch(`${base}/api/manager-plan/worker-delegation-plans`, {
+      method: "POST",
+    });
+    assert.equal(blockedWorkerPlan.status, 409);
+    assert.equal((await blockedWorkerPlan.json()).code, "manager_ready_receipt_required");
+
     const goal = "Persist this sensitive manager plan preview locally";
     const proposed = await fetch(`${base}/api/manager-plan/previews`, {
       method: "POST",
@@ -484,6 +490,76 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(readyReceiptsBody.schema, "yukh-control-plane-manager-ready-receipts-v1");
     assert.equal(readyReceiptsBody.receipts.length, 1);
 
+    const workerPlan = await fetch(`${base}/api/manager-plan/worker-delegation-plans`, {
+      method: "POST",
+    });
+    assert.equal(workerPlan.status, 201);
+    const workerPlanBody = await workerPlan.json();
+    assert.equal(
+      workerPlanBody.worker_delegation_plan.manager_ready_receipt_id,
+      readyBody.manager_ready_receipt.manager_ready_receipt_id,
+    );
+    assert.equal(
+      workerPlanBody.worker_delegation_plan.manager_process_id,
+      processBody.manager_process.manager_process_id,
+    );
+    assert.equal(
+      workerPlanBody.worker_delegation_plan.manager_run_id,
+      runBody.manager_run.manager_run_id,
+    );
+    assert.equal(
+      workerPlanBody.worker_delegation_plan.launch_intent_id,
+      intentBody.launch_intent.launch_intent_id,
+    );
+    assert.equal(workerPlanBody.worker_delegation_plan.provider, "Copilot SDK workers");
+    assert.equal(
+      workerPlanBody.worker_delegation_plan.total_worker_token_budget,
+      intentBody.launch_intent.worker_reserve,
+    );
+    assert.equal(workerPlanBody.worker_delegation_plan.worker_launch, "not_performed");
+    assert.equal(workerPlanBody.worker_delegation_plan.coordination_write, "not_performed");
+    assert.equal(workerPlanBody.worker_delegation_plan.projects_write, "not_performed");
+    assert.equal(
+      workerPlanBody.worker_delegation_plan.next_required_action,
+      "approve_worker_delegation_plan",
+    );
+    assert.match(
+      workerPlanBody.worker_delegation_plan.worker_delegation_plan_id,
+      /^worker-delegation-plan-/u,
+    );
+    assert.equal(
+      workerPlanBody.worker_delegation_plan.workers.length,
+      intentBody.launch_intent.proposed_workers.length,
+    );
+    assert.equal(workerPlanBody.worker_delegation_plan.workers[0].provider, "Copilot SDK workers");
+    assert.equal(workerPlanBody.worker_delegation_plan.workers[0].model, "copilot-sdk-default");
+    assert.equal(
+      workerPlanBody.worker_delegation_plan.workers[0].model_source,
+      "deferred_to_provider_inventory",
+    );
+    assert.equal(workerPlanBody.worker_delegation_plan.workers[0].command_policy, "not_started");
+    assert.equal(workerPlanBody.worker_delegation_plan.workers[0].status, "planned");
+    assert.match(
+      workerPlanBody.worker_delegation_plan.workers[0].input_digest,
+      /^sha-256:[a-f0-9]{64}$/u,
+    );
+    assert.doesNotMatch(JSON.stringify(workerPlanBody), /sensitive manager plan preview/iu);
+
+    const repeatedWorkerPlan = await fetch(`${base}/api/manager-plan/worker-delegation-plans`, {
+      method: "POST",
+    });
+    assert.equal(repeatedWorkerPlan.status, 201);
+    assert.equal(
+      (await repeatedWorkerPlan.json()).worker_delegation_plan.worker_delegation_plan_id,
+      workerPlanBody.worker_delegation_plan.worker_delegation_plan_id,
+    );
+
+    const workerPlans = await fetch(`${base}/api/manager-plan/worker-delegation-plans`);
+    assert.equal(workerPlans.status, 200);
+    const workerPlansBody = await workerPlans.json();
+    assert.equal(workerPlansBody.schema, "yukh-control-plane-worker-delegation-plans-v1");
+    assert.equal(workerPlansBody.plans.length, 1);
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -529,6 +605,12 @@ test("control plane preview persists local manager plan previews without leaking
     });
     assert.equal(readyDenied.status, 405);
     assert.equal(readyDenied.headers.get("allow"), "GET, POST");
+
+    const workerPlanDenied = await fetch(`${base}/api/manager-plan/worker-delegation-plans`, {
+      method: "DELETE",
+    });
+    assert.equal(workerPlanDenied.status, 405);
+    assert.equal(workerPlanDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -572,14 +654,18 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/runtime-connections/u);
   assert.match(data, /api\/manager-plan\/manager-processes/u);
   assert.match(data, /api\/manager-plan\/manager-ready-receipts/u);
+  assert.match(data, /api\/manager-plan\/worker-delegation-plans/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
   assert.match(data, /Manager runtime connected/u);
   assert.match(data, /Manager process starting/u);
   assert.match(data, /Manager ready receipt/u);
+  assert.match(data, /Worker delegation plan/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
+  assert.match(data, /worker_launch/u);
+  assert.match(data, /model_source/u);
   assert.match(data, /coordination_write/u);
   assert.match(data, /projects_write/u);
   assert.match(data, /command_policy/u);
@@ -628,5 +714,7 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.runtime-connection/u);
   assert.match(css, /\.manager-process/u);
   assert.match(css, /\.manager-ready-receipt/u);
+  assert.match(css, /\.worker-delegation-plan/u);
+  assert.match(css, /\.worker-plan-grid/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });

@@ -863,6 +863,37 @@ nav a:hover {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.worker-delegation-plan {
+  background: rgba(125, 140, 255, 0.08);
+  border: 1px solid rgba(125, 140, 255, 0.28);
+  border-radius: 16px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+.worker-delegation-plan span,
+.worker-plan-grid span {
+  color: var(--accent-2);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.worker-plan-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  min-width: 0;
+}
+.worker-plan-grid article {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+}
 .preview-card.approved-preview {
   border-color: rgba(119, 240, 178, 0.48);
 }
