@@ -689,6 +689,21 @@ const createManagerRun = async () => {
   }
 };
 
+const connectManagerRuntime = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/runtime-connections", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.runtime_connection ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderLaunchIntent = (intent) => {
   if (!intent) return "";
   return `
@@ -709,6 +724,19 @@ const renderManagerRun = (run) => {
       <strong>${escapeHtml(run.manager_run_id)}</strong>
       <p class="muted">${escapeHtml(run.provider)} · ${run.manager_token_budget.toLocaleString()} manager tokens · ${run.worker_count.toLocaleString()} proposed workers.</p>
       <p class="muted">Next required action: ${escapeHtml(run.next_required_action)}. No provider process has been started.</p>
+      <button type="button" class="secondary runtime-connection-button">Connect manager runtime</button>
+    </div>
+  `;
+};
+
+const renderRuntimeConnection = (connection) => {
+  if (!connection) return "";
+  return `
+    <div class="runtime-connection">
+      <span>Manager runtime connected</span>
+      <strong>${escapeHtml(connection.runtime_connection_id)}</strong>
+      <p class="muted">${escapeHtml(connection.provider)} · ${connection.manager_token_budget.toLocaleString()} manager tokens · commands ${escapeHtml(connection.command_policy)}.</p>
+      <p class="muted">Next required action: ${escapeHtml(connection.next_required_action)}. No provider process has been started.</p>
     </div>
   `;
 };
@@ -894,6 +922,22 @@ byId("plan-preview").addEventListener("click", async (event) => {
   }
   button.textContent = "Manager run planned";
   button.closest(".launch-intent")?.insertAdjacentHTML("afterend", renderManagerRun(run));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".runtime-connection-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const connection = await connectManagerRuntime();
+  if (!connection) {
+    button.removeAttribute("disabled");
+    button.textContent = "Manager run required";
+    return;
+  }
+  button.textContent = "Runtime connected";
+  button
+    .closest(".manager-run")
+    ?.insertAdjacentHTML("afterend", renderRuntimeConnection(connection));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {

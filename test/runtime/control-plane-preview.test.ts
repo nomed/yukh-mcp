@@ -252,6 +252,12 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(blockedRun.status, 409);
     assert.equal((await blockedRun.json()).code, "launch_intent_required");
 
+    const blockedConnection = await fetch(`${base}/api/manager-plan/runtime-connections`, {
+      method: "POST",
+    });
+    assert.equal(blockedConnection.status, 409);
+    assert.equal((await blockedConnection.json()).code, "manager_run_required");
+
     const goal = "Persist this sensitive manager plan preview locally";
     const proposed = await fetch(`${base}/api/manager-plan/previews`, {
       method: "POST",
@@ -345,6 +351,46 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(runsBody.runs.length, 1);
     assert.equal(runsBody.runs[0].manager_run_id, runBody.manager_run.manager_run_id);
 
+    const connection = await fetch(`${base}/api/manager-plan/runtime-connections`, {
+      method: "POST",
+    });
+    assert.equal(connection.status, 201);
+    const connectionBody = await connection.json();
+    assert.equal(connectionBody.runtime_connection.state, "connected");
+    assert.equal(
+      connectionBody.runtime_connection.manager_run_id,
+      runBody.manager_run.manager_run_id,
+    );
+    assert.equal(
+      connectionBody.runtime_connection.launch_intent_id,
+      intentBody.launch_intent.launch_intent_id,
+    );
+    assert.equal(connectionBody.runtime_connection.provider, "Copilot SDK workers");
+    assert.equal(connectionBody.runtime_connection.manager_token_budget, 30_000);
+    assert.equal(connectionBody.runtime_connection.command_policy, "not_started");
+    assert.equal(connectionBody.runtime_connection.next_required_action, "start_manager_process");
+    assert.match(connectionBody.runtime_connection.receipt_id, /^manager-runtime-receipt-/u);
+    assert.doesNotMatch(JSON.stringify(connectionBody), /sensitive manager plan preview/iu);
+
+    const repeatedConnection = await fetch(`${base}/api/manager-plan/runtime-connections`, {
+      method: "POST",
+    });
+    assert.equal(repeatedConnection.status, 201);
+    assert.equal(
+      (await repeatedConnection.json()).runtime_connection.runtime_connection_id,
+      connectionBody.runtime_connection.runtime_connection_id,
+    );
+
+    const connections = await fetch(`${base}/api/manager-plan/runtime-connections`);
+    assert.equal(connections.status, 200);
+    const connectionsBody = await connections.json();
+    assert.equal(connectionsBody.schema, "yukh-control-plane-manager-runtime-connections-v1");
+    assert.equal(connectionsBody.connections.length, 1);
+    assert.equal(
+      connectionsBody.connections[0].runtime_connection_id,
+      connectionBody.runtime_connection.runtime_connection_id,
+    );
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -372,6 +418,12 @@ test("control plane preview persists local manager plan previews without leaking
     });
     assert.equal(runDenied.status, 405);
     assert.equal(runDenied.headers.get("allow"), "GET, POST");
+
+    const connectionDenied = await fetch(`${base}/api/manager-plan/runtime-connections`, {
+      method: "DELETE",
+    });
+    assert.equal(connectionDenied.status, 405);
+    assert.equal(connectionDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -412,9 +464,12 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/launch-readiness/u);
   assert.match(data, /api\/manager-plan\/launch-intents/u);
   assert.match(data, /api\/manager-plan\/manager-runs/u);
+  assert.match(data, /api\/manager-plan\/runtime-connections/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
+  assert.match(data, /Manager runtime connected/u);
+  assert.match(data, /command_policy/u);
   assert.match(data, /next_required_action/u);
   assert.match(data, /Persisted manager plan/u);
   assert.match(data, /Dry-run manager plan/u);
@@ -457,5 +512,6 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.readiness-panel/u);
   assert.match(css, /\.launch-intent/u);
   assert.match(css, /\.manager-run/u);
+  assert.match(css, /\.runtime-connection/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });
