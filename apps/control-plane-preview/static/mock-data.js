@@ -764,6 +764,21 @@ const approveWorkerDelegationPlan = async () => {
   }
 };
 
+const preflightApprovedWorkerLaunch = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/worker-launch-preflights", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.worker_launch_preflight ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderLaunchIntent = (intent) => {
   if (!intent) return "";
   return `
@@ -867,6 +882,26 @@ const renderWorkerDelegationApproval = (approval) => {
       <p class="muted">${approval.approved_worker_count.toLocaleString()} workers · ${approval.approved_worker_token_budget.toLocaleString()} approved worker tokens · scope ${escapeHtml(approval.approval_scope)}.</p>
       <p class="muted">Worker launch: ${escapeHtml(approval.worker_launch)} · Coordination write: ${escapeHtml(approval.coordination_write)} · Projects write: ${escapeHtml(approval.projects_write)}.</p>
       <p class="muted">Next required action: ${escapeHtml(approval.next_required_action)}.</p>
+      <button type="button" class="secondary worker-preflight-button">Preflight approved worker launch</button>
+    </div>
+  `;
+};
+
+const renderWorkerLaunchPreflight = (preflight) => {
+  if (!preflight) return "";
+  return `
+    <div class="worker-launch-preflight">
+      <span>Worker launch preflight</span>
+      <strong>${escapeHtml(preflight.worker_launch_preflight_id)}</strong>
+      <p class="muted">${preflight.approved_worker_count.toLocaleString()} workers · ${preflight.approved_worker_token_budget.toLocaleString()} approved worker tokens · outcome ${escapeHtml(preflight.outcome)}.</p>
+      <div class="preflight-grid">
+        <article><span>Policy</span><strong>${escapeHtml(preflight.policy_check)}</strong></article>
+        <article><span>Budget</span><strong>${escapeHtml(preflight.budget_check)}</strong></article>
+        <article><span>Runtime</span><strong>${escapeHtml(preflight.provider_runtime_check)}</strong></article>
+        <article><span>Capability</span><strong>${escapeHtml(preflight.capability_check)}</strong></article>
+      </div>
+      <p class="muted">Worker launch: ${escapeHtml(preflight.worker_launch)} · Coordination write: ${escapeHtml(preflight.coordination_write)} · Projects write: ${escapeHtml(preflight.projects_write)}.</p>
+      <p class="muted">Next required action: ${escapeHtml(preflight.next_required_action)}.</p>
     </div>
   `;
 };
@@ -1132,6 +1167,22 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".worker-delegation-plan")
     ?.insertAdjacentHTML("afterend", renderWorkerDelegationApproval(approval));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".worker-preflight-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const preflight = await preflightApprovedWorkerLaunch();
+  if (!preflight) {
+    button.removeAttribute("disabled");
+    button.textContent = "Worker approval required";
+    return;
+  }
+  button.textContent = "Worker launch preflight recorded";
+  button
+    .closest(".worker-delegation-approval")
+    ?.insertAdjacentHTML("afterend", renderWorkerLaunchPreflight(preflight));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
