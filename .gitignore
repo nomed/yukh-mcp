@@ -5,4 +5,5 @@ site/
 .audit-test-scratch/
 .yukh/runtime/
 .yukh/teams/
+.yukh/qualification/
 *.log
