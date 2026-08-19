@@ -294,6 +294,12 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(blockedWorkerPreflight.status, 409);
     assert.equal((await blockedWorkerPreflight.json()).code, "worker_delegation_approval_required");
 
+    const blockedProviderProbe = await fetch(`${base}/api/manager-plan/provider-runtime-probes`, {
+      method: "POST",
+    });
+    assert.equal(blockedProviderProbe.status, 409);
+    assert.equal((await blockedProviderProbe.json()).code, "worker_launch_preflight_required");
+
     const goal = "Persist this sensitive manager plan preview locally";
     const proposed = await fetch(`${base}/api/manager-plan/previews`, {
       method: "POST",
@@ -717,6 +723,71 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(workerPreflightsBody.schema, "yukh-control-plane-worker-launch-preflights-v1");
     assert.equal(workerPreflightsBody.preflights.length, 1);
 
+    const providerProbe = await fetch(`${base}/api/manager-plan/provider-runtime-probes`, {
+      method: "POST",
+    });
+    assert.equal(providerProbe.status, 201);
+    const providerProbeBody = await providerProbe.json();
+    assert.equal(
+      providerProbeBody.provider_runtime_probe.worker_launch_preflight_id,
+      workerPreflightBody.worker_launch_preflight.worker_launch_preflight_id,
+    );
+    assert.equal(
+      providerProbeBody.provider_runtime_probe.worker_delegation_approval_id,
+      workerApprovalBody.worker_delegation_approval.worker_delegation_approval_id,
+    );
+    assert.equal(
+      providerProbeBody.provider_runtime_probe.worker_delegation_plan_id,
+      workerPlanBody.worker_delegation_plan.worker_delegation_plan_id,
+    );
+    assert.equal(
+      providerProbeBody.provider_runtime_probe.manager_process_id,
+      processBody.manager_process.manager_process_id,
+    );
+    assert.equal(
+      providerProbeBody.provider_runtime_probe.manager_run_id,
+      runBody.manager_run.manager_run_id,
+    );
+    assert.equal(providerProbeBody.provider_runtime_probe.provider, "Copilot SDK workers");
+    assert.equal(
+      providerProbeBody.provider_runtime_probe.probe_scope,
+      "local_control_plane_configuration",
+    );
+    assert.equal(providerProbeBody.provider_runtime_probe.provider_adapter, "not_configured");
+    assert.equal(providerProbeBody.provider_runtime_probe.executable_check, "not_performed");
+    assert.equal(providerProbeBody.provider_runtime_probe.capability_inventory, "not_requested");
+    assert.equal(
+      providerProbeBody.provider_runtime_probe.outcome,
+      "blocked_provider_adapter_not_configured",
+    );
+    assert.equal(providerProbeBody.provider_runtime_probe.worker_launch, "not_performed");
+    assert.equal(providerProbeBody.provider_runtime_probe.coordination_write, "not_performed");
+    assert.equal(providerProbeBody.provider_runtime_probe.projects_write, "not_performed");
+    assert.equal(
+      providerProbeBody.provider_runtime_probe.next_required_action,
+      "configure_provider_adapter",
+    );
+    assert.match(
+      providerProbeBody.provider_runtime_probe.provider_runtime_probe_id,
+      /^provider-runtime-probe-/u,
+    );
+    assert.doesNotMatch(JSON.stringify(providerProbeBody), /sensitive manager plan preview/iu);
+
+    const repeatedProviderProbe = await fetch(`${base}/api/manager-plan/provider-runtime-probes`, {
+      method: "POST",
+    });
+    assert.equal(repeatedProviderProbe.status, 201);
+    assert.equal(
+      (await repeatedProviderProbe.json()).provider_runtime_probe.provider_runtime_probe_id,
+      providerProbeBody.provider_runtime_probe.provider_runtime_probe_id,
+    );
+
+    const providerProbes = await fetch(`${base}/api/manager-plan/provider-runtime-probes`);
+    assert.equal(providerProbes.status, 200);
+    const providerProbesBody = await providerProbes.json();
+    assert.equal(providerProbesBody.schema, "yukh-control-plane-provider-runtime-probes-v1");
+    assert.equal(providerProbesBody.probes.length, 1);
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -781,6 +852,12 @@ test("control plane preview persists local manager plan previews without leaking
     });
     assert.equal(workerPreflightDenied.status, 405);
     assert.equal(workerPreflightDenied.headers.get("allow"), "GET, POST");
+
+    const providerProbeDenied = await fetch(`${base}/api/manager-plan/provider-runtime-probes`, {
+      method: "DELETE",
+    });
+    assert.equal(providerProbeDenied.status, 405);
+    assert.equal(providerProbeDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -827,6 +904,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/worker-delegation-plans/u);
   assert.match(data, /api\/manager-plan\/worker-delegation-approvals/u);
   assert.match(data, /api\/manager-plan\/worker-launch-preflights/u);
+  assert.match(data, /api\/manager-plan\/provider-runtime-probes/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
@@ -836,11 +914,14 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /Worker delegation plan/u);
   assert.match(data, /Worker delegation approved/u);
   assert.match(data, /Worker launch preflight/u);
+  assert.match(data, /Provider runtime probe/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
   assert.match(data, /worker_launch/u);
   assert.match(data, /approval_scope/u);
   assert.match(data, /provider_runtime_check/u);
+  assert.match(data, /provider_adapter/u);
+  assert.match(data, /capability_inventory/u);
   assert.match(data, /capability_check/u);
   assert.match(data, /model_source/u);
   assert.match(data, /coordination_write/u);
@@ -895,6 +976,7 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.worker-plan-grid/u);
   assert.match(css, /\.worker-delegation-approval/u);
   assert.match(css, /\.worker-launch-preflight/u);
+  assert.match(css, /\.provider-runtime-probe/u);
   assert.match(css, /\.preflight-grid/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });

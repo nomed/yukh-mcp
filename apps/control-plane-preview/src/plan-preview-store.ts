@@ -234,6 +234,33 @@ export type ControlPlaneWorkerLaunchPreflightStatus = {
   readonly preflights: readonly ControlPlaneWorkerLaunchPreflightRecord[];
 };
 
+export type ControlPlaneProviderRuntimeProbeRecord = {
+  readonly schema: 1;
+  readonly provider_runtime_probe_id: string;
+  readonly worker_launch_preflight_id: string;
+  readonly worker_delegation_approval_id: string;
+  readonly worker_delegation_plan_id: string;
+  readonly manager_process_id: string;
+  readonly manager_run_id: string;
+  readonly provider: string;
+  readonly probe_scope: "local_control_plane_configuration";
+  readonly provider_adapter: "not_configured";
+  readonly executable_check: "not_performed";
+  readonly capability_inventory: "not_requested";
+  readonly outcome: "blocked_provider_adapter_not_configured";
+  readonly worker_launch: "not_performed";
+  readonly coordination_write: "not_performed";
+  readonly projects_write: "not_performed";
+  readonly created_at: string;
+  readonly next_required_action: "configure_provider_adapter";
+};
+
+export type ControlPlaneProviderRuntimeProbeStatus = {
+  readonly schema: "yukh-control-plane-provider-runtime-probes-v1";
+  readonly source: "local-control-plane-store";
+  readonly probes: readonly ControlPlaneProviderRuntimeProbeRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -253,6 +280,7 @@ type Document = {
   readonly worker_delegation_plans?: readonly ControlPlaneWorkerDelegationPlanRecord[];
   readonly worker_delegation_approvals?: readonly ControlPlaneWorkerDelegationApprovalRecord[];
   readonly worker_launch_preflights?: readonly ControlPlaneWorkerLaunchPreflightRecord[];
+  readonly provider_runtime_probes?: readonly ControlPlaneProviderRuntimeProbeRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -446,6 +474,66 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
+  providerRuntimeProbes(): ControlPlaneProviderRuntimeProbeStatus {
+    return {
+      schema: "yukh-control-plane-provider-runtime-probes-v1",
+      source: "local-control-plane-store",
+      probes: this.#read().provider_runtime_probes ?? [],
+    };
+  }
+
+  probeProviderRuntime(): ControlPlaneProviderRuntimeProbeRecord {
+    const document = this.#read();
+    const preflight = document.worker_launch_preflights?.[0];
+    if (!preflight) {
+      throw new TypeError("missing worker launch preflight");
+    }
+    const existing = document.provider_runtime_probes?.find(
+      (probe) => probe.worker_launch_preflight_id === preflight.worker_launch_preflight_id,
+    );
+    if (existing) return existing;
+    const plan = document.worker_delegation_plans?.find(
+      (candidate) => candidate.worker_delegation_plan_id === preflight.worker_delegation_plan_id,
+    );
+    if (!plan) {
+      throw new TypeError("missing worker delegation plan");
+    }
+    const record: ControlPlaneProviderRuntimeProbeRecord = {
+      schema: 1,
+      provider_runtime_probe_id: `provider-runtime-probe-${randomUUID()}`,
+      worker_launch_preflight_id: preflight.worker_launch_preflight_id,
+      worker_delegation_approval_id: preflight.worker_delegation_approval_id,
+      worker_delegation_plan_id: preflight.worker_delegation_plan_id,
+      manager_process_id: preflight.manager_process_id,
+      manager_run_id: preflight.manager_run_id,
+      provider: plan.provider,
+      probe_scope: "local_control_plane_configuration",
+      provider_adapter: "not_configured",
+      executable_check: "not_performed",
+      capability_inventory: "not_requested",
+      outcome: "blocked_provider_adapter_not_configured",
+      worker_launch: "not_performed",
+      coordination_write: "not_performed",
+      projects_write: "not_performed",
+      created_at: new Date().toISOString(),
+      next_required_action: "configure_provider_adapter",
+    };
+    this.#write({
+      schema: 1,
+      previews: document.previews,
+      launch_intents: document.launch_intents ?? [],
+      manager_runs: document.manager_runs ?? [],
+      manager_runtime_connections: document.manager_runtime_connections ?? [],
+      manager_processes: document.manager_processes ?? [],
+      manager_ready_receipts: document.manager_ready_receipts ?? [],
+      worker_delegation_plans: document.worker_delegation_plans ?? [],
+      worker_delegation_approvals: document.worker_delegation_approvals ?? [],
+      worker_launch_preflights: document.worker_launch_preflights ?? [],
+      provider_runtime_probes: [record, ...(document.provider_runtime_probes ?? [])].slice(0, 20),
+    });
+    return record;
+  }
+
   preflightApprovedWorkerLaunch(): ControlPlaneWorkerLaunchPreflightRecord {
     const document = this.#read();
     const approval = document.worker_delegation_approvals?.[0];
@@ -489,6 +577,7 @@ export class ControlPlanePlanPreviewStore {
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
       worker_launch_preflights: [record, ...(document.worker_launch_preflights ?? [])].slice(0, 20),
+      provider_runtime_probes: document.provider_runtime_probes ?? [],
     });
     return record;
   }
@@ -533,6 +622,7 @@ export class ControlPlanePlanPreviewStore {
         20,
       ),
       worker_launch_preflights: document.worker_launch_preflights ?? [],
+      provider_runtime_probes: document.provider_runtime_probes ?? [],
     });
     return record;
   }
@@ -595,6 +685,7 @@ export class ControlPlanePlanPreviewStore {
       worker_delegation_plans: [record, ...(document.worker_delegation_plans ?? [])].slice(0, 20),
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
       worker_launch_preflights: document.worker_launch_preflights ?? [],
+      provider_runtime_probes: document.provider_runtime_probes ?? [],
     });
     return record;
   }
@@ -633,6 +724,7 @@ export class ControlPlanePlanPreviewStore {
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
       worker_launch_preflights: document.worker_launch_preflights ?? [],
+      provider_runtime_probes: document.provider_runtime_probes ?? [],
     });
     return record;
   }
@@ -672,6 +764,7 @@ export class ControlPlanePlanPreviewStore {
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
       worker_launch_preflights: document.worker_launch_preflights ?? [],
+      provider_runtime_probes: document.provider_runtime_probes ?? [],
     });
     return record;
   }
@@ -713,6 +806,7 @@ export class ControlPlanePlanPreviewStore {
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
       worker_launch_preflights: document.worker_launch_preflights ?? [],
+      provider_runtime_probes: document.provider_runtime_probes ?? [],
     });
     return record;
   }
@@ -756,6 +850,7 @@ export class ControlPlanePlanPreviewStore {
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
       worker_launch_preflights: document.worker_launch_preflights ?? [],
+      provider_runtime_probes: document.provider_runtime_probes ?? [],
     });
     return record;
   }
@@ -795,6 +890,7 @@ export class ControlPlanePlanPreviewStore {
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
       worker_launch_preflights: document.worker_launch_preflights ?? [],
+      provider_runtime_probes: document.provider_runtime_probes ?? [],
     });
     return record;
   }
@@ -834,6 +930,7 @@ export class ControlPlanePlanPreviewStore {
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
       worker_launch_preflights: document.worker_launch_preflights ?? [],
+      provider_runtime_probes: document.provider_runtime_probes ?? [],
     });
     return record;
   }
@@ -871,6 +968,9 @@ export class ControlPlanePlanPreviewStore {
         worker_launch_preflights: Array.isArray(parsed.worker_launch_preflights)
           ? parsed.worker_launch_preflights.filter((item) => item?.schema === 1)
           : [],
+        provider_runtime_probes: Array.isArray(parsed.provider_runtime_probes)
+          ? parsed.provider_runtime_probes.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
       return {
@@ -884,6 +984,7 @@ export class ControlPlanePlanPreviewStore {
         worker_delegation_plans: [],
         worker_delegation_approvals: [],
         worker_launch_preflights: [],
+        provider_runtime_probes: [],
       };
     }
   }
