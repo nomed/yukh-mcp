@@ -307,6 +307,16 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(blockedProviderInventory.status, 409);
     assert.equal((await blockedProviderInventory.json()).code, "provider_adapter_required");
 
+    const blockedWorkerLaunchCandidate = await fetch(
+      `${base}/api/manager-plan/worker-launch-candidates`,
+      { method: "POST" },
+    );
+    assert.equal(blockedWorkerLaunchCandidate.status, 409);
+    assert.equal(
+      (await blockedWorkerLaunchCandidate.json()).code,
+      "worker_launch_candidate_not_ready",
+    );
+
     const invalidProviderAdapter = await fetch(`${base}/api/manager-plan/provider-adapters`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -880,6 +890,72 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(providerProbesBody.schema, "yukh-control-plane-provider-runtime-probes-v1");
     assert.equal(providerProbesBody.probes.length, 1);
 
+    const workerLaunchCandidate = await fetch(`${base}/api/manager-plan/worker-launch-candidates`, {
+      method: "POST",
+    });
+    assert.equal(workerLaunchCandidate.status, 201);
+    const workerLaunchCandidateBody = await workerLaunchCandidate.json();
+    assert.equal(
+      workerLaunchCandidateBody.worker_launch_candidate.provider_runtime_probe_id,
+      providerProbeBody.provider_runtime_probe.provider_runtime_probe_id,
+    );
+    assert.equal(
+      workerLaunchCandidateBody.worker_launch_candidate.provider_capability_inventory_id,
+      providerInventoryBody.provider_capability_inventory.provider_capability_inventory_id,
+    );
+    assert.equal(
+      workerLaunchCandidateBody.worker_launch_candidate.worker_launch_preflight_id,
+      workerPreflightBody.worker_launch_preflight.worker_launch_preflight_id,
+    );
+    assert.equal(workerLaunchCandidateBody.worker_launch_candidate.provider, "Copilot SDK workers");
+    assert.equal(workerLaunchCandidateBody.worker_launch_candidate.approved_worker_count, 2);
+    assert.equal(
+      workerLaunchCandidateBody.worker_launch_candidate.approved_worker_token_budget,
+      66_000,
+    );
+    assert.deepEqual(workerLaunchCandidateBody.worker_launch_candidate.models, [
+      "copilot-sdk-default",
+      "copilot-sdk-small",
+    ]);
+    assert.equal(
+      workerLaunchCandidateBody.worker_launch_candidate.outcome,
+      "ready_for_explicit_worker_launch",
+    );
+    assert.equal(
+      workerLaunchCandidateBody.worker_launch_candidate.provider_process_start,
+      "not_performed",
+    );
+    assert.equal(workerLaunchCandidateBody.worker_launch_candidate.worker_launch, "not_performed");
+    assert.equal(
+      workerLaunchCandidateBody.worker_launch_candidate.coordination_write,
+      "not_performed",
+    );
+    assert.equal(workerLaunchCandidateBody.worker_launch_candidate.projects_write, "not_performed");
+    assert.equal(
+      workerLaunchCandidateBody.worker_launch_candidate.next_required_action,
+      "explicit_worker_launch",
+    );
+
+    const repeatedWorkerLaunchCandidate = await fetch(
+      `${base}/api/manager-plan/worker-launch-candidates`,
+      { method: "POST" },
+    );
+    assert.equal(repeatedWorkerLaunchCandidate.status, 201);
+    assert.equal(
+      (await repeatedWorkerLaunchCandidate.json()).worker_launch_candidate
+        .worker_launch_candidate_id,
+      workerLaunchCandidateBody.worker_launch_candidate.worker_launch_candidate_id,
+    );
+
+    const workerLaunchCandidates = await fetch(`${base}/api/manager-plan/worker-launch-candidates`);
+    assert.equal(workerLaunchCandidates.status, 200);
+    const workerLaunchCandidatesBody = await workerLaunchCandidates.json();
+    assert.equal(
+      workerLaunchCandidatesBody.schema,
+      "yukh-control-plane-worker-launch-candidates-v1",
+    );
+    assert.equal(workerLaunchCandidatesBody.candidates.length, 1);
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -963,6 +1039,13 @@ test("control plane preview persists local manager plan previews without leaking
     );
     assert.equal(providerInventoryDenied.status, 405);
     assert.equal(providerInventoryDenied.headers.get("allow"), "GET, POST");
+
+    const workerLaunchCandidateDenied = await fetch(
+      `${base}/api/manager-plan/worker-launch-candidates`,
+      { method: "DELETE" },
+    );
+    assert.equal(workerLaunchCandidateDenied.status, 405);
+    assert.equal(workerLaunchCandidateDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -1060,6 +1143,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/provider-runtime-probes/u);
   assert.match(data, /api\/manager-plan\/provider-adapters/u);
   assert.match(data, /api\/manager-plan\/provider-capability-inventories/u);
+  assert.match(data, /api\/manager-plan\/worker-launch-candidates/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
@@ -1072,6 +1156,8 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /Provider runtime probe/u);
   assert.match(data, /Provider adapter configured/u);
   assert.match(data, /Provider capability inventory/u);
+  assert.match(data, /Worker launch candidate/u);
+  assert.match(data, /worker-launch-candidate-button/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
   assert.match(data, /worker_launch/u);
