@@ -327,6 +327,16 @@ test("control plane preview persists local manager plan previews without leaking
       "worker_launch_candidate_required",
     );
 
+    const blockedProviderWorkerProcess = await fetch(
+      `${base}/api/manager-plan/provider-worker-processes`,
+      { method: "POST" },
+    );
+    assert.equal(blockedProviderWorkerProcess.status, 409);
+    assert.equal(
+      (await blockedProviderWorkerProcess.json()).code,
+      "worker_launch_receipt_required",
+    );
+
     const invalidProviderAdapter = await fetch(`${base}/api/manager-plan/provider-adapters`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1024,6 +1034,78 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(workerLaunchReceiptsBody.schema, "yukh-control-plane-worker-launch-receipts-v1");
     assert.equal(workerLaunchReceiptsBody.receipts.length, 1);
 
+    const providerWorkerProcess = await fetch(
+      `${base}/api/manager-plan/provider-worker-processes`,
+      { method: "POST" },
+    );
+    assert.equal(providerWorkerProcess.status, 201);
+    const providerWorkerProcessBody = await providerWorkerProcess.json();
+    assert.equal(
+      providerWorkerProcessBody.provider_worker_process.worker_launch_receipt_id,
+      workerLaunchReceiptBody.worker_launch_receipt.worker_launch_receipt_id,
+    );
+    assert.equal(
+      providerWorkerProcessBody.provider_worker_process.worker_launch_candidate_id,
+      workerLaunchCandidateBody.worker_launch_candidate.worker_launch_candidate_id,
+    );
+    assert.equal(
+      providerWorkerProcessBody.provider_worker_process.provider_runtime_probe_id,
+      providerProbeBody.provider_runtime_probe.provider_runtime_probe_id,
+    );
+    assert.equal(
+      providerWorkerProcessBody.provider_worker_process.provider_capability_inventory_id,
+      providerInventoryBody.provider_capability_inventory.provider_capability_inventory_id,
+    );
+    assert.equal(providerWorkerProcessBody.provider_worker_process.provider, "Copilot SDK workers");
+    assert.equal(providerWorkerProcessBody.provider_worker_process.approved_worker_count, 2);
+    assert.equal(
+      providerWorkerProcessBody.provider_worker_process.approved_worker_token_budget,
+      66_000,
+    );
+    assert.equal(
+      providerWorkerProcessBody.provider_worker_process.process_supervision,
+      "control_plane_recorded",
+    );
+    assert.equal(
+      providerWorkerProcessBody.provider_worker_process.provider_process_start,
+      "start_requested",
+    );
+    assert.equal(
+      providerWorkerProcessBody.provider_worker_process.worker_launch,
+      "start_requested_not_running",
+    );
+    assert.equal(
+      providerWorkerProcessBody.provider_worker_process.coordination_write,
+      "not_performed",
+    );
+    assert.equal(providerWorkerProcessBody.provider_worker_process.projects_write, "not_performed");
+    assert.equal(
+      providerWorkerProcessBody.provider_worker_process.next_required_action,
+      "attach_provider_runner",
+    );
+
+    const repeatedProviderWorkerProcess = await fetch(
+      `${base}/api/manager-plan/provider-worker-processes`,
+      { method: "POST" },
+    );
+    assert.equal(repeatedProviderWorkerProcess.status, 201);
+    assert.equal(
+      (await repeatedProviderWorkerProcess.json()).provider_worker_process
+        .provider_worker_process_id,
+      providerWorkerProcessBody.provider_worker_process.provider_worker_process_id,
+    );
+
+    const providerWorkerProcesses = await fetch(
+      `${base}/api/manager-plan/provider-worker-processes`,
+    );
+    assert.equal(providerWorkerProcesses.status, 200);
+    const providerWorkerProcessesBody = await providerWorkerProcesses.json();
+    assert.equal(
+      providerWorkerProcessesBody.schema,
+      "yukh-control-plane-provider-worker-processes-v1",
+    );
+    assert.equal(providerWorkerProcessesBody.processes.length, 1);
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -1121,6 +1203,13 @@ test("control plane preview persists local manager plan previews without leaking
     );
     assert.equal(workerLaunchReceiptDenied.status, 405);
     assert.equal(workerLaunchReceiptDenied.headers.get("allow"), "GET, POST");
+
+    const providerWorkerProcessDenied = await fetch(
+      `${base}/api/manager-plan/provider-worker-processes`,
+      { method: "DELETE" },
+    );
+    assert.equal(providerWorkerProcessDenied.status, 405);
+    assert.equal(providerWorkerProcessDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -1220,6 +1309,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/provider-capability-inventories/u);
   assert.match(data, /api\/manager-plan\/worker-launch-candidates/u);
   assert.match(data, /api\/manager-plan\/worker-launch-receipts/u);
+  assert.match(data, /api\/manager-plan\/provider-worker-processes/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
@@ -1236,6 +1326,8 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /worker-launch-candidate-button/u);
   assert.match(data, /Worker launch receipt/u);
   assert.match(data, /worker-launch-receipt-button/u);
+  assert.match(data, /Provider worker process/u);
+  assert.match(data, /provider-worker-process-button/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
   assert.match(data, /worker_launch/u);
@@ -1298,6 +1390,9 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.worker-delegation-approval/u);
   assert.match(css, /\.worker-launch-preflight/u);
   assert.match(css, /\.provider-runtime-probe/u);
+  assert.match(css, /\.worker-launch-candidate/u);
+  assert.match(css, /\.worker-launch-receipt/u);
+  assert.match(css, /\.provider-worker-process/u);
   assert.match(css, /\.preflight-grid/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });
