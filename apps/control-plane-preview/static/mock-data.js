@@ -674,6 +674,21 @@ const createLaunchIntent = async () => {
   }
 };
 
+const createManagerRun = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/manager-runs", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.manager_run ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderLaunchIntent = (intent) => {
   if (!intent) return "";
   return `
@@ -681,6 +696,19 @@ const renderLaunchIntent = (intent) => {
       <span>Launch intent recorded</span>
       <strong>${escapeHtml(intent.launch_intent_id)}</strong>
       <p class="muted">Local receipt only. No provider call and no worker process has been started.</p>
+      <button type="button" class="secondary manager-run-button">Record manager run</button>
+    </div>
+  `;
+};
+
+const renderManagerRun = (run) => {
+  if (!run) return "";
+  return `
+    <div class="manager-run">
+      <span>Manager run planned</span>
+      <strong>${escapeHtml(run.manager_run_id)}</strong>
+      <p class="muted">${escapeHtml(run.provider)} · ${run.manager_token_budget.toLocaleString()} manager tokens · ${run.worker_count.toLocaleString()} proposed workers.</p>
+      <p class="muted">Next required action: ${escapeHtml(run.next_required_action)}. No provider process has been started.</p>
     </div>
   `;
 };
@@ -852,6 +880,20 @@ byId("plan-preview").addEventListener("click", async (event) => {
   }
   button.textContent = "Launch intent recorded";
   button.closest(".readiness-panel")?.insertAdjacentHTML("afterend", renderLaunchIntent(intent));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".manager-run-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const run = await createManagerRun();
+  if (!run) {
+    button.removeAttribute("disabled");
+    button.textContent = "Launch intent required";
+    return;
+  }
+  button.textContent = "Manager run planned";
+  button.closest(".launch-intent")?.insertAdjacentHTML("afterend", renderManagerRun(run));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {

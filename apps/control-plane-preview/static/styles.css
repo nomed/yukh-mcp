@@ -803,6 +803,21 @@ nav a:hover {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.manager-run {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+}
+.manager-run span {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .preview-card.approved-preview {
   border-color: rgba(119, 240, 178, 0.48);
 }

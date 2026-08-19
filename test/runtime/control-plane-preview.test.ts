@@ -246,6 +246,12 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(blockedIntent.status, 409);
     assert.equal((await blockedIntent.json()).code, "launch_readiness_blocked");
 
+    const blockedRun = await fetch(`${base}/api/manager-plan/manager-runs`, {
+      method: "POST",
+    });
+    assert.equal(blockedRun.status, 409);
+    assert.equal((await blockedRun.json()).code, "launch_intent_required");
+
     const goal = "Persist this sensitive manager plan preview locally";
     const proposed = await fetch(`${base}/api/manager-plan/previews`, {
       method: "POST",
@@ -311,6 +317,34 @@ test("control plane preview persists local manager plan previews without leaking
       intentBody.launch_intent.launch_intent_id,
     );
 
+    const run = await fetch(`${base}/api/manager-plan/manager-runs`, { method: "POST" });
+    assert.equal(run.status, 201);
+    const runBody = await run.json();
+    assert.equal(runBody.manager_run.state, "planned");
+    assert.equal(runBody.manager_run.launch_intent_id, intentBody.launch_intent.launch_intent_id);
+    assert.equal(runBody.manager_run.preview_id, approvedBody.preview.preview_id);
+    assert.equal(runBody.manager_run.provider, "Copilot SDK workers");
+    assert.equal(runBody.manager_run.manager_token_budget, 30_000);
+    assert.equal(runBody.manager_run.team_token_budget, 120_000);
+    assert.equal(runBody.manager_run.worker_count, 2);
+    assert.equal(runBody.manager_run.next_required_action, "connect_manager_runtime");
+    assert.match(runBody.manager_run.receipt_id, /^manager-run-receipt-/u);
+    assert.doesNotMatch(JSON.stringify(runBody), /sensitive manager plan preview/iu);
+
+    const repeatedRun = await fetch(`${base}/api/manager-plan/manager-runs`, { method: "POST" });
+    assert.equal(repeatedRun.status, 201);
+    assert.equal(
+      (await repeatedRun.json()).manager_run.manager_run_id,
+      runBody.manager_run.manager_run_id,
+    );
+
+    const runs = await fetch(`${base}/api/manager-plan/manager-runs`);
+    assert.equal(runs.status, 200);
+    const runsBody = await runs.json();
+    assert.equal(runsBody.schema, "yukh-control-plane-manager-runs-v1");
+    assert.equal(runsBody.runs.length, 1);
+    assert.equal(runsBody.runs[0].manager_run_id, runBody.manager_run.manager_run_id);
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -332,6 +366,12 @@ test("control plane preview persists local manager plan previews without leaking
     });
     assert.equal(intentDenied.status, 405);
     assert.equal(intentDenied.headers.get("allow"), "GET, POST");
+
+    const runDenied = await fetch(`${base}/api/manager-plan/manager-runs`, {
+      method: "DELETE",
+    });
+    assert.equal(runDenied.status, 405);
+    assert.equal(runDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -371,8 +411,11 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/previews/u);
   assert.match(data, /api\/manager-plan\/launch-readiness/u);
   assert.match(data, /api\/manager-plan\/launch-intents/u);
+  assert.match(data, /api\/manager-plan\/manager-runs/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
+  assert.match(data, /Manager run planned/u);
+  assert.match(data, /next_required_action/u);
   assert.match(data, /Persisted manager plan/u);
   assert.match(data, /Dry-run manager plan/u);
   assert.match(data, /no workers launched/u);
@@ -413,5 +456,6 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.approved-preview/u);
   assert.match(css, /\.readiness-panel/u);
   assert.match(css, /\.launch-intent/u);
+  assert.match(css, /\.manager-run/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });
