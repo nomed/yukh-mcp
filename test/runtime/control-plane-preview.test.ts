@@ -1518,7 +1518,10 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /Provider runner attached/u);
   assert.match(data, /provider-runner-attachment-button/u);
   assert.match(data, /worker\.activity\.v1/u);
+  assert.match(data, /worker-activity-refresh-button/u);
   assert.match(data, /worker-activity-button/u);
+  assert.match(data, /JetStream live activity/u);
+  assert.match(data, /Preview activity fallback/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
   assert.match(data, /worker_launch/u);

@@ -13,6 +13,7 @@ import type {
 import { teamRuntimeEntrypoints } from "../../../packages/team-control/src/entrypoints.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
+import { inheritedWorkerActivityEnvironment } from "../../../packages/team-control/src/profile-environment.js";
 import { formatTeamStatus } from "../../team-preflight/src/format.js";
 
 export interface Arguments {
@@ -208,6 +209,7 @@ export function startManager(args: Arguments) {
     ...(process.env.YUKH_PREVIEW_RUNTIME
       ? { YUKH_PREVIEW_RUNTIME: process.env.YUKH_PREVIEW_RUNTIME }
       : {}),
+    ...inheritedWorkerActivityEnvironment(),
   };
   const supervisor = new TeamSupervisor({
     node: process.execPath,

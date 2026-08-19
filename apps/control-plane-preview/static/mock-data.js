@@ -905,6 +905,16 @@ const recordWorkerActivity = async () => {
   }
 };
 
+const loadWorkerActivities = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/worker-activities", { cache: "no-store" });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+};
+
 const renderProviderAdapter = (adapter) => {
   if (!adapter) return "";
   return `
@@ -1161,8 +1171,9 @@ const renderProviderRunnerAttachment = (attachment) => {
         <article><span>Launch</span><strong>${escapeHtml(attachment.worker_launch)}</strong></article>
       </div>
       <p class="muted">Log: ${escapeHtml(attachment.log_path)}</p>
-      <p class="muted">Tokens reserved: ${attachment.token_budget.toLocaleString()} · next: read worker.activity.v1.</p>
-      <button type="button" class="secondary worker-activity-button">Read worker activity</button>
+      <p class="muted">Tokens reserved: ${attachment.token_budget.toLocaleString()} · next: watch worker.activity.v1 from the runtime stream.</p>
+      <button type="button" class="secondary worker-activity-refresh-button">Refresh worker activity</button>
+      <button type="button" class="secondary worker-activity-button">Record preview snapshot</button>
     </div>
   `;
 };
@@ -1180,6 +1191,24 @@ const renderWorkerActivity = (activity) => {
         <article><span>Tokens</span><strong>${activity.data.tokens ? `${activity.data.tokens.observed.toLocaleString()}/${activity.data.tokens.budget.toLocaleString()}` : "pending"}</strong></article>
       </div>
       <p class="muted">${escapeHtml(activity.data.summary ?? "Activity snapshot from the preview adapter.")}</p>
+    </div>
+  `;
+};
+
+const renderWorkerActivityFeed = (status) => {
+  if (!status) return "";
+  const live = status.source === "worker.activity.v1-jetstream";
+  const activities = status.activities ?? [];
+  return `
+    <div class="worker-activity-feed">
+      <span>${live ? "JetStream live activity" : "Preview activity fallback"}</span>
+      <strong>${activities.length.toLocaleString()} event${activities.length === 1 ? "" : "s"}</strong>
+      <p class="muted">${escapeHtml(status.source)} · Control Plane reads worker.activity.v1; local file paths are not the runtime contract.</p>
+      ${
+        activities.length === 0
+          ? '<p class="muted">No worker activity observed yet. Start/attach a worker with activity env enabled, then refresh.</p>'
+          : activities.map((activity) => renderWorkerActivity(activity)).join("")
+      }
     </div>
   `;
 };
@@ -1541,6 +1570,23 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".provider-worker-process")
     ?.insertAdjacentHTML("afterend", renderProviderRunnerAttachment(attachment));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".worker-activity-refresh-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const status = await loadWorkerActivities();
+  button.removeAttribute("disabled");
+  if (!status) {
+    button.textContent = "Worker activity unavailable";
+    return;
+  }
+  button.textContent = "Refresh worker activity";
+  button.closest(".provider-runner-attachment")?.querySelector(".worker-activity-feed")?.remove();
+  button
+    .closest(".provider-runner-attachment")
+    ?.insertAdjacentHTML("beforeend", renderWorkerActivityFeed(status));
 });
 
 byId("plan-preview").addEventListener("click", async (event) => {

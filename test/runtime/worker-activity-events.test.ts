@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createWorkerActivityEmitter } from "../../apps/team-worker/src/activity.js";
 import { ControlPlanePlanPreviewStore } from "../../apps/control-plane-preview/src/plan-preview-store.js";
+import { inheritedWorkerActivityEnvironment } from "../../packages/team-control/src/profile-environment.js";
 import {
   encodeWorkerActivityEvent,
   validateWorkerActivityEvent,
@@ -162,6 +163,27 @@ test("team worker activity emitter treats bus publish failures as observability-
     await emitter.terminal("failed", "Worker failed.");
     await emitter.close();
   });
+});
+
+test("worker activity environment inheritance forwards only runtime activity settings", () => {
+  assert.deepEqual(
+    inheritedWorkerActivityEnvironment({
+      YUKH_WORKER_ACTIVITY_JETSTREAM: "1",
+      YUKH_NATS_URL: "nats://127.0.0.1:4222",
+      YUKH_WORKER_ACTIVITY_CREATE_STREAM: "0",
+      YUKH_RUNTIME_ENV: "local",
+      YUKH_TENANT: "tenant-local",
+      YUKH_CODEX_EXECUTABLE: "/usr/bin/codex",
+      SECRET_TOKEN: "must-not-pass",
+    }),
+    {
+      YUKH_WORKER_ACTIVITY_JETSTREAM: "1",
+      YUKH_NATS_URL: "nats://127.0.0.1:4222",
+      YUKH_WORKER_ACTIVITY_CREATE_STREAM: "0",
+      YUKH_RUNTIME_ENV: "local",
+      YUKH_TENANT: "tenant-local",
+    },
+  );
 });
 
 test("control plane store publishes worker activity to the event bus and reads bus projection", async () => {
