@@ -845,6 +845,21 @@ const createWorkerLaunchCandidate = async () => {
   }
 };
 
+const createWorkerLaunchReceipt = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/worker-launch-receipts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.worker_launch_receipt ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderProviderAdapter = (adapter) => {
   if (!adapter) return "";
   return `
@@ -1045,6 +1060,25 @@ const renderWorkerLaunchCandidate = (candidate) => {
       </div>
       <p class="muted">Worker launch: ${escapeHtml(candidate.worker_launch)} · Coordination write: ${escapeHtml(candidate.coordination_write)} · Projects write: ${escapeHtml(candidate.projects_write)}.</p>
       <p class="muted">Next required action: ${escapeHtml(candidate.next_required_action)}.</p>
+      <button type="button" class="secondary worker-launch-receipt-button">Authorize launch receipt</button>
+    </div>
+  `;
+};
+
+const renderWorkerLaunchReceipt = (receipt) => {
+  if (!receipt) return "";
+  return `
+    <div class="worker-launch-receipt">
+      <span>Worker launch receipt</span>
+      <strong>${escapeHtml(receipt.worker_launch_receipt_id)}</strong>
+      <p class="muted">${receipt.approved_worker_count.toLocaleString()} workers · ${receipt.approved_worker_token_budget.toLocaleString()} worker tokens · ${escapeHtml(receipt.launch_authorization)}.</p>
+      <div class="preflight-grid">
+        <article><span>Provider</span><strong>${escapeHtml(receipt.provider)}</strong></article>
+        <article><span>Process</span><strong>${escapeHtml(receipt.provider_process_start)}</strong></article>
+        <article><span>Launch</span><strong>${escapeHtml(receipt.worker_launch)}</strong></article>
+      </div>
+      <p class="muted">Coordination write: ${escapeHtml(receipt.coordination_write)} · Projects write: ${escapeHtml(receipt.projects_write)}.</p>
+      <p class="muted">Next required action: ${escapeHtml(receipt.next_required_action)}.</p>
     </div>
   `;
 };
@@ -1358,6 +1392,22 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".provider-runtime-probe")
     ?.insertAdjacentHTML("afterend", renderWorkerLaunchCandidate(candidate));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".worker-launch-receipt-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const receipt = await createWorkerLaunchReceipt();
+  if (!receipt) {
+    button.removeAttribute("disabled");
+    button.textContent = "Worker launch candidate required";
+    return;
+  }
+  button.textContent = "Worker launch receipt recorded";
+  button
+    .closest(".worker-launch-candidate")
+    ?.insertAdjacentHTML("afterend", renderWorkerLaunchReceipt(receipt));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
