@@ -33,6 +33,7 @@ and one denial, cleans up, then exits.
 - **Inspect the process:** start the [inert gateway](how-to/run-inert-gateway.md).
 - **Publish agent work:** follow the [agent GitHub workflow](guides/agent-github-workflow.md).
 - **Integrate contracts:** use the [contract reference](reference/contracts.md).
+- **Model distributed activity:** read the [event and subject policy](architecture/event-subject-policy.md).
 - **Review safety:** read the [security model](security/security-model.md).
 
 ## Current boundary

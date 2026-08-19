@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yukh.example/schemas/runtime/v1/worker-activity.schema.json",
+  "title": "Yukh Runtime Worker Activity v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "subject",
+    "time",
+    "datacontenttype",
+    "dataschema",
+    "data"
+  ],
+  "properties": {
+    "specversion": { "const": "1.0" },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^yukh://runtime/[a-z0-9][a-z0-9-]{0,63}/worker/[a-z0-9][a-z0-9-]{0,127}$"
+    },
+    "type": { "const": "worker.activity.v1" },
+    "subject": {
+      "type": "string",
+      "pattern": "^yukh\\.(local|dev|staging|prod)\\.[a-z0-9][a-z0-9-]{0,63}\\.runtime\\.worker\\.[a-z0-9][a-z0-9-]{0,127}\\.(heartbeat|log-chunked|status-changed|tokens-observed|artifact-recorded)\\.v1$"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "datacontenttype": { "const": "application/json" },
+    "dataschema": {
+      "const": "https://yukh.example/schemas/runtime/v1/worker-activity.schema.json"
+    },
+    "correlationid": { "$ref": "#/$defs/identifier" },
+    "causationid": { "$ref": "#/$defs/identifier" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aggregate_type",
+        "aggregate_id",
+        "producer_id",
+        "sequence",
+        "activity_kind",
+        "observed_at"
+      ],
+      "properties": {
+        "aggregate_type": { "const": "WorkerSession" },
+        "aggregate_id": { "$ref": "#/$defs/identifier" },
+        "producer_id": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "activity_kind": {
+          "enum": [
+            "heartbeat",
+            "log-chunked",
+            "status-changed",
+            "tokens-observed",
+            "artifact-recorded"
+          ]
+        },
+        "observed_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "worker_state": {
+          "enum": ["defined", "running", "completed", "failed", "stopped"]
+        },
+        "summary": { "type": "string", "maxLength": 2048 },
+        "log_chunk": { "type": "string", "maxLength": 4096 },
+        "artifact_ref": {
+          "type": "string",
+          "pattern": "^nats-object://[A-Z][A-Z0-9_]{0,63}/[a-z0-9][a-z0-9._-]{0,255}$"
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["observed", "budget"],
+          "properties": {
+            "observed": { "type": "integer", "minimum": 0, "maximum": 2000000 },
+            "budget": { "type": "integer", "minimum": 1000, "maximum": 2000000 },
+            "budget_outcome": { "enum": ["within", "exceeded"] }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "activity_kind": { "const": "artifact-recorded" } } },
+          "then": {
+            "properties": {
+              "artifact_ref": {
+                "type": "string",
+                "pattern": "^nats-object://[A-Z][A-Z0-9_]{0,63}/[a-z0-9][a-z0-9._-]{0,255}$"
+              }
+            },
+            "required": ["artifact_ref"]
+          }
+        },
+        {
+          "if": { "properties": { "activity_kind": { "const": "tokens-observed" } } },
+          "then": {
+            "properties": {
+              "tokens": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["observed", "budget"],
+                "properties": {
+                  "observed": { "type": "integer", "minimum": 0, "maximum": 2000000 },
+                  "budget": { "type": "integer", "minimum": 1000, "maximum": 2000000 },
+                  "budget_outcome": { "enum": ["within", "exceeded"] }
+                }
+              }
+            },
+            "required": ["tokens"]
+          }
+        },
+        {
+          "if": { "properties": { "activity_kind": { "const": "status-changed" } } },
+          "then": {
+            "properties": {
+              "worker_state": {
+                "enum": ["defined", "running", "completed", "failed", "stopped"]
+              }
+            },
+            "required": ["worker_state"]
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9._:-]{0,127}$"
+    }
+  }
+}
