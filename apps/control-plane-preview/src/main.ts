@@ -27,7 +27,11 @@ import {
 } from "./plan-preview-store.js";
 import { createTeamStatus } from "./team-status.js";
 import { createTopologyStatus } from "./topology-status.js";
-import { createPreviewRuntimeCheck, type PreviewRuntimeCheck } from "./preview-runtime-status.js";
+import {
+  createPreviewRuntimeCheck,
+  type PreviewRuntimeCheck,
+  type PreviewRuntimeStatusResponse,
+} from "./preview-runtime-status.js";
 
 type ControlPlaneOptions = {
   readonly host: string;
@@ -139,6 +143,20 @@ export const discoverConfiguredProviderModels: ControlPlaneProviderModelDiscover
 
 function runtimeForProvider(provider: string): "codex" | "copilot" {
   return provider === "Copilot SDK workers" ? "copilot" : "codex";
+}
+
+function redactPreviewRuntimeForLaunchReadiness(status: PreviewRuntimeStatusResponse): {
+  readonly status: PreviewRuntimeStatusResponse["status"];
+  readonly checked_at: string;
+  readonly warnings_count: number;
+  readonly problems_count: number;
+} {
+  return {
+    status: status.status,
+    checked_at: status.checked_at,
+    warnings_count: status.warnings.length,
+    problems_count: status.problems.length,
+  };
 }
 
 function createConfiguredProviderRunner(
@@ -313,7 +331,27 @@ export function createControlPlaneServer(
         "cache-control": "no-store",
         "content-type": "application/json; charset=utf-8",
       });
-      response.end(JSON.stringify(options.planPreviewStore.launchReadiness()));
+      const readiness = options.planPreviewStore.launchReadiness();
+      const runtimeStatus = previewRuntimeCheck();
+      const runtimeReasons =
+        runtimeStatus.status === "attention-required"
+          ? [
+              {
+                code: "preview_runtime_attention_required",
+                message:
+                  "The preview runtime gate is attention-required; fix runtime problems before recording a launch intent.",
+              },
+            ]
+          : [];
+      response.end(
+        JSON.stringify({
+          ...readiness,
+          outcome:
+            readiness.outcome === "ready" && runtimeReasons.length === 0 ? "ready" : "blocked",
+          reasons: [...readiness.reasons, ...runtimeReasons],
+          preview_runtime: redactPreviewRuntimeForLaunchReadiness(runtimeStatus),
+        }),
+      );
       return;
     }
 
@@ -339,6 +377,22 @@ export function createControlPlaneServer(
       }
       if (request.method === "POST") {
         try {
+          const runtimeStatus = previewRuntimeCheck();
+          if (runtimeStatus.status === "attention-required") {
+            response.writeHead(409, {
+              "cache-control": "no-store",
+              "content-type": "application/json; charset=utf-8",
+            });
+            response.end(
+              JSON.stringify({
+                schema: 1,
+                status: "error",
+                code: "preview_runtime_attention_required",
+                preview_runtime: redactPreviewRuntimeForLaunchReadiness(runtimeStatus),
+              }),
+            );
+            return;
+          }
           const record = options.planPreviewStore.createLaunchIntent();
           response.writeHead(201, {
             "cache-control": "no-store",

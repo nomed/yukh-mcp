@@ -1299,6 +1299,9 @@ const renderWorkerActivityFeed = (status) => {
 
 const readinessPanel = (readiness) => {
   if (!readiness) return "";
+  const runtime = readiness.preview_runtime;
+  const runtimeBlocksLaunch = runtime?.status === "attention-required";
+  const canRecordLaunchIntent = readiness.outcome === "ready" && !runtimeBlocksLaunch;
   return `
     <div class="readiness-panel ${readiness.outcome}">
       <div>
@@ -1306,14 +1309,21 @@ const readinessPanel = (readiness) => {
         <strong>${escapeHtml(readiness.outcome)}</strong>
       </div>
       ${
+        runtime
+          ? `<p class="muted">Preview runtime gate: ${escapeHtml(runtime.status)} · ${runtime.problems_count.toLocaleString()} problems · ${runtime.warnings_count.toLocaleString()} warnings.</p>`
+          : '<p class="muted">Preview runtime gate not reported by this server.</p>'
+      }
+      ${
         readiness.reasons.length === 0
           ? '<p class="muted">Ready for the next explicit launch step. This panel still launches nothing.</p>'
           : `<ul>${readiness.reasons.map((reason) => `<li>${escapeHtml(reason.message)}</li>`).join("")}</ul>`
       }
       ${
-        readiness.outcome === "ready"
+        canRecordLaunchIntent
           ? '<button type="button" class="secondary launch-intent-button">Record launch intent</button>'
-          : ""
+          : runtimeBlocksLaunch
+            ? '<button type="button" class="secondary" disabled>Runtime attention required</button>'
+            : ""
       }
     </div>
   `;
