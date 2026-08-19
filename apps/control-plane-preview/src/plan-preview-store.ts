@@ -292,6 +292,29 @@ export type ControlPlaneProviderAdapterInput = {
   readonly max_run_token_budget: number;
 };
 
+export type ControlPlaneProviderCapabilityInventoryRecord = {
+  readonly schema: 1;
+  readonly provider_capability_inventory_id: string;
+  readonly provider_adapter_id: string;
+  readonly provider: string;
+  readonly adapter_kind: "cli" | "sdk";
+  readonly models: readonly {
+    readonly model: string;
+    readonly source: "configured_adapter";
+    readonly max_run_token_budget: number;
+  }[];
+  readonly command_policy: "bounded_control_plane_only";
+  readonly inventory_source: "local_provider_adapter_config";
+  readonly provider_call: "not_performed";
+  readonly created_at: string;
+};
+
+export type ControlPlaneProviderCapabilityInventoryStatus = {
+  readonly schema: "yukh-control-plane-provider-capability-inventories-v1";
+  readonly source: "local-control-plane-store";
+  readonly inventories: readonly ControlPlaneProviderCapabilityInventoryRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -313,6 +336,7 @@ type Document = {
   readonly worker_launch_preflights?: readonly ControlPlaneWorkerLaunchPreflightRecord[];
   readonly provider_runtime_probes?: readonly ControlPlaneProviderRuntimeProbeRecord[];
   readonly provider_adapters?: readonly ControlPlaneProviderAdapterRecord[];
+  readonly provider_capability_inventories?: readonly ControlPlaneProviderCapabilityInventoryRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -563,6 +587,50 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
+  providerCapabilityInventories(): ControlPlaneProviderCapabilityInventoryStatus {
+    return {
+      schema: "yukh-control-plane-provider-capability-inventories-v1",
+      source: "local-control-plane-store",
+      inventories: this.#read().provider_capability_inventories ?? [],
+    };
+  }
+
+  inventoryProviderCapabilities(): ControlPlaneProviderCapabilityInventoryRecord {
+    const document = this.#read();
+    const adapter = document.provider_adapters?.[0];
+    if (!adapter) {
+      throw new TypeError("missing provider adapter");
+    }
+    const existing = document.provider_capability_inventories?.find(
+      (inventory) => inventory.provider_adapter_id === adapter.provider_adapter_id,
+    );
+    if (existing) return existing;
+    const record: ControlPlaneProviderCapabilityInventoryRecord = {
+      schema: 1,
+      provider_capability_inventory_id: `provider-capability-inventory-${randomUUID()}`,
+      provider_adapter_id: adapter.provider_adapter_id,
+      provider: adapter.provider,
+      adapter_kind: adapter.adapter_kind,
+      models: adapter.models.map((model) => ({
+        model,
+        source: "configured_adapter",
+        max_run_token_budget: adapter.max_run_token_budget,
+      })),
+      command_policy: "bounded_control_plane_only",
+      inventory_source: "local_provider_adapter_config",
+      provider_call: "not_performed",
+      created_at: new Date().toISOString(),
+    };
+    this.#write({
+      ...document,
+      provider_capability_inventories: [
+        record,
+        ...(document.provider_capability_inventories ?? []),
+      ].slice(0, 20),
+    });
+    return record;
+  }
+
   configureProviderAdapter(
     input: ControlPlaneProviderAdapterInput,
   ): ControlPlaneProviderAdapterRecord {
@@ -585,6 +653,9 @@ export class ControlPlanePlanPreviewStore {
     this.#write({
       ...document,
       provider_adapters: [record, ...retained].slice(0, 20),
+      provider_capability_inventories: (document.provider_capability_inventories ?? []).filter(
+        (inventory) => inventory.provider !== input.provider,
+      ),
     });
     return record;
   }
@@ -1086,6 +1157,9 @@ export class ControlPlanePlanPreviewStore {
         provider_adapters: Array.isArray(parsed.provider_adapters)
           ? parsed.provider_adapters.filter((item) => item?.schema === 1)
           : [],
+        provider_capability_inventories: Array.isArray(parsed.provider_capability_inventories)
+          ? parsed.provider_capability_inventories.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
       return {
@@ -1101,6 +1175,7 @@ export class ControlPlanePlanPreviewStore {
         worker_launch_preflights: [],
         provider_runtime_probes: [],
         provider_adapters: [],
+        provider_capability_inventories: [],
       };
     }
   }
@@ -1110,6 +1185,8 @@ export class ControlPlanePlanPreviewStore {
     const normalized: Document = {
       ...document,
       provider_adapters: document.provider_adapters ?? current.provider_adapters ?? [],
+      provider_capability_inventories:
+        document.provider_capability_inventories ?? current.provider_capability_inventories ?? [],
     };
     const tmp = `${this.#path}.${process.pid}.${Date.now()}.tmp`;
     writeFileSync(tmp, `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 });

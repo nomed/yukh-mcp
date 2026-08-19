@@ -800,6 +800,21 @@ const configureProviderAdapter = async ({ provider, kind, executablePath, models
   }
 };
 
+const inventoryProviderCapabilities = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/provider-capability-inventories", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.provider_capability_inventory ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const probeProviderRuntime = async () => {
   try {
     const response = await fetch("./api/manager-plan/provider-runtime-probes", {
@@ -824,6 +839,32 @@ const renderProviderAdapter = (adapter) => {
       <p class="muted">${escapeHtml(adapter.provider)} · ${escapeHtml(adapter.adapter_kind)} · max ${adapter.max_run_token_budget.toLocaleString()} tokens.</p>
       <p class="muted">Models: ${adapter.models.map((model) => escapeHtml(model)).join(", ")}</p>
       <p class="muted">${adapter.executable_path ? `Executable: ${escapeHtml(adapter.executable_path)}` : "SDK adapter: no executable path required at this stage."}</p>
+      <button type="button" class="secondary provider-inventory-button">Inventory capabilities</button>
+    </div>
+  `;
+};
+
+const renderProviderCapabilityInventory = (inventory) => {
+  if (!inventory) return "";
+  return `
+    <div class="provider-capability-inventory">
+      <span>Provider capability inventory</span>
+      <strong>${escapeHtml(inventory.provider_capability_inventory_id)}</strong>
+      <p class="muted">${escapeHtml(inventory.provider)} · ${escapeHtml(inventory.adapter_kind)} · source ${escapeHtml(inventory.inventory_source)}.</p>
+      <div class="preflight-grid">
+        ${inventory.models
+          .map(
+            (model) => `
+              <article>
+                <span>${escapeHtml(model.source)}</span>
+                <strong>${escapeHtml(model.model)}</strong>
+                <p class="muted">Max ${model.max_run_token_budget.toLocaleString()} tokens.</p>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+      <p class="muted">Provider call: ${escapeHtml(inventory.provider_call)} · commands ${escapeHtml(inventory.command_policy)}.</p>
     </div>
   `;
 };
@@ -1294,6 +1335,22 @@ byId("provider-adapter-form").addEventListener("submit", async (event) => {
   byId("provider-adapter-status").innerHTML = adapter
     ? renderProviderAdapter(adapter)
     : '<div class="provider-adapter"><span>Provider adapter rejected</span><p class="muted">Check provider, adapter kind, absolute CLI path and model list.</p></div>';
+});
+
+byId("provider-adapter-status").addEventListener("click", async (event) => {
+  const button = event.target.closest(".provider-inventory-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const inventory = await inventoryProviderCapabilities();
+  if (!inventory) {
+    button.removeAttribute("disabled");
+    button.textContent = "Provider adapter required";
+    return;
+  }
+  button.textContent = "Capability inventory recorded";
+  button
+    .closest(".provider-adapter")
+    ?.insertAdjacentHTML("afterend", renderProviderCapabilityInventory(inventory));
 });
 
 const persistedPlan = await loadPersistedPlanPreview();

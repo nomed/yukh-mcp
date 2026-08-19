@@ -300,6 +300,13 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(blockedProviderProbe.status, 409);
     assert.equal((await blockedProviderProbe.json()).code, "worker_launch_preflight_required");
 
+    const blockedProviderInventory = await fetch(
+      `${base}/api/manager-plan/provider-capability-inventories`,
+      { method: "POST" },
+    );
+    assert.equal(blockedProviderInventory.status, 409);
+    assert.equal((await blockedProviderInventory.json()).code, "provider_adapter_required");
+
     const invalidProviderAdapter = await fetch(`${base}/api/manager-plan/provider-adapters`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -759,6 +766,58 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(providerAdaptersBody.schema, "yukh-control-plane-provider-adapters-v1");
     assert.equal(providerAdaptersBody.adapters.length, 1);
 
+    const providerInventory = await fetch(
+      `${base}/api/manager-plan/provider-capability-inventories`,
+      { method: "POST" },
+    );
+    assert.equal(providerInventory.status, 201);
+    const providerInventoryBody = await providerInventory.json();
+    assert.equal(
+      providerInventoryBody.provider_capability_inventory.provider_adapter_id,
+      providerAdapterBody.provider_adapter.provider_adapter_id,
+    );
+    assert.equal(
+      providerInventoryBody.provider_capability_inventory.provider,
+      "Copilot SDK workers",
+    );
+    assert.equal(providerInventoryBody.provider_capability_inventory.adapter_kind, "sdk");
+    assert.equal(
+      providerInventoryBody.provider_capability_inventory.inventory_source,
+      "local_provider_adapter_config",
+    );
+    assert.equal(
+      providerInventoryBody.provider_capability_inventory.provider_call,
+      "not_performed",
+    );
+    assert.deepEqual(
+      providerInventoryBody.provider_capability_inventory.models.map(
+        (model: { readonly model: string }) => model.model,
+      ),
+      ["copilot-sdk-default", "copilot-sdk-small"],
+    );
+
+    const repeatedProviderInventory = await fetch(
+      `${base}/api/manager-plan/provider-capability-inventories`,
+      { method: "POST" },
+    );
+    assert.equal(repeatedProviderInventory.status, 201);
+    assert.equal(
+      (await repeatedProviderInventory.json()).provider_capability_inventory
+        .provider_capability_inventory_id,
+      providerInventoryBody.provider_capability_inventory.provider_capability_inventory_id,
+    );
+
+    const providerInventories = await fetch(
+      `${base}/api/manager-plan/provider-capability-inventories`,
+    );
+    assert.equal(providerInventories.status, 200);
+    const providerInventoriesBody = await providerInventories.json();
+    assert.equal(
+      providerInventoriesBody.schema,
+      "yukh-control-plane-provider-capability-inventories-v1",
+    );
+    assert.equal(providerInventoriesBody.inventories.length, 1);
+
     const providerProbe = await fetch(`${base}/api/manager-plan/provider-runtime-probes`, {
       method: "POST",
     });
@@ -897,6 +956,13 @@ test("control plane preview persists local manager plan previews without leaking
     });
     assert.equal(providerAdapterDenied.status, 405);
     assert.equal(providerAdapterDenied.headers.get("allow"), "GET, POST");
+
+    const providerInventoryDenied = await fetch(
+      `${base}/api/manager-plan/provider-capability-inventories`,
+      { method: "DELETE" },
+    );
+    assert.equal(providerInventoryDenied.status, 405);
+    assert.equal(providerInventoryDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -946,6 +1012,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/worker-launch-preflights/u);
   assert.match(data, /api\/manager-plan\/provider-runtime-probes/u);
   assert.match(data, /api\/manager-plan\/provider-adapters/u);
+  assert.match(data, /api\/manager-plan\/provider-capability-inventories/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
@@ -957,6 +1024,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /Worker launch preflight/u);
   assert.match(data, /Provider runtime probe/u);
   assert.match(data, /Provider adapter configured/u);
+  assert.match(data, /Provider capability inventory/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
   assert.match(data, /worker_launch/u);
