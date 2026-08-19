@@ -7,6 +7,7 @@ import {
   createControlPlaneServer,
   parseArguments,
 } from "../../apps/control-plane-preview/src/main.js";
+import { parsePreviewRuntimeCheckOutput } from "../../apps/control-plane-preview/src/preview-runtime-status.js";
 import { ControlPlanePlanPreviewStore } from "../../apps/control-plane-preview/src/plan-preview-store.js";
 import { TeamStore } from "../../packages/team-control/src/store.js";
 
@@ -107,6 +108,83 @@ test("control plane preview exposes closed read-only topology status", async () 
       server.close((error) => (error ? reject(error) : resolve()));
     });
   }
+});
+
+test("control plane preview exposes read-only preview runtime gate", async () => {
+  const root = await mkdtemp(join(tmpdir(), "yukh-control-plane-preview-runtime-api-"));
+  await writeFile(join(root, "index.html"), "<h1>Control</h1>");
+  await writeFile(join(root, "styles.css"), "body{}");
+  await writeFile(join(root, "mock-data.js"), "export {};");
+
+  const server = createControlPlaneServer(root, {
+    previewRuntimeCheck: () => ({
+      schema: "yukh-control-plane-preview-runtime-status-v1",
+      source: "preview-runtime-check",
+      checked_at: "2026-08-19T12:00:00.000Z",
+      side_effects: "none",
+      status: "ok-with-warnings",
+      runtime: "/tmp/yukh-preview",
+      launcher: ".github/scripts/yukh-local-agent.py",
+      checks: { docker: "sudo-required", tls: "ok", coordination_replay: "unavailable" },
+      warnings: ["coordination replay unavailable for a fresh profile"],
+      problems: [],
+    }),
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  try {
+    const address = server.address();
+    if (typeof address !== "object" || address === null) {
+      throw new TypeError("expected TCP server address");
+    }
+    const base = `http://127.0.0.1:${address.port}`;
+
+    const response = await fetch(`${base}/api/topology/preview-runtime`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const body = await response.json();
+    assert.equal(body.schema, "yukh-control-plane-preview-runtime-status-v1");
+    assert.equal(body.status, "ok-with-warnings");
+    assert.equal(body.side_effects, "none");
+    assert.equal(body.checks.docker, "sudo-required");
+    assert.deepEqual(body.problems, []);
+    assert.doesNotMatch(JSON.stringify(body), /token|secret|private|credential/iu);
+
+    const mutation = await fetch(`${base}/api/topology/preview-runtime`, { method: "POST" });
+    assert.equal(mutation.status, 405);
+    assert.equal(mutation.headers.get("allow"), "GET");
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
+test("control plane preview parses runtime diagnostic output", () => {
+  const parsed = parsePreviewRuntimeCheckOutput(
+    [
+      "runtime: /tmp/yukh-preview",
+      "launcher: .github/scripts/yukh-local-agent.py",
+      "docker: sudo-required",
+      "tls: ok",
+      "warning: coordination replay unavailable for a fresh profile",
+      "status: ok-with-warnings",
+    ].join("\n"),
+    "2026-08-19T12:00:00.000Z",
+  );
+
+  assert.equal(parsed.schema, "yukh-control-plane-preview-runtime-status-v1");
+  assert.equal(parsed.status, "ok-with-warnings");
+  assert.equal(parsed.runtime, "/tmp/yukh-preview");
+  assert.equal(parsed.launcher, ".github/scripts/yukh-local-agent.py");
+  assert.equal(parsed.side_effects, "none");
+  assert.equal(parsed.checks.docker, "sudo-required");
+  assert.deepEqual(parsed.warnings, ["coordination replay unavailable for a fresh profile"]);
 });
 
 test("control plane preview exposes redacted live team status", async () => {
@@ -1462,6 +1540,8 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(html, /Communication/u);
   assert.match(html, /Team detail/u);
   assert.match(html, /Plan, workers, tokens and next action/u);
+  assert.match(html, /Preview runtime gate/u);
+  assert.match(html, /Can this host launch Yukh work safely/u);
   assert.match(html, /manager-plan-form/u);
   assert.match(html, /provider-adapter-form/u);
   assert.match(html, /plan-preview/u);
@@ -1472,7 +1552,11 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(html, /Manager detail/u);
   assert.match(html, /Current orchestration/u);
   assert.match(data, /api\/topology\/status/u);
+  assert.match(data, /api\/topology\/preview-runtime/u);
   assert.match(data, /api\/teams\/status/u);
+  assert.match(data, /yukh-control-plane-preview-runtime-status-v1/u);
+  assert.match(data, /renderPreviewRuntimeStatus/u);
+  assert.match(data, /Fix the listed problems before relying on worker launch/u);
   assert.match(data, /missing_required_actions/u);
   assert.match(data, /task-board/u);
   assert.match(data, /conversation-feed/u);
@@ -1553,6 +1637,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
 
   const styles = await readFile("apps/control-plane-preview/static/styles.css", "utf8");
   assert.match(styles, /\.worker-activity/u);
+  assert.match(styles, /\.preview-runtime-panel/u);
 });
 
 test("control plane preview has bounded text containers for operator UI", async () => {
@@ -1592,6 +1677,8 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.provider-worker-process/u);
   assert.match(css, /\.provider-runner-attachment/u);
   assert.match(css, /\.worker-activity/u);
+  assert.match(css, /\.preview-runtime-summary/u);
+  assert.match(css, /\.preview-runtime-grid/u);
   assert.match(css, /\.preflight-grid/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });

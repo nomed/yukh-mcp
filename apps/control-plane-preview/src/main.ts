@@ -27,6 +27,7 @@ import {
 } from "./plan-preview-store.js";
 import { createTeamStatus } from "./team-status.js";
 import { createTopologyStatus } from "./topology-status.js";
+import { createPreviewRuntimeCheck, type PreviewRuntimeCheck } from "./preview-runtime-status.js";
 
 type ControlPlaneOptions = {
   readonly host: string;
@@ -42,6 +43,7 @@ const CONTENT_TYPES = new Map([
 ]);
 
 const API_TOPOLOGY_STATUS_PATH = "/api/topology/status";
+const API_PREVIEW_RUNTIME_STATUS_PATH = "/api/topology/preview-runtime";
 const API_TEAM_STATUS_PATH = "/api/teams/status";
 const API_PLAN_PREVIEWS_PATH = "/api/manager-plan/previews";
 const API_LAUNCH_READINESS_PATH = "/api/manager-plan/launch-readiness";
@@ -281,8 +283,10 @@ export function createControlPlaneServer(
   options: {
     readonly teamStore?: Pick<TeamStore, "teams">;
     readonly planPreviewStore?: ControlPlanePlanPreviewStore;
+    readonly previewRuntimeCheck?: PreviewRuntimeCheck;
   } = {},
 ): Server {
+  const previewRuntimeCheck = options.previewRuntimeCheck ?? createPreviewRuntimeCheck();
   return createServer(async (request, response) => {
     if (
       request.url &&
@@ -1220,6 +1224,27 @@ export function createControlPlaneServer(
         "content-type": "application/json; charset=utf-8",
       });
       response.end(JSON.stringify(createTopologyStatus()));
+      return;
+    }
+
+    if (
+      request.url &&
+      new URL(request.url, "http://127.0.0.1").pathname === API_PREVIEW_RUNTIME_STATUS_PATH
+    ) {
+      if (request.method !== "GET") {
+        response.writeHead(405, {
+          allow: "GET",
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+        return;
+      }
+      response.writeHead(200, {
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify(previewRuntimeCheck()));
       return;
     }
 

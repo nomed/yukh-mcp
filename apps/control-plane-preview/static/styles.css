@@ -321,6 +321,58 @@ nav a:hover {
   display: grid;
   gap: 14px;
 }
+.preview-runtime-panel {
+  display: grid;
+  gap: 12px;
+}
+.preview-runtime-summary {
+  background: linear-gradient(135deg, rgba(119, 240, 178, 0.09), transparent 48%), #0d121c;
+  border: 1px solid rgba(119, 240, 178, 0.22);
+  border-radius: 18px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.45fr);
+  padding: 14px;
+}
+.preview-runtime-summary.ok-with-warnings,
+.preview-runtime-summary.attention-required {
+  background: linear-gradient(135deg, rgba(255, 209, 102, 0.11), transparent 48%), #0d121c;
+  border-color: rgba(255, 209, 102, 0.28);
+}
+.preview-runtime-summary dl,
+.preview-runtime-grid {
+  display: grid;
+  gap: 10px;
+}
+.preview-runtime-summary dl {
+  margin: 0;
+}
+.preview-runtime-summary dt,
+.preview-runtime-grid span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.preview-runtime-summary dd {
+  margin: 2px 0 0;
+}
+.preview-runtime-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.preview-runtime-grid section {
+  background: var(--panel-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.preview-runtime-grid p {
+  display: grid;
+  gap: 3px;
+}
 .team-detail {
   display: grid;
   gap: 16px;
@@ -1113,6 +1165,8 @@ textarea {
   .detail-grid,
   .worker-table article,
   .command-center,
+  .preview-runtime-summary,
+  .preview-runtime-grid,
   .preview-grid,
   .metrics {
     grid-template-columns: 1fr;

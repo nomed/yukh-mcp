@@ -175,6 +175,17 @@ const loadTopology = async () => {
     return data.topology;
   }
 };
+const loadPreviewRuntimeStatus = async () => {
+  try {
+    const response = await fetch("./api/topology/preview-runtime", { cache: "no-store" });
+    if (!response.ok) return null;
+    const status = await response.json();
+    if (status?.schema !== "yukh-control-plane-preview-runtime-status-v1") return null;
+    return status;
+  } catch {
+    return null;
+  }
+};
 const loadTeams = async () => {
   try {
     const response = await fetch("./api/teams/status", { cache: "no-store" });
@@ -264,6 +275,79 @@ byId("metric-agents").textContent = String(agents.length);
 byId("metric-budget").textContent =
   allocated > 0 ? `${Math.round((used / allocated) * 100)}% used` : "no budget";
 byId("metric-providers").textContent = "CLI + SDK";
+
+const renderPreviewRuntimeStatus = (runtimeStatus) => {
+  const status = runtimeStatus?.status ?? "attention-required";
+  const statusDot = status === "ok" ? "ok" : "warn";
+  byId("preview-runtime-status").innerHTML =
+    `<span class="dot ${statusDot}"></span>${escapeHtml(status)}`;
+
+  if (!runtimeStatus) {
+    byId("preview-runtime-panel").innerHTML = `
+      <article class="preview-runtime-summary attention-required">
+        <strong>Runtime status unavailable</strong>
+        <p class="muted">The Control Plane could not read the preview runtime check endpoint.</p>
+      </article>
+    `;
+    return;
+  }
+
+  const checks = Object.entries(runtimeStatus.checks ?? {});
+  const warnings = runtimeStatus.warnings ?? [];
+  const problems = runtimeStatus.problems ?? [];
+  const launchMessage =
+    status === "ok"
+      ? "Safe to continue with a plan-first run."
+      : status === "ok-with-warnings"
+        ? "Usable, but review warnings before launching expensive workers."
+        : "Fix the listed problems before relying on worker launch.";
+
+  byId("preview-runtime-panel").innerHTML = `
+    <article class="preview-runtime-summary ${escapeHtml(status)}">
+      <div>
+        <strong>${escapeHtml(launchMessage)}</strong>
+        <p class="muted">Checked at ${escapeHtml(runtimeStatus.checked_at)} · side effects: ${escapeHtml(runtimeStatus.side_effects)}</p>
+      </div>
+      <dl>
+        <div><dt>Runtime</dt><dd>${escapeHtml(runtimeStatus.runtime ?? "not reported")}</dd></div>
+        <div><dt>Launcher</dt><dd>${escapeHtml(runtimeStatus.launcher ?? "not reported")}</dd></div>
+      </dl>
+    </article>
+    <div class="preview-runtime-grid">
+      <section>
+        <h4>Checks</h4>
+        ${
+          checks.length === 0
+            ? '<p class="muted">No check detail reported.</p>'
+            : checks
+                .map(
+                  ([key, value]) =>
+                    `<p><span>${escapeHtml(key)}</span><strong>${escapeHtml(value)}</strong></p>`,
+                )
+                .join("")
+        }
+      </section>
+      <section>
+        <h4>Warnings</h4>
+        ${
+          warnings.length === 0
+            ? '<p class="muted">No warnings.</p>'
+            : warnings.map((warning) => `<p class="muted">${escapeHtml(warning)}</p>`).join("")
+        }
+      </section>
+      <section>
+        <h4>Problems</h4>
+        ${
+          problems.length === 0
+            ? '<p class="muted">No blocking problems.</p>'
+            : problems.map((problem) => `<p class="muted">${escapeHtml(problem)}</p>`).join("")
+        }
+      </section>
+    </div>
+  `;
+};
+
+renderPreviewRuntimeStatus(await loadPreviewRuntimeStatus());
 
 byId("manager-count").textContent = `${activeTeams.length} active`;
 byId("manager-list").innerHTML = teams
