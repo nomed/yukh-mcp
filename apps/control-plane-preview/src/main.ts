@@ -34,6 +34,7 @@ const API_MANAGER_PROCESSES_PATH = "/api/manager-plan/manager-processes";
 const API_MANAGER_READY_RECEIPTS_PATH = "/api/manager-plan/manager-ready-receipts";
 const API_WORKER_DELEGATION_PLANS_PATH = "/api/manager-plan/worker-delegation-plans";
 const API_WORKER_DELEGATION_APPROVALS_PATH = "/api/manager-plan/worker-delegation-approvals";
+const API_WORKER_LAUNCH_PREFLIGHTS_PATH = "/api/manager-plan/worker-launch-preflights";
 
 export function parseArguments(argv: readonly string[]): ControlPlaneOptions {
   const options = { host: "127.0.0.1", port: 7345 } as {
@@ -458,6 +459,60 @@ export function createControlPlaneServer(
               schema: 1,
               status: "error",
               code: "worker_delegation_plan_required",
+            }),
+          );
+        }
+        return;
+      }
+      response.writeHead(405, {
+        allow: "GET, POST",
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+      return;
+    }
+
+    if (
+      request.url &&
+      new URL(request.url, "http://127.0.0.1").pathname === API_WORKER_LAUNCH_PREFLIGHTS_PATH
+    ) {
+      if (!options.planPreviewStore) {
+        response.writeHead(503, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ schema: 1, status: "error", code: "store_unconfigured" }));
+        return;
+      }
+      if (request.method === "GET") {
+        response.writeHead(200, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify(options.planPreviewStore.workerLaunchPreflights()));
+        return;
+      }
+      if (request.method === "POST") {
+        try {
+          const record = options.planPreviewStore.preflightApprovedWorkerLaunch();
+          response.writeHead(201, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(
+            JSON.stringify({ schema: 1, status: "ok", worker_launch_preflight: record }),
+          );
+        } catch {
+          response.writeHead(409, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(
+            JSON.stringify({
+              schema: 1,
+              status: "error",
+              code: "worker_delegation_approval_required",
             }),
           );
         }

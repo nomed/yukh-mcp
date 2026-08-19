@@ -206,6 +206,34 @@ export type ControlPlaneWorkerDelegationApprovalStatus = {
   readonly approvals: readonly ControlPlaneWorkerDelegationApprovalRecord[];
 };
 
+export type ControlPlaneWorkerLaunchPreflightRecord = {
+  readonly schema: 1;
+  readonly worker_launch_preflight_id: string;
+  readonly worker_delegation_approval_id: string;
+  readonly worker_delegation_plan_id: string;
+  readonly manager_ready_receipt_id: string;
+  readonly manager_process_id: string;
+  readonly manager_run_id: string;
+  readonly approved_worker_count: number;
+  readonly approved_worker_token_budget: number;
+  readonly outcome: "blocked_until_provider_runtime_probe";
+  readonly provider_runtime_check: "requires_provider_runtime_probe";
+  readonly policy_check: "local_approval_present";
+  readonly budget_check: "within_approved_worker_budget";
+  readonly capability_check: "requires_provider_capability_inventory";
+  readonly worker_launch: "not_performed";
+  readonly coordination_write: "not_performed";
+  readonly projects_write: "not_performed";
+  readonly created_at: string;
+  readonly next_required_action: "probe_provider_runtime";
+};
+
+export type ControlPlaneWorkerLaunchPreflightStatus = {
+  readonly schema: "yukh-control-plane-worker-launch-preflights-v1";
+  readonly source: "local-control-plane-store";
+  readonly preflights: readonly ControlPlaneWorkerLaunchPreflightRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -224,6 +252,7 @@ type Document = {
   readonly manager_ready_receipts?: readonly ControlPlaneManagerReadyReceiptRecord[];
   readonly worker_delegation_plans?: readonly ControlPlaneWorkerDelegationPlanRecord[];
   readonly worker_delegation_approvals?: readonly ControlPlaneWorkerDelegationApprovalRecord[];
+  readonly worker_launch_preflights?: readonly ControlPlaneWorkerLaunchPreflightRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -409,6 +438,61 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
+  workerLaunchPreflights(): ControlPlaneWorkerLaunchPreflightStatus {
+    return {
+      schema: "yukh-control-plane-worker-launch-preflights-v1",
+      source: "local-control-plane-store",
+      preflights: this.#read().worker_launch_preflights ?? [],
+    };
+  }
+
+  preflightApprovedWorkerLaunch(): ControlPlaneWorkerLaunchPreflightRecord {
+    const document = this.#read();
+    const approval = document.worker_delegation_approvals?.[0];
+    if (!approval) {
+      throw new TypeError("missing worker delegation approval");
+    }
+    const existing = document.worker_launch_preflights?.find(
+      (preflight) =>
+        preflight.worker_delegation_approval_id === approval.worker_delegation_approval_id,
+    );
+    if (existing) return existing;
+    const record: ControlPlaneWorkerLaunchPreflightRecord = {
+      schema: 1,
+      worker_launch_preflight_id: `worker-launch-preflight-${randomUUID()}`,
+      worker_delegation_approval_id: approval.worker_delegation_approval_id,
+      worker_delegation_plan_id: approval.worker_delegation_plan_id,
+      manager_ready_receipt_id: approval.manager_ready_receipt_id,
+      manager_process_id: approval.manager_process_id,
+      manager_run_id: approval.manager_run_id,
+      approved_worker_count: approval.approved_worker_count,
+      approved_worker_token_budget: approval.approved_worker_token_budget,
+      outcome: "blocked_until_provider_runtime_probe",
+      provider_runtime_check: "requires_provider_runtime_probe",
+      policy_check: "local_approval_present",
+      budget_check: "within_approved_worker_budget",
+      capability_check: "requires_provider_capability_inventory",
+      worker_launch: "not_performed",
+      coordination_write: "not_performed",
+      projects_write: "not_performed",
+      created_at: new Date().toISOString(),
+      next_required_action: "probe_provider_runtime",
+    };
+    this.#write({
+      schema: 1,
+      previews: document.previews,
+      launch_intents: document.launch_intents ?? [],
+      manager_runs: document.manager_runs ?? [],
+      manager_runtime_connections: document.manager_runtime_connections ?? [],
+      manager_processes: document.manager_processes ?? [],
+      manager_ready_receipts: document.manager_ready_receipts ?? [],
+      worker_delegation_plans: document.worker_delegation_plans ?? [],
+      worker_delegation_approvals: document.worker_delegation_approvals ?? [],
+      worker_launch_preflights: [record, ...(document.worker_launch_preflights ?? [])].slice(0, 20),
+    });
+    return record;
+  }
+
   approveWorkerDelegationPlan(): ControlPlaneWorkerDelegationApprovalRecord {
     const document = this.#read();
     const plan = document.worker_delegation_plans?.[0];
@@ -448,6 +532,7 @@ export class ControlPlanePlanPreviewStore {
         0,
         20,
       ),
+      worker_launch_preflights: document.worker_launch_preflights ?? [],
     });
     return record;
   }
@@ -509,6 +594,7 @@ export class ControlPlanePlanPreviewStore {
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: [record, ...(document.worker_delegation_plans ?? [])].slice(0, 20),
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
+      worker_launch_preflights: document.worker_launch_preflights ?? [],
     });
     return record;
   }
@@ -546,6 +632,7 @@ export class ControlPlanePlanPreviewStore {
       manager_ready_receipts: [record, ...(document.manager_ready_receipts ?? [])].slice(0, 20),
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
+      worker_launch_preflights: document.worker_launch_preflights ?? [],
     });
     return record;
   }
@@ -584,6 +671,7 @@ export class ControlPlanePlanPreviewStore {
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
+      worker_launch_preflights: document.worker_launch_preflights ?? [],
     });
     return record;
   }
@@ -624,6 +712,7 @@ export class ControlPlanePlanPreviewStore {
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
+      worker_launch_preflights: document.worker_launch_preflights ?? [],
     });
     return record;
   }
@@ -666,6 +755,7 @@ export class ControlPlanePlanPreviewStore {
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
+      worker_launch_preflights: document.worker_launch_preflights ?? [],
     });
     return record;
   }
@@ -704,6 +794,7 @@ export class ControlPlanePlanPreviewStore {
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
+      worker_launch_preflights: document.worker_launch_preflights ?? [],
     });
     return record;
   }
@@ -742,6 +833,7 @@ export class ControlPlanePlanPreviewStore {
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: document.worker_delegation_plans ?? [],
       worker_delegation_approvals: document.worker_delegation_approvals ?? [],
+      worker_launch_preflights: document.worker_launch_preflights ?? [],
     });
     return record;
   }
@@ -776,6 +868,9 @@ export class ControlPlanePlanPreviewStore {
         worker_delegation_approvals: Array.isArray(parsed.worker_delegation_approvals)
           ? parsed.worker_delegation_approvals.filter((item) => item?.schema === 1)
           : [],
+        worker_launch_preflights: Array.isArray(parsed.worker_launch_preflights)
+          ? parsed.worker_launch_preflights.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
       return {
@@ -788,6 +883,7 @@ export class ControlPlanePlanPreviewStore {
         manager_ready_receipts: [],
         worker_delegation_plans: [],
         worker_delegation_approvals: [],
+        worker_launch_preflights: [],
       };
     }
   }
