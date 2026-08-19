@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { createWorkerActivityEmitter } from "../../apps/team-worker/src/activity.js";
 import { ControlPlanePlanPreviewStore } from "../../apps/control-plane-preview/src/plan-preview-store.js";
 import {
   encodeWorkerActivityEvent,
@@ -13,7 +14,9 @@ import {
   workerActivitySubject,
   type WorkerActivityEvent,
   type WorkerActivityEventBus,
+  type WorkerActivityPublishReceipt,
 } from "../../packages/runtime-events/src/worker-activity.js";
+import type { AgentRecord } from "../../packages/team-control/src/store.js";
 
 const activity = (sequence = 1): WorkerActivityEvent => ({
   specversion: "1.0",
@@ -48,6 +51,23 @@ const activity = (sequence = 1): WorkerActivityEvent => ({
   },
 });
 
+const agent = (): AgentRecord => ({
+  schema: 1,
+  agent_id: "worker-22222222-2222-4222-8222-222222222222",
+  kind: "worker",
+  coordination_agent: "agent-worker-22222222-2222-4222-8222-222222222222",
+  coordination_participant: "agent:worker-22222222-2222-4222-8222-222222222222",
+  team_id: "team-11111111-1111-4111-8111-111111111111",
+  runtime: "codex",
+  role: "backend-developer",
+  task: "Implement a bounded worker activity probe.",
+  depth: 1,
+  can_spawn: false,
+  token_budget: 20_000,
+  required_actions: [],
+  state: "running",
+});
+
 test("worker activity subject and payload stay within the JetStream policy", () => {
   const event = activity();
   assert.equal(
@@ -68,6 +88,80 @@ test("worker activity subject and payload stay within the JetStream policy", () 
       }),
     /invalid worker activity subject input/u,
   );
+});
+
+test("team worker activity emitter publishes running, token and terminal events", async () => {
+  const events: WorkerActivityEvent[] = [];
+  const emitter = createWorkerActivityEmitter(
+    agent(),
+    new (class implements WorkerActivityEventBus {
+      async publish(event: WorkerActivityEvent): Promise<WorkerActivityPublishReceipt> {
+        validateWorkerActivityEvent(event);
+        events.push(event);
+        return { stream: WORKER_ACTIVITY_STREAM, sequence: events.length, duplicate: false };
+      }
+
+      async recent() {
+        return events;
+      }
+
+      async close() {
+        return;
+      }
+    })(),
+  );
+
+  await emitter.running();
+  await emitter.tokens({
+    schema: 1,
+    source: "codex-python-app-server-v1",
+    input_tokens: 1_200,
+    cached_input_tokens: 900,
+    output_tokens: 300,
+    reasoning_output_tokens: 100,
+    total_tokens: 1_500,
+    budget_outcome: "within",
+  });
+  await emitter.terminal("completed", "Worker completed with a short public summary.");
+  await emitter.close();
+
+  assert.deepEqual(
+    events.map((event) => [event.data.sequence, event.data.activity_kind, event.data.worker_state]),
+    [
+      [1, "status-changed", "running"],
+      [2, "tokens-observed", "running"],
+      [3, "status-changed", "completed"],
+    ],
+  );
+  assert.equal(events[1]?.data.tokens?.observed, 1_500);
+  assert.equal(events[1]?.data.tokens?.budget, 20_000);
+  assert.equal(events[0]?.data.producer_id, "team-worker-runtime");
+  assert.doesNotMatch(JSON.stringify(events), /Implement a bounded worker activity probe/u);
+});
+
+test("team worker activity emitter treats bus publish failures as observability-only", async () => {
+  const emitter = createWorkerActivityEmitter(
+    agent(),
+    new (class implements WorkerActivityEventBus {
+      async publish(): Promise<never> {
+        throw new Error("nats_down");
+      }
+
+      async recent() {
+        return [];
+      }
+
+      async close() {
+        return;
+      }
+    })(),
+  );
+
+  await assert.doesNotReject(async () => {
+    await emitter.running();
+    await emitter.terminal("failed", "Worker failed.");
+    await emitter.close();
+  });
 });
 
 test("control plane store publishes worker activity to the event bus and reads bus projection", async () => {
