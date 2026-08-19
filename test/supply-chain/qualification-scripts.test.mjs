@@ -46,6 +46,10 @@ test("preview runtime check is diagnostic and non-destructive", async () => {
   assert.match(source, /runtime directory must be mode 0700/);
   assert.match(source, /openssl x509 -checkend 21600/);
   assert.match(source, /docker: sudo-required/);
+  assert.match(source, /warnings=0/);
+  assert.match(source, /warning "coordination_replay: unavailable"/);
+  assert.match(source, /status: ok-with-warnings/);
+  assert.match(source, /status: attention-required/);
   assert.match(source, /coordination_replay: unavailable/);
   assert.match(source, /YKC-TRANSCRIPT-001/);
   assert.doesNotMatch(source, /down --volumes/u);
