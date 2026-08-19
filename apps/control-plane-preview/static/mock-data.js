@@ -749,6 +749,21 @@ const prepareWorkerDelegationPlan = async () => {
   }
 };
 
+const approveWorkerDelegationPlan = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/worker-delegation-approvals", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.worker_delegation_approval ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderLaunchIntent = (intent) => {
   if (!intent) return "";
   return `
@@ -838,6 +853,20 @@ const renderWorkerDelegationPlan = (plan) => {
       </div>
       <p class="muted">Coordination write: ${escapeHtml(plan.coordination_write)} · Projects write: ${escapeHtml(plan.projects_write)}.</p>
       <p class="muted">Next required action: ${escapeHtml(plan.next_required_action)}.</p>
+      <button type="button" class="secondary worker-approval-button">Approve worker delegation plan</button>
+    </div>
+  `;
+};
+
+const renderWorkerDelegationApproval = (approval) => {
+  if (!approval) return "";
+  return `
+    <div class="worker-delegation-approval">
+      <span>Worker delegation approved</span>
+      <strong>${escapeHtml(approval.worker_delegation_approval_id)}</strong>
+      <p class="muted">${approval.approved_worker_count.toLocaleString()} workers · ${approval.approved_worker_token_budget.toLocaleString()} approved worker tokens · scope ${escapeHtml(approval.approval_scope)}.</p>
+      <p class="muted">Worker launch: ${escapeHtml(approval.worker_launch)} · Coordination write: ${escapeHtml(approval.coordination_write)} · Projects write: ${escapeHtml(approval.projects_write)}.</p>
+      <p class="muted">Next required action: ${escapeHtml(approval.next_required_action)}.</p>
     </div>
   `;
 };
@@ -1087,6 +1116,22 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".manager-ready-receipt")
     ?.insertAdjacentHTML("afterend", renderWorkerDelegationPlan(plan));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".worker-approval-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const approval = await approveWorkerDelegationPlan();
+  if (!approval) {
+    button.removeAttribute("disabled");
+    button.textContent = "Worker plan required";
+    return;
+  }
+  button.textContent = "Worker delegation approved";
+  button
+    .closest(".worker-delegation-plan")
+    ?.insertAdjacentHTML("afterend", renderWorkerDelegationApproval(approval));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {

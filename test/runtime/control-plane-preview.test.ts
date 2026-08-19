@@ -276,6 +276,15 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(blockedWorkerPlan.status, 409);
     assert.equal((await blockedWorkerPlan.json()).code, "manager_ready_receipt_required");
 
+    const blockedWorkerApproval = await fetch(
+      `${base}/api/manager-plan/worker-delegation-approvals`,
+      {
+        method: "POST",
+      },
+    );
+    assert.equal(blockedWorkerApproval.status, 409);
+    assert.equal((await blockedWorkerApproval.json()).code, "worker_delegation_plan_required");
+
     const goal = "Persist this sensitive manager plan preview locally";
     const proposed = await fetch(`${base}/api/manager-plan/previews`, {
       method: "POST",
@@ -560,6 +569,66 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(workerPlansBody.schema, "yukh-control-plane-worker-delegation-plans-v1");
     assert.equal(workerPlansBody.plans.length, 1);
 
+    const workerApproval = await fetch(`${base}/api/manager-plan/worker-delegation-approvals`, {
+      method: "POST",
+    });
+    assert.equal(workerApproval.status, 201);
+    const workerApprovalBody = await workerApproval.json();
+    assert.equal(
+      workerApprovalBody.worker_delegation_approval.worker_delegation_plan_id,
+      workerPlanBody.worker_delegation_plan.worker_delegation_plan_id,
+    );
+    assert.equal(
+      workerApprovalBody.worker_delegation_approval.manager_ready_receipt_id,
+      readyBody.manager_ready_receipt.manager_ready_receipt_id,
+    );
+    assert.equal(
+      workerApprovalBody.worker_delegation_approval.manager_process_id,
+      processBody.manager_process.manager_process_id,
+    );
+    assert.equal(
+      workerApprovalBody.worker_delegation_approval.manager_run_id,
+      runBody.manager_run.manager_run_id,
+    );
+    assert.equal(workerApprovalBody.worker_delegation_approval.approved_worker_count, 2);
+    assert.equal(
+      workerApprovalBody.worker_delegation_approval.approved_worker_token_budget,
+      workerPlanBody.worker_delegation_plan.total_worker_token_budget,
+    );
+    assert.equal(
+      workerApprovalBody.worker_delegation_approval.approval_scope,
+      "local_control_plane_only",
+    );
+    assert.equal(workerApprovalBody.worker_delegation_approval.worker_launch, "not_performed");
+    assert.equal(workerApprovalBody.worker_delegation_approval.coordination_write, "not_performed");
+    assert.equal(workerApprovalBody.worker_delegation_approval.projects_write, "not_performed");
+    assert.equal(
+      workerApprovalBody.worker_delegation_approval.next_required_action,
+      "launch_approved_workers",
+    );
+    assert.match(
+      workerApprovalBody.worker_delegation_approval.worker_delegation_approval_id,
+      /^worker-delegation-approval-/u,
+    );
+    assert.doesNotMatch(JSON.stringify(workerApprovalBody), /sensitive manager plan preview/iu);
+
+    const repeatedWorkerApproval = await fetch(
+      `${base}/api/manager-plan/worker-delegation-approvals`,
+      { method: "POST" },
+    );
+    assert.equal(repeatedWorkerApproval.status, 201);
+    assert.equal(
+      (await repeatedWorkerApproval.json()).worker_delegation_approval
+        .worker_delegation_approval_id,
+      workerApprovalBody.worker_delegation_approval.worker_delegation_approval_id,
+    );
+
+    const workerApprovals = await fetch(`${base}/api/manager-plan/worker-delegation-approvals`);
+    assert.equal(workerApprovals.status, 200);
+    const workerApprovalsBody = await workerApprovals.json();
+    assert.equal(workerApprovalsBody.schema, "yukh-control-plane-worker-delegation-approvals-v1");
+    assert.equal(workerApprovalsBody.approvals.length, 1);
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -611,6 +680,13 @@ test("control plane preview persists local manager plan previews without leaking
     });
     assert.equal(workerPlanDenied.status, 405);
     assert.equal(workerPlanDenied.headers.get("allow"), "GET, POST");
+
+    const workerApprovalDenied = await fetch(
+      `${base}/api/manager-plan/worker-delegation-approvals`,
+      { method: "DELETE" },
+    );
+    assert.equal(workerApprovalDenied.status, 405);
+    assert.equal(workerApprovalDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -655,6 +731,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/manager-processes/u);
   assert.match(data, /api\/manager-plan\/manager-ready-receipts/u);
   assert.match(data, /api\/manager-plan\/worker-delegation-plans/u);
+  assert.match(data, /api\/manager-plan\/worker-delegation-approvals/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
@@ -662,9 +739,11 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /Manager process starting/u);
   assert.match(data, /Manager ready receipt/u);
   assert.match(data, /Worker delegation plan/u);
+  assert.match(data, /Worker delegation approved/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
   assert.match(data, /worker_launch/u);
+  assert.match(data, /approval_scope/u);
   assert.match(data, /model_source/u);
   assert.match(data, /coordination_write/u);
   assert.match(data, /projects_write/u);
@@ -716,5 +795,6 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.manager-ready-receipt/u);
   assert.match(css, /\.worker-delegation-plan/u);
   assert.match(css, /\.worker-plan-grid/u);
+  assert.match(css, /\.worker-delegation-approval/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });
