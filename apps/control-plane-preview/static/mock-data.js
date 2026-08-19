@@ -860,6 +860,21 @@ const createWorkerLaunchReceipt = async () => {
   }
 };
 
+const createProviderWorkerProcess = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/provider-worker-processes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.provider_worker_process ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderProviderAdapter = (adapter) => {
   if (!adapter) return "";
   return `
@@ -1079,6 +1094,25 @@ const renderWorkerLaunchReceipt = (receipt) => {
       </div>
       <p class="muted">Coordination write: ${escapeHtml(receipt.coordination_write)} · Projects write: ${escapeHtml(receipt.projects_write)}.</p>
       <p class="muted">Next required action: ${escapeHtml(receipt.next_required_action)}.</p>
+      <button type="button" class="secondary provider-worker-process-button">Request provider process start</button>
+    </div>
+  `;
+};
+
+const renderProviderWorkerProcess = (process) => {
+  if (!process) return "";
+  return `
+    <div class="provider-worker-process">
+      <span>Provider worker process</span>
+      <strong>${escapeHtml(process.provider_worker_process_id)}</strong>
+      <p class="muted">${process.approved_worker_count.toLocaleString()} workers · ${process.approved_worker_token_budget.toLocaleString()} worker tokens · ${escapeHtml(process.process_supervision)}.</p>
+      <div class="preflight-grid">
+        <article><span>Provider</span><strong>${escapeHtml(process.provider)}</strong></article>
+        <article><span>Process</span><strong>${escapeHtml(process.provider_process_start)}</strong></article>
+        <article><span>Launch</span><strong>${escapeHtml(process.worker_launch)}</strong></article>
+      </div>
+      <p class="muted">Coordination write: ${escapeHtml(process.coordination_write)} · Projects write: ${escapeHtml(process.projects_write)}.</p>
+      <p class="muted">Next required action: ${escapeHtml(process.next_required_action)}.</p>
     </div>
   `;
 };
@@ -1408,6 +1442,22 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".worker-launch-candidate")
     ?.insertAdjacentHTML("afterend", renderWorkerLaunchReceipt(receipt));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".provider-worker-process-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const process = await createProviderWorkerProcess();
+  if (!process) {
+    button.removeAttribute("disabled");
+    button.textContent = "Worker launch receipt required";
+    return;
+  }
+  button.textContent = "Provider process start requested";
+  button
+    .closest(".worker-launch-receipt")
+    ?.insertAdjacentHTML("afterend", renderProviderWorkerProcess(process));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
