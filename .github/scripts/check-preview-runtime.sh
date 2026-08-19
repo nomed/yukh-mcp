@@ -5,15 +5,21 @@ runtime="${YUKH_PREVIEW_RUNTIME:-$HOME/.yukh/local-preview}"
 coordination_root="${YUKH_COORDINATION_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)/yukh-coordination}"
 launcher="${YUKH_COORDINATION_LAUNCHER:-$coordination_root/.github/scripts/yukh-local-agent.py}"
 
-ok=1
+problems=0
+warnings=0
 
 report() {
   printf '%s\n' "$*"
 }
 
 problem() {
-  ok=0
+  problems=$((problems + 1))
   report "problem: $*"
+}
+
+warning() {
+  warnings=$((warnings + 1))
+  report "warning: $*"
 }
 
 report "yukh-preview-runtime-check"
@@ -55,16 +61,18 @@ if [[ -x "$launcher" && -d "$runtime" ]]; then
   if YUKH_PREVIEW_RUNTIME="$runtime" "$launcher" agent-a events replay >/dev/null 2>&1; then
     report "coordination_replay: ok"
   else
-    report "coordination_replay: unavailable"
+    warning "coordination_replay: unavailable"
     report "hint: run agent bootstrap/join after the coordinator is reachable; if replay returns YKC-TRANSCRIPT-001, start with a join event instead of deleting state."
   fi
 else
   problem "coordination launcher unavailable"
 fi
 
-if [[ "$ok" == 1 ]]; then
-  report "status: ok"
-else
+if (( problems > 0 )); then
   report "status: attention-required"
   exit 2
+elif (( warnings > 0 )); then
+  report "status: ok-with-warnings"
+else
+  report "status: ok"
 fi
