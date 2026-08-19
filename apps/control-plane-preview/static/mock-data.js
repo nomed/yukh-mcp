@@ -704,6 +704,21 @@ const connectManagerRuntime = async () => {
   }
 };
 
+const startManagerProcess = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/manager-processes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.manager_process ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderLaunchIntent = (intent) => {
   if (!intent) return "";
   return `
@@ -737,6 +752,19 @@ const renderRuntimeConnection = (connection) => {
       <strong>${escapeHtml(connection.runtime_connection_id)}</strong>
       <p class="muted">${escapeHtml(connection.provider)} · ${connection.manager_token_budget.toLocaleString()} manager tokens · commands ${escapeHtml(connection.command_policy)}.</p>
       <p class="muted">Next required action: ${escapeHtml(connection.next_required_action)}. No provider process has been started.</p>
+      <button type="button" class="secondary manager-process-button">Start manager process</button>
+    </div>
+  `;
+};
+
+const renderManagerProcess = (process) => {
+  if (!process) return "";
+  return `
+    <div class="manager-process">
+      <span>Manager process starting</span>
+      <strong>${escapeHtml(process.manager_process_id)}</strong>
+      <p class="muted">${escapeHtml(process.provider)} · hard cap ${process.hard_token_cap.toLocaleString()} tokens · provider ${escapeHtml(process.provider_process)}.</p>
+      <p class="muted">Worker delegation ${escapeHtml(process.worker_delegation)}. Next required action: ${escapeHtml(process.next_required_action)}.</p>
     </div>
   `;
 };
@@ -938,6 +966,22 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".manager-run")
     ?.insertAdjacentHTML("afterend", renderRuntimeConnection(connection));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".manager-process-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const process = await startManagerProcess();
+  if (!process) {
+    button.removeAttribute("disabled");
+    button.textContent = "Runtime connection required";
+    return;
+  }
+  button.textContent = "Manager process starting";
+  button
+    .closest(".runtime-connection")
+    ?.insertAdjacentHTML("afterend", renderManagerProcess(process));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
