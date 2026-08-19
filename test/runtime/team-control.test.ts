@@ -777,6 +777,87 @@ test("Codex Python app-server opt-in uses the qualified lower token floor", asyn
   }
 });
 
+test("Codex Python app-server does not launch implementation workers while read-only", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-codex-python-readonly-")));
+  const previous = process.env.YUKH_CODEX_WORKER_PROVIDER;
+  try {
+    process.env.YUKH_CODEX_WORKER_PROVIDER = "python-app-server";
+    const output = runEngagePreflight({
+      workspace: root,
+      goal: "Edit one named file and run one focused test",
+      role: "backend-developer",
+      workProfile: "implementation",
+      preferredRuntime: "codex",
+      teamBudget: 90_000,
+      managerBudget: 20_000,
+      workerBudget: 45_000,
+      workerMaxCommands: 1,
+      workerTimeoutMs: 180_000,
+      codexModels: ["default"],
+      copilotModels: ["default"],
+      codexSkills: ["api-design", "testing"],
+      copilotSkills: ["frontend"],
+    });
+    assert.equal(output.runtime_token_floor?.provider, "python-app-server");
+    assert.equal(output.runtime_token_floor?.minimum_token_budget, 18_000);
+    assert.equal(output.provider_launchable, false);
+    assert.equal(output.provider_runtime_launched, false);
+    assert.match(output.next_real_action, /read-only/u);
+    assert.match(output.next_real_action, /write-capable approved runner/u);
+  } finally {
+    if (previous === undefined) delete process.env.YUKH_CODEX_WORKER_PROVIDER;
+    else process.env.YUKH_CODEX_WORKER_PROVIDER = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("approved preflight refuses read-only Python app-server implementation launch", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-python-readonly-launch-")));
+  const previous = process.env.YUKH_CODEX_WORKER_PROVIDER;
+  try {
+    process.env.YUKH_CODEX_WORKER_PROVIDER = "python-app-server";
+    const preflightPath = join(root, "preflight.json");
+    const preflight = runEngagePreflight({
+      workspace: root,
+      goal: "Edit one named file and run one focused test",
+      role: "backend-developer",
+      workProfile: "implementation",
+      preferredRuntime: "codex",
+      teamBudget: 90_000,
+      managerBudget: 20_000,
+      workerBudget: 45_000,
+      workerMaxCommands: 1,
+      workerTimeoutMs: 180_000,
+      codexModels: ["default"],
+      copilotModels: ["default"],
+      codexSkills: ["api-design", "testing"],
+      copilotSkills: ["frontend"],
+    });
+    await writeFile(preflightPath, `${JSON.stringify(preflight)}\n`, { mode: 0o600 });
+    await assert.rejects(
+      () =>
+        runApprovedPreflight({
+          preflightPath,
+          approvedDigest: preflight.approval_digest,
+          launcher: process.execPath,
+          codex: process.execPath,
+          copilot: process.execPath,
+          allowMicroLaunch: true,
+          waitMs: 0,
+        }),
+      /preflight_provider_not_launchable/u,
+    );
+    const store = new TeamStore(root);
+    const worker = store.agent(preflight.team.team_id, preflight.planned_worker.agent_id);
+    assert.equal(worker.state, "defined");
+    assert.equal(store.status(preflight.team.team_id).tokens.observed, 0);
+  } finally {
+    if (previous === undefined) delete process.env.YUKH_CODEX_WORKER_PROVIDER;
+    else process.env.YUKH_CODEX_WORKER_PROVIDER = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("runtime model discovery parses CLI catalogs and keeps explicit env authoritative", () => {
   assert.deepEqual(
     parseCodexModelCatalog(
