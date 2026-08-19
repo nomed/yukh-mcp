@@ -83,7 +83,7 @@ adapter when explicitly enabled:
 
 ```text
 YUKH_WORKER_ACTIVITY_JETSTREAM=1
-YUKH_NATS_URL=nats://127.0.0.1:4222
+YUKH_NATS_URL=nats://127.0.0.1:14222
 YUKH_WORKER_ACTIVITY_CREATE_STREAM=1
 ```
 
@@ -91,6 +91,10 @@ If the adapter is not enabled, the preview UI keeps using the local preview
 adapter and labels the source accordingly. Enabling JetStream creates or uses
 `YKR_WORKER_EVENTS_V1` with subject `yukh.*.*.runtime.worker.*.*.v1`; events
 are published with `msgID = event.id` for idempotent delivery.
+
+The local Coordination preview exposes JetStream for Control Plane runtime
+activity on `127.0.0.1:14222`, leaving `127.0.0.1:4222` free for any existing
+host NATS server.
 
 ## Resource and resilience policy
 

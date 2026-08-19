@@ -169,7 +169,7 @@ test("worker activity environment inheritance forwards only runtime activity set
   assert.deepEqual(
     inheritedWorkerActivityEnvironment({
       YUKH_WORKER_ACTIVITY_JETSTREAM: "1",
-      YUKH_NATS_URL: "nats://127.0.0.1:4222",
+      YUKH_NATS_URL: "nats://127.0.0.1:14222",
       YUKH_WORKER_ACTIVITY_CREATE_STREAM: "0",
       YUKH_RUNTIME_ENV: "local",
       YUKH_TENANT: "tenant-local",
@@ -178,7 +178,7 @@ test("worker activity environment inheritance forwards only runtime activity set
     }),
     {
       YUKH_WORKER_ACTIVITY_JETSTREAM: "1",
-      YUKH_NATS_URL: "nats://127.0.0.1:4222",
+      YUKH_NATS_URL: "nats://127.0.0.1:14222",
       YUKH_WORKER_ACTIVITY_CREATE_STREAM: "0",
       YUKH_RUNTIME_ENV: "local",
       YUKH_TENANT: "tenant-local",

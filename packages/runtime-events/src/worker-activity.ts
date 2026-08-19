@@ -1,5 +1,6 @@
 export const WORKER_ACTIVITY_STREAM = "YKR_WORKER_EVENTS_V1";
 export const WORKER_ACTIVITY_SUBJECT = "yukh.*.*.runtime.worker.*.*.v1";
+export const WORKER_ACTIVITY_PREVIEW_NATS_URL = "nats://127.0.0.1:14222";
 export const WORKER_ACTIVITY_SCHEMA =
   "https://yukh.example/schemas/runtime/v1/worker-activity.schema.json";
 export const WORKER_ACTIVITY_MAX_PAYLOAD_BYTES = 8_192;
