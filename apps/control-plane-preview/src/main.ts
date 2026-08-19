@@ -38,6 +38,8 @@ const API_WORKER_DELEGATION_APPROVALS_PATH = "/api/manager-plan/worker-delegatio
 const API_WORKER_LAUNCH_PREFLIGHTS_PATH = "/api/manager-plan/worker-launch-preflights";
 const API_PROVIDER_RUNTIME_PROBES_PATH = "/api/manager-plan/provider-runtime-probes";
 const API_PROVIDER_ADAPTERS_PATH = "/api/manager-plan/provider-adapters";
+const API_PROVIDER_CAPABILITY_INVENTORIES_PATH =
+  "/api/manager-plan/provider-capability-inventories";
 
 export function parseArguments(argv: readonly string[]): ControlPlaneOptions {
   const options = { host: "127.0.0.1", port: 7345 } as {
@@ -622,6 +624,60 @@ export function createControlPlaneServer(
               schema: 1,
               status: "error",
               code: "invalid_provider_adapter",
+            }),
+          );
+        }
+        return;
+      }
+      response.writeHead(405, {
+        allow: "GET, POST",
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+      return;
+    }
+
+    if (
+      request.url &&
+      new URL(request.url, "http://127.0.0.1").pathname === API_PROVIDER_CAPABILITY_INVENTORIES_PATH
+    ) {
+      if (!options.planPreviewStore) {
+        response.writeHead(503, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ schema: 1, status: "error", code: "store_unconfigured" }));
+        return;
+      }
+      if (request.method === "GET") {
+        response.writeHead(200, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify(options.planPreviewStore.providerCapabilityInventories()));
+        return;
+      }
+      if (request.method === "POST") {
+        try {
+          const record = options.planPreviewStore.inventoryProviderCapabilities();
+          response.writeHead(201, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(
+            JSON.stringify({ schema: 1, status: "ok", provider_capability_inventory: record }),
+          );
+        } catch {
+          response.writeHead(409, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(
+            JSON.stringify({
+              schema: 1,
+              status: "error",
+              code: "provider_adapter_required",
             }),
           );
         }

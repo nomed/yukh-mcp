@@ -976,6 +976,22 @@ nav a:hover {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.provider-capability-inventory {
+  background: rgba(119, 240, 178, 0.08);
+  border: 1px solid rgba(119, 240, 178, 0.28);
+  border-radius: 16px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px;
+}
+.provider-capability-inventory span {
+  color: var(--ok);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .preview-card.approved-preview {
   border-color: rgba(119, 240, 178, 0.48);
 }
