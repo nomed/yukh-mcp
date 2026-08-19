@@ -131,6 +131,26 @@ export type ControlPlaneManagerProcessStatus = {
   readonly processes: readonly ControlPlaneManagerProcessRecord[];
 };
 
+export type ControlPlaneManagerReadyReceiptRecord = {
+  readonly schema: 1;
+  readonly manager_ready_receipt_id: string;
+  readonly manager_process_id: string;
+  readonly manager_run_id: string;
+  readonly provider: string;
+  readonly hard_token_cap: number;
+  readonly readiness: "ready_for_worker_delegation";
+  readonly coordination_write: "not_performed";
+  readonly projects_write: "not_performed";
+  readonly created_at: string;
+  readonly next_required_action: "prepare_worker_delegation_plan";
+};
+
+export type ControlPlaneManagerReadyReceiptStatus = {
+  readonly schema: "yukh-control-plane-manager-ready-receipts-v1";
+  readonly source: "local-control-plane-store";
+  readonly receipts: readonly ControlPlaneManagerReadyReceiptRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -146,6 +166,7 @@ type Document = {
   readonly manager_runs?: readonly ControlPlaneManagerRunRecord[];
   readonly manager_runtime_connections?: readonly ControlPlaneManagerRuntimeConnectionRecord[];
   readonly manager_processes?: readonly ControlPlaneManagerProcessRecord[];
+  readonly manager_ready_receipts?: readonly ControlPlaneManagerReadyReceiptRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -301,6 +322,49 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
+  managerReadyReceipts(): ControlPlaneManagerReadyReceiptStatus {
+    return {
+      schema: "yukh-control-plane-manager-ready-receipts-v1",
+      source: "local-control-plane-store",
+      receipts: this.#read().manager_ready_receipts ?? [],
+    };
+  }
+
+  recordManagerReadyReceipt(): ControlPlaneManagerReadyReceiptRecord {
+    const document = this.#read();
+    const process = document.manager_processes?.[0];
+    if (!process) {
+      throw new TypeError("missing manager process");
+    }
+    const existing = document.manager_ready_receipts?.find(
+      (receipt) => receipt.manager_process_id === process.manager_process_id,
+    );
+    if (existing) return existing;
+    const record: ControlPlaneManagerReadyReceiptRecord = {
+      schema: 1,
+      manager_ready_receipt_id: `manager-ready-receipt-${randomUUID()}`,
+      manager_process_id: process.manager_process_id,
+      manager_run_id: process.manager_run_id,
+      provider: process.provider,
+      hard_token_cap: process.hard_token_cap,
+      readiness: "ready_for_worker_delegation",
+      coordination_write: "not_performed",
+      projects_write: "not_performed",
+      created_at: new Date().toISOString(),
+      next_required_action: "prepare_worker_delegation_plan",
+    };
+    this.#write({
+      schema: 1,
+      previews: document.previews,
+      launch_intents: document.launch_intents ?? [],
+      manager_runs: document.manager_runs ?? [],
+      manager_runtime_connections: document.manager_runtime_connections ?? [],
+      manager_processes: document.manager_processes ?? [],
+      manager_ready_receipts: [record, ...(document.manager_ready_receipts ?? [])].slice(0, 20),
+    });
+    return record;
+  }
+
   startManagerProcess(): ControlPlaneManagerProcessRecord {
     const document = this.#read();
     const connection = document.manager_runtime_connections?.[0];
@@ -332,6 +396,7 @@ export class ControlPlanePlanPreviewStore {
       manager_runs: document.manager_runs ?? [],
       manager_runtime_connections: document.manager_runtime_connections ?? [],
       manager_processes: [record, ...(document.manager_processes ?? [])].slice(0, 20),
+      manager_ready_receipts: document.manager_ready_receipts ?? [],
     });
     return record;
   }
@@ -369,6 +434,7 @@ export class ControlPlanePlanPreviewStore {
         20,
       ),
       manager_processes: document.manager_processes ?? [],
+      manager_ready_receipts: document.manager_ready_receipts ?? [],
     });
     return record;
   }
@@ -408,6 +474,7 @@ export class ControlPlanePlanPreviewStore {
       manager_runs: [record, ...(document.manager_runs ?? [])].slice(0, 20),
       manager_runtime_connections: document.manager_runtime_connections ?? [],
       manager_processes: document.manager_processes ?? [],
+      manager_ready_receipts: document.manager_ready_receipts ?? [],
     });
     return record;
   }
@@ -443,6 +510,7 @@ export class ControlPlanePlanPreviewStore {
       manager_runs: document.manager_runs ?? [],
       manager_runtime_connections: document.manager_runtime_connections ?? [],
       manager_processes: document.manager_processes ?? [],
+      manager_ready_receipts: document.manager_ready_receipts ?? [],
     });
     return record;
   }
@@ -478,6 +546,7 @@ export class ControlPlanePlanPreviewStore {
       manager_runs: document.manager_runs ?? [],
       manager_runtime_connections: document.manager_runtime_connections ?? [],
       manager_processes: document.manager_processes ?? [],
+      manager_ready_receipts: document.manager_ready_receipts ?? [],
     });
     return record;
   }
@@ -503,6 +572,9 @@ export class ControlPlanePlanPreviewStore {
         manager_processes: Array.isArray(parsed.manager_processes)
           ? parsed.manager_processes.filter((item) => item?.schema === 1)
           : [],
+        manager_ready_receipts: Array.isArray(parsed.manager_ready_receipts)
+          ? parsed.manager_ready_receipts.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
       return {
@@ -512,6 +584,7 @@ export class ControlPlanePlanPreviewStore {
         manager_runs: [],
         manager_runtime_connections: [],
         manager_processes: [],
+        manager_ready_receipts: [],
       };
     }
   }

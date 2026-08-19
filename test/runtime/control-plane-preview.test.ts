@@ -264,6 +264,12 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(blockedProcess.status, 409);
     assert.equal((await blockedProcess.json()).code, "runtime_connection_required");
 
+    const blockedReady = await fetch(`${base}/api/manager-plan/manager-ready-receipts`, {
+      method: "POST",
+    });
+    assert.equal(blockedReady.status, 409);
+    assert.equal((await blockedReady.json()).code, "manager_process_required");
+
     const goal = "Persist this sensitive manager plan preview locally";
     const proposed = await fetch(`${base}/api/manager-plan/previews`, {
       method: "POST",
@@ -435,6 +441,49 @@ test("control plane preview persists local manager plan previews without leaking
       processBody.manager_process.manager_process_id,
     );
 
+    const ready = await fetch(`${base}/api/manager-plan/manager-ready-receipts`, {
+      method: "POST",
+    });
+    assert.equal(ready.status, 201);
+    const readyBody = await ready.json();
+    assert.equal(
+      readyBody.manager_ready_receipt.manager_process_id,
+      processBody.manager_process.manager_process_id,
+    );
+    assert.equal(
+      readyBody.manager_ready_receipt.manager_run_id,
+      runBody.manager_run.manager_run_id,
+    );
+    assert.equal(readyBody.manager_ready_receipt.provider, "Copilot SDK workers");
+    assert.equal(readyBody.manager_ready_receipt.hard_token_cap, 30_000);
+    assert.equal(readyBody.manager_ready_receipt.readiness, "ready_for_worker_delegation");
+    assert.equal(readyBody.manager_ready_receipt.coordination_write, "not_performed");
+    assert.equal(readyBody.manager_ready_receipt.projects_write, "not_performed");
+    assert.equal(
+      readyBody.manager_ready_receipt.next_required_action,
+      "prepare_worker_delegation_plan",
+    );
+    assert.match(
+      readyBody.manager_ready_receipt.manager_ready_receipt_id,
+      /^manager-ready-receipt-/u,
+    );
+    assert.doesNotMatch(JSON.stringify(readyBody), /sensitive manager plan preview/iu);
+
+    const repeatedReady = await fetch(`${base}/api/manager-plan/manager-ready-receipts`, {
+      method: "POST",
+    });
+    assert.equal(repeatedReady.status, 201);
+    assert.equal(
+      (await repeatedReady.json()).manager_ready_receipt.manager_ready_receipt_id,
+      readyBody.manager_ready_receipt.manager_ready_receipt_id,
+    );
+
+    const readyReceipts = await fetch(`${base}/api/manager-plan/manager-ready-receipts`);
+    assert.equal(readyReceipts.status, 200);
+    const readyReceiptsBody = await readyReceipts.json();
+    assert.equal(readyReceiptsBody.schema, "yukh-control-plane-manager-ready-receipts-v1");
+    assert.equal(readyReceiptsBody.receipts.length, 1);
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -474,6 +523,12 @@ test("control plane preview persists local manager plan previews without leaking
     });
     assert.equal(processDenied.status, 405);
     assert.equal(processDenied.headers.get("allow"), "GET, POST");
+
+    const readyDenied = await fetch(`${base}/api/manager-plan/manager-ready-receipts`, {
+      method: "DELETE",
+    });
+    assert.equal(readyDenied.status, 405);
+    assert.equal(readyDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -516,13 +571,17 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/manager-runs/u);
   assert.match(data, /api\/manager-plan\/runtime-connections/u);
   assert.match(data, /api\/manager-plan\/manager-processes/u);
+  assert.match(data, /api\/manager-plan\/manager-ready-receipts/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
   assert.match(data, /Manager runtime connected/u);
   assert.match(data, /Manager process starting/u);
+  assert.match(data, /Manager ready receipt/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
+  assert.match(data, /coordination_write/u);
+  assert.match(data, /projects_write/u);
   assert.match(data, /command_policy/u);
   assert.match(data, /next_required_action/u);
   assert.match(data, /Persisted manager plan/u);
@@ -568,5 +627,6 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.manager-run/u);
   assert.match(css, /\.runtime-connection/u);
   assert.match(css, /\.manager-process/u);
+  assert.match(css, /\.manager-ready-receipt/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });

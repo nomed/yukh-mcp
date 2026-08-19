@@ -719,6 +719,21 @@ const startManagerProcess = async () => {
   }
 };
 
+const recordManagerReadyReceipt = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/manager-ready-receipts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.manager_ready_receipt ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderLaunchIntent = (intent) => {
   if (!intent) return "";
   return `
@@ -765,6 +780,20 @@ const renderManagerProcess = (process) => {
       <strong>${escapeHtml(process.manager_process_id)}</strong>
       <p class="muted">${escapeHtml(process.provider)} · hard cap ${process.hard_token_cap.toLocaleString()} tokens · provider ${escapeHtml(process.provider_process)}.</p>
       <p class="muted">Worker delegation ${escapeHtml(process.worker_delegation)}. Next required action: ${escapeHtml(process.next_required_action)}.</p>
+      <button type="button" class="secondary manager-ready-button">Record manager ready receipt</button>
+    </div>
+  `;
+};
+
+const renderManagerReadyReceipt = (receipt) => {
+  if (!receipt) return "";
+  return `
+    <div class="manager-ready-receipt">
+      <span>Manager ready receipt</span>
+      <strong>${escapeHtml(receipt.manager_ready_receipt_id)}</strong>
+      <p class="muted">${escapeHtml(receipt.readiness)} · hard cap ${receipt.hard_token_cap.toLocaleString()} tokens.</p>
+      <p class="muted">Coordination write: ${escapeHtml(receipt.coordination_write)} · Projects write: ${escapeHtml(receipt.projects_write)}.</p>
+      <p class="muted">Next required action: ${escapeHtml(receipt.next_required_action)}.</p>
     </div>
   `;
 };
@@ -982,6 +1011,22 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".runtime-connection")
     ?.insertAdjacentHTML("afterend", renderManagerProcess(process));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".manager-ready-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const receipt = await recordManagerReadyReceipt();
+  if (!receipt) {
+    button.removeAttribute("disabled");
+    button.textContent = "Manager process required";
+    return;
+  }
+  button.textContent = "Manager ready receipt recorded";
+  button
+    .closest(".manager-process")
+    ?.insertAdjacentHTML("afterend", renderManagerReadyReceipt(receipt));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
