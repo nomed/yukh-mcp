@@ -138,7 +138,12 @@ const useCopilotSdk =
 const useCodexPython =
   agent.runtime === "codex" &&
   modelToolMode === "none" &&
-  process.env.YUKH_CODEX_WORKER_PROVIDER === "python-app-server";
+  (process.env.YUKH_CODEX_WORKER_PROVIDER === "python-app-server" ||
+    process.env.YUKH_CODEX_WORKER_PROVIDER === "python-app-server-workspace-write");
+const codexPythonSandbox =
+  process.env.YUKH_CODEX_WORKER_PROVIDER === "python-app-server-workspace-write"
+    ? "workspace_write"
+    : "read_only";
 const args =
   agent.runtime === "codex"
     ? [
@@ -293,6 +298,7 @@ const outcome = !joined
         prompt,
         agent,
         timeoutMs: agent.timeout_ms ?? 300_000,
+        sandbox: codexPythonSandbox,
       })
     : useCopilotSdk
       ? await runCopilotSdkWorker({

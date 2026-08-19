@@ -915,3 +915,10 @@ execution behind `YUKH_CODEX_WORKER_PROVIDER=python-app-server`. The default
 Codex CLI path remains unchanged. The Python provider is limited to tool-free
 workers, runs with read-only sandbox and deny-all approvals, records usage as
 `codex-python-app-server-v1` and fails closed if token accounting is absent.
+
+The provider guard keeps that read-only path from launching implementation work.
+Implementation workers require the separate
+`YUKH_CODEX_WORKER_PROVIDER=python-app-server-workspace-write` opt-in, still
+with deny-all approvals and `tool_mode: none`. The workspace-write path is a
+bounded implementation runner, not a fallback for workers that need Coordination
+or team-control tools.

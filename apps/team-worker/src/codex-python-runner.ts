@@ -13,6 +13,7 @@ export interface CodexPythonWorkerRunOptions {
   readonly prompt: string;
   readonly agent: AgentRecord;
   readonly timeoutMs: number;
+  readonly sandbox?: "read_only" | "workspace_write";
   readonly workerSource?: string;
 }
 
@@ -23,6 +24,7 @@ export async function runCodexPythonWorker({
   prompt,
   agent,
   timeoutMs,
+  sandbox = "read_only",
   workerSource,
 }: CodexPythonWorkerRunOptions): Promise<WorkerRunOutcome> {
   const output = new RuntimeOutput("codex");
@@ -44,6 +46,7 @@ export async function runCodexPythonWorker({
         YUKH_CODEX_EXECUTABLE: executable,
         YUKH_CODEX_PYTHON_PROMPT_PATH: promptPath,
         YUKH_CODEX_PYTHON_MODEL: agent.profile?.model ?? "default",
+        YUKH_CODEX_PYTHON_SANDBOX: sandbox,
       },
     });
     if (!child.stdout || !child.stderr) throw new Error("agent_output_unavailable");
@@ -138,6 +141,7 @@ codex_bin = os.environ["YUKH_CODEX_EXECUTABLE"]
 workspace = os.getcwd()
 prompt = Path(os.environ["YUKH_CODEX_PYTHON_PROMPT_PATH"]).read_text()
 model = os.environ.get("YUKH_CODEX_PYTHON_MODEL", "default")
+sandbox_name = os.environ.get("YUKH_CODEX_PYTHON_SANDBOX", "read_only")
 
 config = CodexConfig(
     codex_bin=codex_bin,
@@ -165,15 +169,35 @@ def breakdown(value):
     }
 
 
+def enum_value(enum, *candidates):
+    for candidate in candidates:
+        if hasattr(enum, candidate):
+            return getattr(enum, candidate)
+    for candidate in candidates:
+        try:
+            return enum(candidate)
+        except Exception:
+            pass
+    raise RuntimeError(f"unsupported enum value: {candidates[0]}")
+
+
+if sandbox_name == "workspace_write":
+    sandbox = enum_value(Sandbox, "workspace_write", "workspace-write")
+elif sandbox_name == "read_only":
+    sandbox = enum_value(Sandbox, "read_only", "read-only")
+else:
+    raise RuntimeError("unsupported Codex Python sandbox")
+
+
 with Codex(config) as codex:
     thread = codex.thread_start(
         cwd=workspace,
-        sandbox=Sandbox.read_only,
+        sandbox=sandbox,
         approval_mode=ApprovalMode.deny_all,
         ephemeral=True,
     )
     run_options = {
-        "sandbox": Sandbox.read_only,
+        "sandbox": sandbox,
         "approval_mode": ApprovalMode.deny_all,
         "effort": "low",
         "summary": "none",

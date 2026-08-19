@@ -4,22 +4,25 @@ export interface RuntimeTokenFloor {
   readonly schema: 1;
   readonly applies: true;
   readonly runtime: "codex";
-  readonly provider: "cli" | "python-app-server";
+  readonly provider: CodexWorkerProvider;
   readonly minimum_token_budget: number;
   readonly measured_total_tokens: number;
   readonly measured_cached_input_tokens: number;
   readonly reason: string;
 }
 
-export function codexWorkerProvider(): "cli" | "python-app-server" {
-  return process.env.YUKH_CODEX_WORKER_PROVIDER === "python-app-server"
-    ? "python-app-server"
+export type CodexWorkerProvider = "cli" | "python-app-server" | "python-app-server-workspace-write";
+
+export function codexWorkerProvider(): CodexWorkerProvider {
+  const provider = process.env.YUKH_CODEX_WORKER_PROVIDER;
+  return provider === "python-app-server" || provider === "python-app-server-workspace-write"
+    ? provider
     : "cli";
 }
 
 export function runtimeTokenFloor(
   worker: AgentRecord,
-  provider: "cli" | "python-app-server" = codexWorkerProvider(),
+  provider: CodexWorkerProvider = codexWorkerProvider(),
 ): RuntimeTokenFloor | undefined {
   if (
     worker.runtime !== "codex" ||
@@ -33,7 +36,7 @@ export function runtimeTokenFloor(
     applies: true,
     runtime: "codex",
     provider,
-    ...(provider === "python-app-server"
+    ...(provider === "python-app-server" || provider === "python-app-server-workspace-write"
       ? {
           minimum_token_budget: 18_000,
           measured_total_tokens: 10_830,
@@ -53,7 +56,7 @@ export function runtimeTokenFloor(
 
 export function assertRuntimeTokenFloor(
   worker: AgentRecord,
-  provider: "cli" | "python-app-server" = codexWorkerProvider(),
+  provider: CodexWorkerProvider = codexWorkerProvider(),
 ): void {
   const floor = runtimeTokenFloor(worker, provider);
   if (floor && worker.token_budget < floor.minimum_token_budget)
