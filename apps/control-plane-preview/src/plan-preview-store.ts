@@ -183,6 +183,29 @@ export type ControlPlaneWorkerDelegationPlanStatus = {
   readonly plans: readonly ControlPlaneWorkerDelegationPlanRecord[];
 };
 
+export type ControlPlaneWorkerDelegationApprovalRecord = {
+  readonly schema: 1;
+  readonly worker_delegation_approval_id: string;
+  readonly worker_delegation_plan_id: string;
+  readonly manager_ready_receipt_id: string;
+  readonly manager_process_id: string;
+  readonly manager_run_id: string;
+  readonly approved_worker_count: number;
+  readonly approved_worker_token_budget: number;
+  readonly approval_scope: "local_control_plane_only";
+  readonly worker_launch: "not_performed";
+  readonly coordination_write: "not_performed";
+  readonly projects_write: "not_performed";
+  readonly created_at: string;
+  readonly next_required_action: "launch_approved_workers";
+};
+
+export type ControlPlaneWorkerDelegationApprovalStatus = {
+  readonly schema: "yukh-control-plane-worker-delegation-approvals-v1";
+  readonly source: "local-control-plane-store";
+  readonly approvals: readonly ControlPlaneWorkerDelegationApprovalRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -200,6 +223,7 @@ type Document = {
   readonly manager_processes?: readonly ControlPlaneManagerProcessRecord[];
   readonly manager_ready_receipts?: readonly ControlPlaneManagerReadyReceiptRecord[];
   readonly worker_delegation_plans?: readonly ControlPlaneWorkerDelegationPlanRecord[];
+  readonly worker_delegation_approvals?: readonly ControlPlaneWorkerDelegationApprovalRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -377,6 +401,57 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
+  workerDelegationApprovals(): ControlPlaneWorkerDelegationApprovalStatus {
+    return {
+      schema: "yukh-control-plane-worker-delegation-approvals-v1",
+      source: "local-control-plane-store",
+      approvals: this.#read().worker_delegation_approvals ?? [],
+    };
+  }
+
+  approveWorkerDelegationPlan(): ControlPlaneWorkerDelegationApprovalRecord {
+    const document = this.#read();
+    const plan = document.worker_delegation_plans?.[0];
+    if (!plan) {
+      throw new TypeError("missing worker delegation plan");
+    }
+    const existing = document.worker_delegation_approvals?.find(
+      (approval) => approval.worker_delegation_plan_id === plan.worker_delegation_plan_id,
+    );
+    if (existing) return existing;
+    const record: ControlPlaneWorkerDelegationApprovalRecord = {
+      schema: 1,
+      worker_delegation_approval_id: `worker-delegation-approval-${randomUUID()}`,
+      worker_delegation_plan_id: plan.worker_delegation_plan_id,
+      manager_ready_receipt_id: plan.manager_ready_receipt_id,
+      manager_process_id: plan.manager_process_id,
+      manager_run_id: plan.manager_run_id,
+      approved_worker_count: plan.workers.length,
+      approved_worker_token_budget: plan.total_worker_token_budget,
+      approval_scope: "local_control_plane_only",
+      worker_launch: "not_performed",
+      coordination_write: "not_performed",
+      projects_write: "not_performed",
+      created_at: new Date().toISOString(),
+      next_required_action: "launch_approved_workers",
+    };
+    this.#write({
+      schema: 1,
+      previews: document.previews,
+      launch_intents: document.launch_intents ?? [],
+      manager_runs: document.manager_runs ?? [],
+      manager_runtime_connections: document.manager_runtime_connections ?? [],
+      manager_processes: document.manager_processes ?? [],
+      manager_ready_receipts: document.manager_ready_receipts ?? [],
+      worker_delegation_plans: document.worker_delegation_plans ?? [],
+      worker_delegation_approvals: [record, ...(document.worker_delegation_approvals ?? [])].slice(
+        0,
+        20,
+      ),
+    });
+    return record;
+  }
+
   prepareWorkerDelegationPlan(): ControlPlaneWorkerDelegationPlanRecord {
     const document = this.#read();
     const readyReceipt = document.manager_ready_receipts?.[0];
@@ -433,6 +508,7 @@ export class ControlPlanePlanPreviewStore {
       manager_processes: document.manager_processes ?? [],
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: [record, ...(document.worker_delegation_plans ?? [])].slice(0, 20),
+      worker_delegation_approvals: document.worker_delegation_approvals ?? [],
     });
     return record;
   }
@@ -469,6 +545,7 @@ export class ControlPlanePlanPreviewStore {
       manager_processes: document.manager_processes ?? [],
       manager_ready_receipts: [record, ...(document.manager_ready_receipts ?? [])].slice(0, 20),
       worker_delegation_plans: document.worker_delegation_plans ?? [],
+      worker_delegation_approvals: document.worker_delegation_approvals ?? [],
     });
     return record;
   }
@@ -506,6 +583,7 @@ export class ControlPlanePlanPreviewStore {
       manager_processes: [record, ...(document.manager_processes ?? [])].slice(0, 20),
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: document.worker_delegation_plans ?? [],
+      worker_delegation_approvals: document.worker_delegation_approvals ?? [],
     });
     return record;
   }
@@ -545,6 +623,7 @@ export class ControlPlanePlanPreviewStore {
       manager_processes: document.manager_processes ?? [],
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: document.worker_delegation_plans ?? [],
+      worker_delegation_approvals: document.worker_delegation_approvals ?? [],
     });
     return record;
   }
@@ -586,6 +665,7 @@ export class ControlPlanePlanPreviewStore {
       manager_processes: document.manager_processes ?? [],
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: document.worker_delegation_plans ?? [],
+      worker_delegation_approvals: document.worker_delegation_approvals ?? [],
     });
     return record;
   }
@@ -623,6 +703,7 @@ export class ControlPlanePlanPreviewStore {
       manager_processes: document.manager_processes ?? [],
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: document.worker_delegation_plans ?? [],
+      worker_delegation_approvals: document.worker_delegation_approvals ?? [],
     });
     return record;
   }
@@ -660,6 +741,7 @@ export class ControlPlanePlanPreviewStore {
       manager_processes: document.manager_processes ?? [],
       manager_ready_receipts: document.manager_ready_receipts ?? [],
       worker_delegation_plans: document.worker_delegation_plans ?? [],
+      worker_delegation_approvals: document.worker_delegation_approvals ?? [],
     });
     return record;
   }
@@ -691,6 +773,9 @@ export class ControlPlanePlanPreviewStore {
         worker_delegation_plans: Array.isArray(parsed.worker_delegation_plans)
           ? parsed.worker_delegation_plans.filter((item) => item?.schema === 1)
           : [],
+        worker_delegation_approvals: Array.isArray(parsed.worker_delegation_approvals)
+          ? parsed.worker_delegation_approvals.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
       return {
@@ -702,6 +787,7 @@ export class ControlPlanePlanPreviewStore {
         manager_processes: [],
         manager_ready_receipts: [],
         worker_delegation_plans: [],
+        worker_delegation_approvals: [],
       };
     }
   }
