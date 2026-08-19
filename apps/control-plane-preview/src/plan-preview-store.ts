@@ -151,6 +151,38 @@ export type ControlPlaneManagerReadyReceiptStatus = {
   readonly receipts: readonly ControlPlaneManagerReadyReceiptRecord[];
 };
 
+export type ControlPlaneWorkerDelegationPlanRecord = {
+  readonly schema: 1;
+  readonly worker_delegation_plan_id: string;
+  readonly manager_ready_receipt_id: string;
+  readonly manager_process_id: string;
+  readonly manager_run_id: string;
+  readonly launch_intent_id: string;
+  readonly provider: string;
+  readonly total_worker_token_budget: number;
+  readonly worker_launch: "not_performed";
+  readonly coordination_write: "not_performed";
+  readonly projects_write: "not_performed";
+  readonly workers: readonly {
+    readonly role: string;
+    readonly provider: string;
+    readonly model: string;
+    readonly model_source: "deferred_to_provider_inventory";
+    readonly token_budget: number;
+    readonly input_digest: `sha-256:${string}`;
+    readonly command_policy: "not_started";
+    readonly status: "planned";
+  }[];
+  readonly created_at: string;
+  readonly next_required_action: "approve_worker_delegation_plan";
+};
+
+export type ControlPlaneWorkerDelegationPlanStatus = {
+  readonly schema: "yukh-control-plane-worker-delegation-plans-v1";
+  readonly source: "local-control-plane-store";
+  readonly plans: readonly ControlPlaneWorkerDelegationPlanRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -167,6 +199,7 @@ type Document = {
   readonly manager_runtime_connections?: readonly ControlPlaneManagerRuntimeConnectionRecord[];
   readonly manager_processes?: readonly ControlPlaneManagerProcessRecord[];
   readonly manager_ready_receipts?: readonly ControlPlaneManagerReadyReceiptRecord[];
+  readonly worker_delegation_plans?: readonly ControlPlaneWorkerDelegationPlanRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -192,6 +225,12 @@ function workersForGoal(
   const unique = [...new Set(roles)];
   const perWorker = unique.length > 0 ? Math.floor(workerReserve / unique.length) : 0;
   return unique.map((role) => ({ role, token_budget: perWorker }));
+}
+
+function modelForProvider(provider: string): string {
+  if (provider === "Copilot SDK workers") return "copilot-sdk-default";
+  if (provider === "Codex SDK, planned") return "codex-sdk-default";
+  return "codex-cli-default";
 }
 
 function validateInput(input: ControlPlanePlanPreviewInput): void {
@@ -330,6 +369,74 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
+  workerDelegationPlans(): ControlPlaneWorkerDelegationPlanStatus {
+    return {
+      schema: "yukh-control-plane-worker-delegation-plans-v1",
+      source: "local-control-plane-store",
+      plans: this.#read().worker_delegation_plans ?? [],
+    };
+  }
+
+  prepareWorkerDelegationPlan(): ControlPlaneWorkerDelegationPlanRecord {
+    const document = this.#read();
+    const readyReceipt = document.manager_ready_receipts?.[0];
+    if (!readyReceipt) {
+      throw new TypeError("missing manager ready receipt");
+    }
+    const existing = document.worker_delegation_plans?.find(
+      (plan) => plan.manager_ready_receipt_id === readyReceipt.manager_ready_receipt_id,
+    );
+    if (existing) return existing;
+    const managerRun = document.manager_runs?.find(
+      (run) => run.manager_run_id === readyReceipt.manager_run_id,
+    );
+    const launchIntent = document.launch_intents?.find(
+      (intent) => intent.launch_intent_id === managerRun?.launch_intent_id,
+    );
+    if (!managerRun || !launchIntent) {
+      throw new TypeError("missing launch intent");
+    }
+    const workers = launchIntent.proposed_workers.map((worker) => ({
+      role: worker.role,
+      provider: readyReceipt.provider,
+      model: modelForProvider(readyReceipt.provider),
+      model_source: "deferred_to_provider_inventory" as const,
+      token_budget: worker.token_budget,
+      input_digest: digest(
+        `${launchIntent.preview_receipt_id}:${readyReceipt.manager_ready_receipt_id}:${worker.role}`,
+      ),
+      command_policy: "not_started" as const,
+      status: "planned" as const,
+    }));
+    const record: ControlPlaneWorkerDelegationPlanRecord = {
+      schema: 1,
+      worker_delegation_plan_id: `worker-delegation-plan-${randomUUID()}`,
+      manager_ready_receipt_id: readyReceipt.manager_ready_receipt_id,
+      manager_process_id: readyReceipt.manager_process_id,
+      manager_run_id: readyReceipt.manager_run_id,
+      launch_intent_id: launchIntent.launch_intent_id,
+      provider: readyReceipt.provider,
+      total_worker_token_budget: workers.reduce((total, worker) => total + worker.token_budget, 0),
+      worker_launch: "not_performed",
+      coordination_write: "not_performed",
+      projects_write: "not_performed",
+      workers,
+      created_at: new Date().toISOString(),
+      next_required_action: "approve_worker_delegation_plan",
+    };
+    this.#write({
+      schema: 1,
+      previews: document.previews,
+      launch_intents: document.launch_intents ?? [],
+      manager_runs: document.manager_runs ?? [],
+      manager_runtime_connections: document.manager_runtime_connections ?? [],
+      manager_processes: document.manager_processes ?? [],
+      manager_ready_receipts: document.manager_ready_receipts ?? [],
+      worker_delegation_plans: [record, ...(document.worker_delegation_plans ?? [])].slice(0, 20),
+    });
+    return record;
+  }
+
   recordManagerReadyReceipt(): ControlPlaneManagerReadyReceiptRecord {
     const document = this.#read();
     const process = document.manager_processes?.[0];
@@ -361,6 +468,7 @@ export class ControlPlanePlanPreviewStore {
       manager_runtime_connections: document.manager_runtime_connections ?? [],
       manager_processes: document.manager_processes ?? [],
       manager_ready_receipts: [record, ...(document.manager_ready_receipts ?? [])].slice(0, 20),
+      worker_delegation_plans: document.worker_delegation_plans ?? [],
     });
     return record;
   }
@@ -397,6 +505,7 @@ export class ControlPlanePlanPreviewStore {
       manager_runtime_connections: document.manager_runtime_connections ?? [],
       manager_processes: [record, ...(document.manager_processes ?? [])].slice(0, 20),
       manager_ready_receipts: document.manager_ready_receipts ?? [],
+      worker_delegation_plans: document.worker_delegation_plans ?? [],
     });
     return record;
   }
@@ -435,6 +544,7 @@ export class ControlPlanePlanPreviewStore {
       ),
       manager_processes: document.manager_processes ?? [],
       manager_ready_receipts: document.manager_ready_receipts ?? [],
+      worker_delegation_plans: document.worker_delegation_plans ?? [],
     });
     return record;
   }
@@ -475,6 +585,7 @@ export class ControlPlanePlanPreviewStore {
       manager_runtime_connections: document.manager_runtime_connections ?? [],
       manager_processes: document.manager_processes ?? [],
       manager_ready_receipts: document.manager_ready_receipts ?? [],
+      worker_delegation_plans: document.worker_delegation_plans ?? [],
     });
     return record;
   }
@@ -511,6 +622,7 @@ export class ControlPlanePlanPreviewStore {
       manager_runtime_connections: document.manager_runtime_connections ?? [],
       manager_processes: document.manager_processes ?? [],
       manager_ready_receipts: document.manager_ready_receipts ?? [],
+      worker_delegation_plans: document.worker_delegation_plans ?? [],
     });
     return record;
   }
@@ -547,6 +659,7 @@ export class ControlPlanePlanPreviewStore {
       manager_runtime_connections: document.manager_runtime_connections ?? [],
       manager_processes: document.manager_processes ?? [],
       manager_ready_receipts: document.manager_ready_receipts ?? [],
+      worker_delegation_plans: document.worker_delegation_plans ?? [],
     });
     return record;
   }
@@ -575,6 +688,9 @@ export class ControlPlanePlanPreviewStore {
         manager_ready_receipts: Array.isArray(parsed.manager_ready_receipts)
           ? parsed.manager_ready_receipts.filter((item) => item?.schema === 1)
           : [],
+        worker_delegation_plans: Array.isArray(parsed.worker_delegation_plans)
+          ? parsed.worker_delegation_plans.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
       return {
@@ -585,6 +701,7 @@ export class ControlPlanePlanPreviewStore {
         manager_runtime_connections: [],
         manager_processes: [],
         manager_ready_receipts: [],
+        worker_delegation_plans: [],
       };
     }
   }

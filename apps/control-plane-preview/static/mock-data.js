@@ -734,6 +734,21 @@ const recordManagerReadyReceipt = async () => {
   }
 };
 
+const prepareWorkerDelegationPlan = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/worker-delegation-plans", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.worker_delegation_plan ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderLaunchIntent = (intent) => {
   if (!intent) return "";
   return `
@@ -794,6 +809,35 @@ const renderManagerReadyReceipt = (receipt) => {
       <p class="muted">${escapeHtml(receipt.readiness)} · hard cap ${receipt.hard_token_cap.toLocaleString()} tokens.</p>
       <p class="muted">Coordination write: ${escapeHtml(receipt.coordination_write)} · Projects write: ${escapeHtml(receipt.projects_write)}.</p>
       <p class="muted">Next required action: ${escapeHtml(receipt.next_required_action)}.</p>
+      <button type="button" class="secondary worker-plan-button">Prepare worker delegation plan</button>
+    </div>
+  `;
+};
+
+const renderWorkerDelegationPlan = (plan) => {
+  if (!plan) return "";
+  return `
+    <div class="worker-delegation-plan">
+      <span>Worker delegation plan</span>
+      <strong>${escapeHtml(plan.worker_delegation_plan_id)}</strong>
+      <p class="muted">${plan.workers.length.toLocaleString()} workers · ${plan.total_worker_token_budget.toLocaleString()} worker tokens · launch ${escapeHtml(plan.worker_launch)}.</p>
+      <div class="worker-plan-grid">
+        ${plan.workers
+          .map(
+            (worker) => `
+              <article>
+                <span>${escapeHtml(worker.role)}</span>
+                <strong>${escapeHtml(worker.model)}</strong>
+                <p class="muted">Model source: ${escapeHtml(worker.model_source)}</p>
+                <p class="muted">${worker.token_budget.toLocaleString()} tokens · ${escapeHtml(worker.command_policy)} · ${escapeHtml(worker.status)}</p>
+                <p class="muted clamp-2">Input ${escapeHtml(worker.input_digest)}</p>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+      <p class="muted">Coordination write: ${escapeHtml(plan.coordination_write)} · Projects write: ${escapeHtml(plan.projects_write)}.</p>
+      <p class="muted">Next required action: ${escapeHtml(plan.next_required_action)}.</p>
     </div>
   `;
 };
@@ -1027,6 +1071,22 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".manager-process")
     ?.insertAdjacentHTML("afterend", renderManagerReadyReceipt(receipt));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".worker-plan-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const plan = await prepareWorkerDelegationPlan();
+  if (!plan) {
+    button.removeAttribute("disabled");
+    button.textContent = "Manager ready receipt required";
+    return;
+  }
+  button.textContent = "Worker delegation plan prepared";
+  button
+    .closest(".manager-ready-receipt")
+    ?.insertAdjacentHTML("afterend", renderWorkerDelegationPlan(plan));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
