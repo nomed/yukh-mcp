@@ -38,6 +38,7 @@ export interface WorkerRunOutcome {
   readonly exitCode: number;
   readonly stopped: boolean;
   readonly bound?: "commands" | "deadline";
+  readonly providerFailure?: "provider_usage_limited";
   readonly output: RuntimeOutput;
 }
 

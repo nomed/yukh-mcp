@@ -155,6 +155,7 @@ export function lifecycleRecords(raw: string, after: number): LifecycleRecord[] 
           "agent_spawn_failed",
           "agent_timed_out",
           "agent_exit_nonzero",
+          "provider_usage_limited",
           "agent_coordination_failed",
           "agent_error",
         ].includes(record.failure_code)) ||

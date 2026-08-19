@@ -397,32 +397,34 @@ if (joined && "output" in outcome) {
         ? { schema: 1 as const, outcome: "command_budget_exceeded" as const, summary }
         : outcome.bound === "deadline"
           ? { schema: 1 as const, outcome: "runtime_deadline_exceeded" as const, summary }
-          : outcome.exitCode !== 0
-            ? { schema: 1 as const, outcome: "agent_exit_nonzero" as const, summary }
-            : !usage
-              ? { schema: 1 as const, outcome: "token_accounting_unavailable" as const, summary }
-              : usage.budget_outcome === "exceeded"
-                ? { schema: 1 as const, outcome: "token_budget_exceeded" as const, summary }
-                : missingActions.length > 0
-                  ? {
-                      schema: 1 as const,
-                      outcome: "required_action_missing" as const,
-                      summary: `Missing required action receipts: ${missingActions.join(", ")}`,
-                    }
-                  : !summary
-                    ? { schema: 1 as const, outcome: "completion_missing" as const, summary: "" }
-                    : planInvalid
-                      ? {
-                          schema: 1 as const,
-                          outcome: "team_plan_invalid" as const,
-                          summary: "Structured team plan validation failed",
-                        }
-                      : {
-                          schema: 1 as const,
-                          outcome: "succeeded" as const,
-                          summary,
-                          ...(proposedPlan ? { plan_id: proposedPlan.plan_id } : {}),
-                        };
+          : "providerFailure" in outcome && outcome.providerFailure === "provider_usage_limited"
+            ? { schema: 1 as const, outcome: "provider_usage_limited" as const, summary }
+            : outcome.exitCode !== 0
+              ? { schema: 1 as const, outcome: "agent_exit_nonzero" as const, summary }
+              : !usage
+                ? { schema: 1 as const, outcome: "token_accounting_unavailable" as const, summary }
+                : usage.budget_outcome === "exceeded"
+                  ? { schema: 1 as const, outcome: "token_budget_exceeded" as const, summary }
+                  : missingActions.length > 0
+                    ? {
+                        schema: 1 as const,
+                        outcome: "required_action_missing" as const,
+                        summary: `Missing required action receipts: ${missingActions.join(", ")}`,
+                      }
+                    : !summary
+                      ? { schema: 1 as const, outcome: "completion_missing" as const, summary: "" }
+                      : planInvalid
+                        ? {
+                            schema: 1 as const,
+                            outcome: "team_plan_invalid" as const,
+                            summary: "Structured team plan validation failed",
+                          }
+                        : {
+                            schema: 1 as const,
+                            outcome: "succeeded" as const,
+                            summary,
+                            ...(proposedPlan ? { plan_id: proposedPlan.plan_id } : {}),
+                          };
     const terminal = store.finish(teamID, agentID, completion, usage);
     if (usage) await activity.tokens(usage);
     if (
@@ -431,6 +433,27 @@ if (joined && "output" in outcome) {
       terminal.state === "stopped"
     )
       await activity.terminal(terminal.state, completion.summary);
+    process.stdout.write(
+      `${JSON.stringify({
+        schema: 1,
+        event: "worker_result",
+        team_id: teamID,
+        agent_id: agentID,
+        state: terminal.state,
+        completion_outcome: completion.outcome,
+        summary_bytes: Buffer.byteLength(completion.summary, "utf8"),
+        ...(usage
+          ? {
+              usage: {
+                source: usage.source,
+                total_tokens: usage.total_tokens,
+                budget: agent.token_budget,
+                budget_outcome: usage.budget_outcome,
+              },
+            }
+          : {}),
+      })}\n`,
+    );
     if (completion.outcome !== "succeeded") wrapperExitCode = 1;
   }
 }

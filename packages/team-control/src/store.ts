@@ -37,6 +37,7 @@ export interface AgentCompletion {
     | "team_plan_invalid"
     | "command_budget_exceeded"
     | "runtime_deadline_exceeded"
+    | "provider_usage_limited"
     | "required_action_missing"
     | "token_accounting_unavailable"
     | "token_budget_exceeded";
@@ -771,6 +772,7 @@ export class TeamStore {
         "team_plan_invalid",
         "command_budget_exceeded",
         "runtime_deadline_exceeded",
+        "provider_usage_limited",
         "required_action_missing",
         "token_accounting_unavailable",
         "token_budget_exceeded",
