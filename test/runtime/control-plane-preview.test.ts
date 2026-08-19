@@ -212,7 +212,20 @@ test("control plane preview persists local manager plan previews without leaking
   await writeFile(join(root, "mock-data.js"), "export {};");
 
   const workspace = await mkdtemp(join(tmpdir(), "yukh-control-plane-plan-workspace-"));
-  const planPreviewStore = new ControlPlanePlanPreviewStore(workspace);
+  let providerRunnerCalls = 0;
+  const planPreviewStore = new ControlPlanePlanPreviewStore(workspace, {
+    providerRunner: async ({ process }) => {
+      providerRunnerCalls += 1;
+      assert.equal(process.provider_process_start, "start_requested");
+      return {
+        runtime: "copilot",
+        team_id: "team-11111111-1111-4111-8111-111111111111",
+        agent_id: "worker-22222222-2222-4222-8222-222222222222",
+        pid: 12345,
+        log_path: join(workspace, ".yukh", "teams", "fake.log"),
+      };
+    },
+  });
   const server = createControlPlaneServer(root, { planPreviewStore });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -335,6 +348,16 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(
       (await blockedProviderWorkerProcess.json()).code,
       "worker_launch_receipt_required",
+    );
+
+    const blockedProviderRunnerAttachment = await fetch(
+      `${base}/api/manager-plan/provider-runner-attachments`,
+      { method: "POST" },
+    );
+    assert.equal(blockedProviderRunnerAttachment.status, 409);
+    assert.equal(
+      (await blockedProviderRunnerAttachment.json()).code,
+      "provider_worker_process_required",
     );
 
     const invalidProviderAdapter = await fetch(`${base}/api/manager-plan/provider-adapters`, {
@@ -1106,6 +1129,81 @@ test("control plane preview persists local manager plan previews without leaking
     );
     assert.equal(providerWorkerProcessesBody.processes.length, 1);
 
+    const providerRunnerAttachment = await fetch(
+      `${base}/api/manager-plan/provider-runner-attachments`,
+      { method: "POST" },
+    );
+    assert.equal(providerRunnerAttachment.status, 201);
+    const providerRunnerAttachmentBody = await providerRunnerAttachment.json();
+    assert.equal(providerRunnerCalls, 1);
+    assert.equal(
+      providerRunnerAttachmentBody.provider_runner_attachment.provider_worker_process_id,
+      providerWorkerProcessBody.provider_worker_process.provider_worker_process_id,
+    );
+    assert.equal(
+      providerRunnerAttachmentBody.provider_runner_attachment.worker_launch_receipt_id,
+      workerLaunchReceiptBody.worker_launch_receipt.worker_launch_receipt_id,
+    );
+    assert.equal(
+      providerRunnerAttachmentBody.provider_runner_attachment.worker_launch_candidate_id,
+      workerLaunchCandidateBody.worker_launch_candidate.worker_launch_candidate_id,
+    );
+    assert.equal(
+      providerRunnerAttachmentBody.provider_runner_attachment.provider,
+      "Copilot SDK workers",
+    );
+    assert.equal(providerRunnerAttachmentBody.provider_runner_attachment.runtime, "copilot");
+    assert.equal(
+      providerRunnerAttachmentBody.provider_runner_attachment.team_id,
+      "team-11111111-1111-4111-8111-111111111111",
+    );
+    assert.equal(
+      providerRunnerAttachmentBody.provider_runner_attachment.agent_id,
+      "worker-22222222-2222-4222-8222-222222222222",
+    );
+    assert.equal(providerRunnerAttachmentBody.provider_runner_attachment.pid, 12345);
+    assert.equal(providerRunnerAttachmentBody.provider_runner_attachment.token_budget, 66_000);
+    assert.equal(
+      providerRunnerAttachmentBody.provider_runner_attachment.provider_process_start,
+      "attached",
+    );
+    assert.equal(providerRunnerAttachmentBody.provider_runner_attachment.worker_launch, "running");
+    assert.equal(
+      providerRunnerAttachmentBody.provider_runner_attachment.coordination_write,
+      "not_performed",
+    );
+    assert.equal(
+      providerRunnerAttachmentBody.provider_runner_attachment.projects_write,
+      "not_performed",
+    );
+    assert.equal(
+      providerRunnerAttachmentBody.provider_runner_attachment.next_required_action,
+      "observe_worker_completion",
+    );
+
+    const repeatedProviderRunnerAttachment = await fetch(
+      `${base}/api/manager-plan/provider-runner-attachments`,
+      { method: "POST" },
+    );
+    assert.equal(repeatedProviderRunnerAttachment.status, 201);
+    assert.equal(providerRunnerCalls, 1);
+    assert.equal(
+      (await repeatedProviderRunnerAttachment.json()).provider_runner_attachment
+        .provider_runner_attachment_id,
+      providerRunnerAttachmentBody.provider_runner_attachment.provider_runner_attachment_id,
+    );
+
+    const providerRunnerAttachments = await fetch(
+      `${base}/api/manager-plan/provider-runner-attachments`,
+    );
+    assert.equal(providerRunnerAttachments.status, 200);
+    const providerRunnerAttachmentsBody = await providerRunnerAttachments.json();
+    assert.equal(
+      providerRunnerAttachmentsBody.schema,
+      "yukh-control-plane-provider-runner-attachments-v1",
+    );
+    assert.equal(providerRunnerAttachmentsBody.attachments.length, 1);
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -1210,6 +1308,13 @@ test("control plane preview persists local manager plan previews without leaking
     );
     assert.equal(providerWorkerProcessDenied.status, 405);
     assert.equal(providerWorkerProcessDenied.headers.get("allow"), "GET, POST");
+
+    const providerRunnerAttachmentDenied = await fetch(
+      `${base}/api/manager-plan/provider-runner-attachments`,
+      { method: "DELETE" },
+    );
+    assert.equal(providerRunnerAttachmentDenied.status, 405);
+    assert.equal(providerRunnerAttachmentDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -1310,6 +1415,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/worker-launch-candidates/u);
   assert.match(data, /api\/manager-plan\/worker-launch-receipts/u);
   assert.match(data, /api\/manager-plan\/provider-worker-processes/u);
+  assert.match(data, /api\/manager-plan\/provider-runner-attachments/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
@@ -1328,6 +1434,8 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /worker-launch-receipt-button/u);
   assert.match(data, /Provider worker process/u);
   assert.match(data, /provider-worker-process-button/u);
+  assert.match(data, /Provider runner attached/u);
+  assert.match(data, /provider-runner-attachment-button/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
   assert.match(data, /worker_launch/u);
@@ -1393,6 +1501,7 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.worker-launch-candidate/u);
   assert.match(css, /\.worker-launch-receipt/u);
   assert.match(css, /\.provider-worker-process/u);
+  assert.match(css, /\.provider-runner-attachment/u);
   assert.match(css, /\.preflight-grid/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });
