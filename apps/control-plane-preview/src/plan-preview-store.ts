@@ -358,6 +358,35 @@ export type ControlPlaneWorkerLaunchCandidateStatus = {
   readonly candidates: readonly ControlPlaneWorkerLaunchCandidateRecord[];
 };
 
+export type ControlPlaneWorkerLaunchReceiptRecord = {
+  readonly schema: 1;
+  readonly worker_launch_receipt_id: string;
+  readonly worker_launch_candidate_id: string;
+  readonly provider_runtime_probe_id: string;
+  readonly provider_capability_inventory_id: string;
+  readonly worker_launch_preflight_id: string;
+  readonly worker_delegation_approval_id: string;
+  readonly worker_delegation_plan_id: string;
+  readonly manager_process_id: string;
+  readonly manager_run_id: string;
+  readonly provider: string;
+  readonly approved_worker_count: number;
+  readonly approved_worker_token_budget: number;
+  readonly launch_authorization: "local_control_plane_explicit";
+  readonly provider_process_start: "not_performed";
+  readonly worker_launch: "authorized_not_started";
+  readonly coordination_write: "not_performed";
+  readonly projects_write: "not_performed";
+  readonly created_at: string;
+  readonly next_required_action: "start_provider_worker_process";
+};
+
+export type ControlPlaneWorkerLaunchReceiptStatus = {
+  readonly schema: "yukh-control-plane-worker-launch-receipts-v1";
+  readonly source: "local-control-plane-store";
+  readonly receipts: readonly ControlPlaneWorkerLaunchReceiptRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -381,6 +410,7 @@ type Document = {
   readonly provider_adapters?: readonly ControlPlaneProviderAdapterRecord[];
   readonly provider_capability_inventories?: readonly ControlPlaneProviderCapabilityInventoryRecord[];
   readonly worker_launch_candidates?: readonly ControlPlaneWorkerLaunchCandidateRecord[];
+  readonly worker_launch_receipts?: readonly ControlPlaneWorkerLaunchReceiptRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -650,6 +680,53 @@ export class ControlPlanePlanPreviewStore {
       source: "local-control-plane-store",
       candidates: this.#read().worker_launch_candidates ?? [],
     };
+  }
+
+  workerLaunchReceipts(): ControlPlaneWorkerLaunchReceiptStatus {
+    return {
+      schema: "yukh-control-plane-worker-launch-receipts-v1",
+      source: "local-control-plane-store",
+      receipts: this.#read().worker_launch_receipts ?? [],
+    };
+  }
+
+  createWorkerLaunchReceipt(): ControlPlaneWorkerLaunchReceiptRecord {
+    const document = this.#read();
+    const candidate = document.worker_launch_candidates?.[0];
+    if (!candidate || candidate.outcome !== "ready_for_explicit_worker_launch") {
+      throw new TypeError("worker launch candidate required");
+    }
+    const existing = document.worker_launch_receipts?.find(
+      (receipt) => receipt.worker_launch_candidate_id === candidate.worker_launch_candidate_id,
+    );
+    if (existing) return existing;
+    const record: ControlPlaneWorkerLaunchReceiptRecord = {
+      schema: 1,
+      worker_launch_receipt_id: `worker-launch-receipt-${randomUUID()}`,
+      worker_launch_candidate_id: candidate.worker_launch_candidate_id,
+      provider_runtime_probe_id: candidate.provider_runtime_probe_id,
+      provider_capability_inventory_id: candidate.provider_capability_inventory_id,
+      worker_launch_preflight_id: candidate.worker_launch_preflight_id,
+      worker_delegation_approval_id: candidate.worker_delegation_approval_id,
+      worker_delegation_plan_id: candidate.worker_delegation_plan_id,
+      manager_process_id: candidate.manager_process_id,
+      manager_run_id: candidate.manager_run_id,
+      provider: candidate.provider,
+      approved_worker_count: candidate.approved_worker_count,
+      approved_worker_token_budget: candidate.approved_worker_token_budget,
+      launch_authorization: "local_control_plane_explicit",
+      provider_process_start: "not_performed",
+      worker_launch: "authorized_not_started",
+      coordination_write: "not_performed",
+      projects_write: "not_performed",
+      created_at: new Date().toISOString(),
+      next_required_action: "start_provider_worker_process",
+    };
+    this.#write({
+      ...document,
+      worker_launch_receipts: [record, ...(document.worker_launch_receipts ?? [])].slice(0, 20),
+    });
+    return record;
   }
 
   createWorkerLaunchCandidate(): ControlPlaneWorkerLaunchCandidateRecord {
@@ -1289,6 +1366,9 @@ export class ControlPlanePlanPreviewStore {
         worker_launch_candidates: Array.isArray(parsed.worker_launch_candidates)
           ? parsed.worker_launch_candidates.filter((item) => item?.schema === 1)
           : [],
+        worker_launch_receipts: Array.isArray(parsed.worker_launch_receipts)
+          ? parsed.worker_launch_receipts.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
       return {
@@ -1306,6 +1386,7 @@ export class ControlPlanePlanPreviewStore {
         provider_adapters: [],
         provider_capability_inventories: [],
         worker_launch_candidates: [],
+        worker_launch_receipts: [],
       };
     }
   }
@@ -1319,6 +1400,8 @@ export class ControlPlanePlanPreviewStore {
         document.provider_capability_inventories ?? current.provider_capability_inventories ?? [],
       worker_launch_candidates:
         document.worker_launch_candidates ?? current.worker_launch_candidates ?? [],
+      worker_launch_receipts:
+        document.worker_launch_receipts ?? current.worker_launch_receipts ?? [],
     };
     const tmp = `${this.#path}.${process.pid}.${Date.now()}.tmp`;
     writeFileSync(tmp, `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 });

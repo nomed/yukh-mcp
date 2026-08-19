@@ -317,6 +317,16 @@ test("control plane preview persists local manager plan previews without leaking
       "worker_launch_candidate_not_ready",
     );
 
+    const blockedWorkerLaunchReceipt = await fetch(
+      `${base}/api/manager-plan/worker-launch-receipts`,
+      { method: "POST" },
+    );
+    assert.equal(blockedWorkerLaunchReceipt.status, 409);
+    assert.equal(
+      (await blockedWorkerLaunchReceipt.json()).code,
+      "worker_launch_candidate_required",
+    );
+
     const invalidProviderAdapter = await fetch(`${base}/api/manager-plan/provider-adapters`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -956,6 +966,64 @@ test("control plane preview persists local manager plan previews without leaking
     );
     assert.equal(workerLaunchCandidatesBody.candidates.length, 1);
 
+    const workerLaunchReceipt = await fetch(`${base}/api/manager-plan/worker-launch-receipts`, {
+      method: "POST",
+    });
+    assert.equal(workerLaunchReceipt.status, 201);
+    const workerLaunchReceiptBody = await workerLaunchReceipt.json();
+    assert.equal(
+      workerLaunchReceiptBody.worker_launch_receipt.worker_launch_candidate_id,
+      workerLaunchCandidateBody.worker_launch_candidate.worker_launch_candidate_id,
+    );
+    assert.equal(
+      workerLaunchReceiptBody.worker_launch_receipt.provider_runtime_probe_id,
+      providerProbeBody.provider_runtime_probe.provider_runtime_probe_id,
+    );
+    assert.equal(
+      workerLaunchReceiptBody.worker_launch_receipt.provider_capability_inventory_id,
+      providerInventoryBody.provider_capability_inventory.provider_capability_inventory_id,
+    );
+    assert.equal(workerLaunchReceiptBody.worker_launch_receipt.provider, "Copilot SDK workers");
+    assert.equal(workerLaunchReceiptBody.worker_launch_receipt.approved_worker_count, 2);
+    assert.equal(
+      workerLaunchReceiptBody.worker_launch_receipt.approved_worker_token_budget,
+      66_000,
+    );
+    assert.equal(
+      workerLaunchReceiptBody.worker_launch_receipt.launch_authorization,
+      "local_control_plane_explicit",
+    );
+    assert.equal(
+      workerLaunchReceiptBody.worker_launch_receipt.provider_process_start,
+      "not_performed",
+    );
+    assert.equal(
+      workerLaunchReceiptBody.worker_launch_receipt.worker_launch,
+      "authorized_not_started",
+    );
+    assert.equal(workerLaunchReceiptBody.worker_launch_receipt.coordination_write, "not_performed");
+    assert.equal(workerLaunchReceiptBody.worker_launch_receipt.projects_write, "not_performed");
+    assert.equal(
+      workerLaunchReceiptBody.worker_launch_receipt.next_required_action,
+      "start_provider_worker_process",
+    );
+
+    const repeatedWorkerLaunchReceipt = await fetch(
+      `${base}/api/manager-plan/worker-launch-receipts`,
+      { method: "POST" },
+    );
+    assert.equal(repeatedWorkerLaunchReceipt.status, 201);
+    assert.equal(
+      (await repeatedWorkerLaunchReceipt.json()).worker_launch_receipt.worker_launch_receipt_id,
+      workerLaunchReceiptBody.worker_launch_receipt.worker_launch_receipt_id,
+    );
+
+    const workerLaunchReceipts = await fetch(`${base}/api/manager-plan/worker-launch-receipts`);
+    assert.equal(workerLaunchReceipts.status, 200);
+    const workerLaunchReceiptsBody = await workerLaunchReceipts.json();
+    assert.equal(workerLaunchReceiptsBody.schema, "yukh-control-plane-worker-launch-receipts-v1");
+    assert.equal(workerLaunchReceiptsBody.receipts.length, 1);
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -1046,6 +1114,13 @@ test("control plane preview persists local manager plan previews without leaking
     );
     assert.equal(workerLaunchCandidateDenied.status, 405);
     assert.equal(workerLaunchCandidateDenied.headers.get("allow"), "GET, POST");
+
+    const workerLaunchReceiptDenied = await fetch(
+      `${base}/api/manager-plan/worker-launch-receipts`,
+      { method: "DELETE" },
+    );
+    assert.equal(workerLaunchReceiptDenied.status, 405);
+    assert.equal(workerLaunchReceiptDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -1144,6 +1219,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/provider-adapters/u);
   assert.match(data, /api\/manager-plan\/provider-capability-inventories/u);
   assert.match(data, /api\/manager-plan\/worker-launch-candidates/u);
+  assert.match(data, /api\/manager-plan\/worker-launch-receipts/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
@@ -1158,6 +1234,8 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /Provider capability inventory/u);
   assert.match(data, /Worker launch candidate/u);
   assert.match(data, /worker-launch-candidate-button/u);
+  assert.match(data, /Worker launch receipt/u);
+  assert.match(data, /worker-launch-receipt-button/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
   assert.match(data, /worker_launch/u);
