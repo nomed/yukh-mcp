@@ -2,10 +2,15 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  discoverCodexModels,
+  discoverCopilotModelCatalog,
+} from "../../../packages/team-control/src/model-discovery.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import {
   ControlPlanePlanPreviewStore,
   type ControlPlaneProviderAdapterInput,
+  type ControlPlaneProviderModelDiscoverer,
   type ControlPlanePlanPreviewInput,
 } from "./plan-preview-store.js";
 import { createTeamStatus } from "./team-status.js";
@@ -98,6 +103,20 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
+
+export const discoverConfiguredProviderModels: ControlPlaneProviderModelDiscoverer = async (
+  adapter,
+) => {
+  if (!adapter.executable_path) return undefined;
+  if (adapter.provider === "Codex manager CLI") {
+    return { models: discoverCodexModels(adapter.executable_path), source: "cli" };
+  }
+  if (adapter.provider === "Copilot SDK workers") {
+    const catalog = await discoverCopilotModelCatalog(adapter.executable_path);
+    return { models: catalog.models, source: catalog.source };
+  }
+  return undefined;
+};
 
 export function createControlPlaneServer(
   staticRoot = defaultStaticRoot(),
@@ -660,7 +679,7 @@ export function createControlPlaneServer(
       }
       if (request.method === "POST") {
         try {
-          const record = options.planPreviewStore.inventoryProviderCapabilities();
+          const record = await options.planPreviewStore.inventoryProviderCapabilities();
           response.writeHead(201, {
             "cache-control": "no-store",
             "content-type": "application/json; charset=utf-8",
@@ -805,7 +824,13 @@ export async function startControlPlane(options: ControlPlaneOptions): Promise<S
     options.workspace ?? process.env.YUKH_CONVERSATION_WORKSPACE ?? process.env.YUKH_TEAM_WORKSPACE;
   const server = createControlPlaneServer(options.staticRoot, {
     ...(workspace ? { teamStore: new TeamStore(workspace) } : {}),
-    ...(workspace ? { planPreviewStore: new ControlPlanePlanPreviewStore(workspace) } : {}),
+    ...(workspace
+      ? {
+          planPreviewStore: new ControlPlanePlanPreviewStore(workspace, {
+            discoverProviderModels: discoverConfiguredProviderModels,
+          }),
+        }
+      : {}),
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

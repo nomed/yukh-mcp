@@ -300,14 +300,28 @@ export type ControlPlaneProviderCapabilityInventoryRecord = {
   readonly adapter_kind: "cli" | "sdk";
   readonly models: readonly {
     readonly model: string;
-    readonly source: "configured_adapter";
+    readonly source: "configured_adapter" | "provider_discovery";
     readonly max_run_token_budget: number;
   }[];
   readonly command_policy: "bounded_control_plane_only";
-  readonly inventory_source: "local_provider_adapter_config";
+  readonly inventory_source:
+    | "local_provider_adapter_config"
+    | "provider_cli"
+    | "provider_sdk"
+    | "provider_env"
+    | "provider_fallback";
   readonly provider_call: "not_performed";
   readonly created_at: string;
 };
+
+export type ControlPlaneProviderModelDiscoveryResult = {
+  readonly models: readonly string[];
+  readonly source: "cli" | "sdk" | "env" | "fallback";
+};
+
+export type ControlPlaneProviderModelDiscoverer = (
+  adapter: ControlPlaneProviderAdapterRecord,
+) => Promise<ControlPlaneProviderModelDiscoveryResult | undefined>;
 
 export type ControlPlaneProviderCapabilityInventoryStatus = {
   readonly schema: "yukh-control-plane-provider-capability-inventories-v1";
@@ -429,12 +443,17 @@ function executableCheck(
 
 export class ControlPlanePlanPreviewStore {
   readonly #path: string;
+  readonly #discoverProviderModels: ControlPlaneProviderModelDiscoverer;
 
-  constructor(workspace: string) {
+  constructor(
+    workspace: string,
+    options: { readonly discoverProviderModels?: ControlPlaneProviderModelDiscoverer } = {},
+  ) {
     if (!isAbsolute(workspace)) throw new TypeError("invalid control plane workspace");
     const root = join(workspace, ".yukh", "control-plane");
     mkdirSync(root, { recursive: true, mode: 0o700 });
     this.#path = join(root, "plan-previews.json");
+    this.#discoverProviderModels = options.discoverProviderModels ?? (async () => undefined);
   }
 
   status(): ControlPlanePlanPreviewStoreStatus {
@@ -595,7 +614,7 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
-  inventoryProviderCapabilities(): ControlPlaneProviderCapabilityInventoryRecord {
+  async inventoryProviderCapabilities(): Promise<ControlPlaneProviderCapabilityInventoryRecord> {
     const document = this.#read();
     const adapter = document.provider_adapters?.[0];
     if (!adapter) {
@@ -605,19 +624,35 @@ export class ControlPlanePlanPreviewStore {
       (inventory) => inventory.provider_adapter_id === adapter.provider_adapter_id,
     );
     if (existing) return existing;
+    const discovery = await this.#discoverProviderModels(adapter);
+    const discoveredModels =
+      discovery?.models.filter((model) => adapter.models.includes(model)) ?? [];
+    const models = discoveredModels.length > 0 ? discoveredModels : adapter.models;
+    const source = discoveredModels.length > 0 ? "provider_discovery" : "configured_adapter";
+    const inventorySource =
+      discoveredModels.length > 0
+        ? (
+            {
+              cli: "provider_cli",
+              sdk: "provider_sdk",
+              env: "provider_env",
+              fallback: "provider_fallback",
+            } as const
+          )[discovery?.source ?? "fallback"]
+        : "local_provider_adapter_config";
     const record: ControlPlaneProviderCapabilityInventoryRecord = {
       schema: 1,
       provider_capability_inventory_id: `provider-capability-inventory-${randomUUID()}`,
       provider_adapter_id: adapter.provider_adapter_id,
       provider: adapter.provider,
       adapter_kind: adapter.adapter_kind,
-      models: adapter.models.map((model) => ({
+      models: models.map((model) => ({
         model,
-        source: "configured_adapter",
+        source,
         max_run_token_budget: adapter.max_run_token_budget,
       })),
       command_policy: "bounded_control_plane_only",
-      inventory_source: "local_provider_adapter_config",
+      inventory_source: inventorySource,
       provider_call: "not_performed",
       created_at: new Date().toISOString(),
     };

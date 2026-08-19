@@ -970,6 +970,53 @@ test("control plane preview persists local manager plan previews without leaking
   }
 });
 
+test("control plane provider capability inventory can use read-only model discovery", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "yukh-control-plane-model-discovery-"));
+  const executable = join(workspace, "codex");
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", { mode: 0o700 });
+  const store = new ControlPlanePlanPreviewStore(workspace, {
+    discoverProviderModels: async (adapter) => {
+      assert.equal(adapter.provider, "Codex manager CLI");
+      assert.equal(adapter.executable_path, executable);
+      return { source: "cli", models: ["gpt-5.6-sol", "not-allowlisted"] };
+    },
+  });
+
+  const adapter = store.configureProviderAdapter({
+    provider: "Codex manager CLI",
+    adapter_kind: "cli",
+    executable_path: executable,
+    models: ["gpt-5.6-sol", "gpt-5.6-terra"],
+    max_run_token_budget: 90_000,
+  });
+  const inventory = await store.inventoryProviderCapabilities();
+
+  assert.equal(inventory.provider_adapter_id, adapter.provider_adapter_id);
+  assert.equal(inventory.provider, "Codex manager CLI");
+  assert.equal(inventory.adapter_kind, "cli");
+  assert.equal(inventory.inventory_source, "provider_cli");
+  assert.equal(inventory.provider_call, "not_performed");
+  assert.deepEqual(
+    inventory.models.map((model) => ({
+      model: model.model,
+      source: model.source,
+      max_run_token_budget: model.max_run_token_budget,
+    })),
+    [
+      {
+        model: "gpt-5.6-sol",
+        source: "provider_discovery",
+        max_run_token_budget: 90_000,
+      },
+    ],
+  );
+
+  assert.equal(
+    (await store.inventoryProviderCapabilities()).provider_capability_inventory_id,
+    inventory.provider_capability_inventory_id,
+  );
+});
+
 test("control plane preview explains runtime topology without Mermaid", async () => {
   const html = await readFile("apps/control-plane-preview/static/index.html", "utf8");
   const data = await readFile("apps/control-plane-preview/static/mock-data.js", "utf8");
