@@ -49,7 +49,11 @@ export async function runCodexPythonWorker({
     if (!child.stdout || !child.stderr) throw new Error("agent_output_unavailable");
     child.stderr.pipe(process.stderr);
     const chunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (Buffer.concat(stderrChunks).byteLength < 8_192) stderrChunks.push(chunk);
+    });
     let stdoutEnded = false;
     let closed = false;
     let childExitCode = 1;
@@ -73,8 +77,13 @@ export async function runCodexPythonWorker({
       try {
         const result = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
           readonly final_response?: unknown;
+          readonly error_code?: unknown;
+          readonly error_message?: unknown;
           readonly usage_last?: unknown;
         };
+        if (result.error_code === "provider_usage_limited") {
+          output.setSummary(publicProviderSummary(result.error_message));
+        }
         if (typeof result.final_response === "string") output.setSummary(result.final_response);
         if (record(result.usage_last))
           output.addUsage("codex-python-app-server-v1", {
@@ -88,10 +97,22 @@ export async function runCodexPythonWorker({
         process.stderr.write(
           `yukh-team-worker: codex python runner emitted invalid output bytes=${Buffer.concat(chunks).length}\n`,
         );
+        const message = Buffer.concat(stderrChunks).toString("utf8");
+        if (providerUsageLimited(message)) output.setSummary(publicProviderSummary(message));
       } finally {
         rmSync(temporary, { recursive: true, force: true });
       }
-      resolve({ exitCode: childExitCode, stopped: false, ...(bound ? { bound } : {}), output });
+      const providerFailure =
+        childExitCode !== 0 && providerUsageLimited(output.summary())
+          ? { providerFailure: "provider_usage_limited" as const }
+          : {};
+      resolve({
+        exitCode: childExitCode,
+        stopped: false,
+        ...(bound ? { bound } : {}),
+        ...providerFailure,
+        output,
+      });
     };
     child.stdout.once("end", () => {
       stdoutEnded = true;
@@ -159,7 +180,27 @@ with Codex(config) as codex:
     }
     if model != "default":
         run_options["model"] = model
-    result = thread.run(prompt, **run_options)
+    try:
+        result = thread.run(prompt, **run_options)
+    except Exception as error:
+        message = str(error)
+        code = (
+            "provider_usage_limited"
+            if "usage limit" in message.lower() or "you've hit your usage limit" in message.lower()
+            else "provider_run_failed"
+        )
+        print(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "status": "error",
+                    "error_code": code,
+                    "error_message": message[:512],
+                },
+                sort_keys=True,
+            )
+        )
+        raise SystemExit(1)
     print(
         json.dumps(
             {
@@ -183,4 +224,16 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function safeInteger(value: unknown): number {
   return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0;
+}
+
+function providerUsageLimited(value: string): boolean {
+  return /usage limit|you've hit your usage limit/iu.test(value);
+}
+
+function publicProviderSummary(value: unknown): string {
+  const message = typeof value === "string" ? value : "";
+  const retry = message.match(/try again at ([^.]+)\./iu)?.[1];
+  return retry
+    ? `Provider usage limit reached; retry after ${retry}.`
+    : "Provider usage limit reached.";
 }

@@ -1850,6 +1850,54 @@ test("codex python app-server worker captures final response and token accountin
   }
 });
 
+test("codex python app-server worker classifies usage limits", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-codex-python-limit-")));
+  try {
+    const store = new TeamStore(root);
+    const team = store.create("Codex Python limit probe", "codex");
+    const agent = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "python-reviewer",
+      task: "Summarize only",
+      profile: {
+        schema: 1,
+        mission: "Review",
+        model: "codex-test-model",
+        skills: [],
+        instructions: "Be brief",
+      },
+      model_tool_mode: "none",
+      token_budget: 1_000,
+    });
+    const outcome = await runCodexPythonWorker({
+      executable: "/bin/codex",
+      python: process.env.PYTHON ?? "python3",
+      workspace: root,
+      prompt: "Do the task",
+      agent,
+      timeoutMs: 1_000,
+      workerSource: [
+        "import json",
+        "print(json.dumps({",
+        "  'schema': 1,",
+        "  'status': 'error',",
+        "  'error_code': 'provider_usage_limited',",
+        "  'error_message': \"You've hit your usage limit for GPT-Test. Switch model, or try again at Aug 23rd, 2026 1:14 AM.\",",
+        "}))",
+        "raise SystemExit(1)",
+      ].join("\n"),
+    });
+    assert.equal(outcome.exitCode, 1);
+    assert.equal(outcome.providerFailure, "provider_usage_limited");
+    assert.equal(
+      outcome.output.summary(),
+      "Provider usage limit reached; retry after Aug 23rd, 2026 1:14 AM.",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("legacy teams stay readable but cannot bypass explicit token allocation", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-team-legacy-budget-")));
   try {

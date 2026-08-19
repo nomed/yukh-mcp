@@ -39,6 +39,7 @@ export interface CoordinatorEvent {
     | "agent_spawn_failed"
     | "agent_timed_out"
     | "agent_exit_nonzero"
+    | "provider_usage_limited"
     | "agent_coordination_failed"
     | "agent_error";
   readonly coordination_action?: "bootstrap" | "join" | "replay";
@@ -136,6 +137,7 @@ export class ConversationCoordinator {
         "agent_spawn_failed",
         "agent_timed_out",
         "agent_exit_nonzero",
+        "provider_usage_limited",
         "agent_coordination_failed",
       ];
       const failure =
