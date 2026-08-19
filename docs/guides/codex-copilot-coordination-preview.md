@@ -27,6 +27,19 @@ error means stop and fix the checkout before continuing.
 
 This command is the gate before starting a Yukh-managed implementation worker.
 
+Before launching real workers, check the local Coordination preview runtime:
+
+```sh
+YUKH_PREVIEW_RUNTIME=/path/to/local-preview \
+YUKH_COORDINATION_LAUNCHER=/path/to/yukh-coordination/.github/scripts/yukh-local-agent.py \
+.github/scripts/check-preview-runtime.sh
+```
+
+The check is diagnostic only: it does not start containers, stop containers or
+delete JetStream volumes. Fix `attention-required` results before approving a
+worker, especially expired TLS, runtime directories not using mode `0700`, and
+Docker setups that require `sudo` or an unsandboxed terminal.
+
 For a small documentation change, start with the `micro-doc-edit` preset instead
 of the generic implementation profile:
 

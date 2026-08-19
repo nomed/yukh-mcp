@@ -37,3 +37,17 @@ test("Control Plane live activity qualification uses JetStream and fake provider
   assert.doesNotMatch(source, /tail -f/u);
   assert.doesNotMatch(source, /YUKH_CODEX_EXECUTABLE:-\\$\\(command -v codex\\)/u);
 });
+
+test("preview runtime check is diagnostic and non-destructive", async () => {
+  const path = ".github/scripts/check-preview-runtime.sh";
+  await access(new URL(`../../${path}`, import.meta.url), constants.X_OK);
+  const source = await read(path);
+
+  assert.match(source, /runtime directory must be mode 0700/);
+  assert.match(source, /openssl x509 -checkend 21600/);
+  assert.match(source, /docker: sudo-required/);
+  assert.match(source, /coordination_replay: unavailable/);
+  assert.match(source, /YKC-TRANSCRIPT-001/);
+  assert.doesNotMatch(source, /down --volumes/u);
+  assert.doesNotMatch(source, /rm -rf/u);
+});
