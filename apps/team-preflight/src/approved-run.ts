@@ -5,7 +5,7 @@ import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js
 import type { AgentRecord } from "../../../packages/team-control/src/store.js";
 import { inheritedWorkerActivityEnvironment } from "../../../packages/team-control/src/profile-environment.js";
 import { preflightApprovalDigest, type EngagePreflightOutput } from "./preflight.js";
-import { assertRuntimeTokenFloor } from "./runtime-floor.js";
+import { assertRuntimeTokenFloor, codexWorkerProvider } from "./runtime-floor.js";
 
 export interface ApprovedRunArguments {
   readonly preflightPath: string;
@@ -38,13 +38,18 @@ async function awaitAgent(
 
 function loadPreflight(path: string): EngagePreflightOutput {
   const value = JSON.parse(readFileSync(path, "utf8")) as EngagePreflightOutput;
+  const launchableByFloor =
+    value.runtime_token_floor === undefined ||
+    value.planned_worker.token_budget >= value.runtime_token_floor.minimum_token_budget;
+  const blockedByReadOnlyProvider =
+    value.planned_worker.runtime === "codex" &&
+    value.policy.work_profile === "implementation" &&
+    codexWorkerProvider() === "python-app-server";
   if (
     value.schema !== 1 ||
     value.status !== "ok" ||
     value.command !== "team preflight-engage" ||
-    value.provider_launchable !==
-      (value.runtime_token_floor === undefined ||
-        value.planned_worker.token_budget >= value.runtime_token_floor.minimum_token_budget) ||
+    value.provider_launchable !== (launchableByFloor && !blockedByReadOnlyProvider) ||
     value.provider_runtime_launched !== false ||
     value.provider_tokens_observed !== 0
   )
@@ -89,6 +94,7 @@ export async function runApprovedPreflight(args: ApprovedRunArguments) {
   if (microWorkerRequiresExplicitAllow(worker) && args.allowMicroLaunch !== true)
     throw new Error("micro_worker_launch_requires_explicit_allow");
   assertRuntimeTokenFloor(worker);
+  if (!preflight.provider_launchable) throw new Error("preflight_provider_not_launchable");
 
   const entrypoints = teamRuntimeEntrypoints();
   const supervisor = new TeamSupervisor({

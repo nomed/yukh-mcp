@@ -6,7 +6,7 @@ import { roleProfilePolicy } from "../../team-control/src/server.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import type { AgentRuntime } from "../../../packages/team-control/src/store.js";
 import type { TeamWorkProfile } from "../../team-control/src/server.js";
-import { runtimeTokenFloor, type RuntimeTokenFloor } from "./runtime-floor.js";
+import { codexWorkerProvider, runtimeTokenFloor, type RuntimeTokenFloor } from "./runtime-floor.js";
 
 export interface EngagePreflightArguments {
   readonly workspace?: string;
@@ -56,6 +56,17 @@ function workerInstructions(workProfile: TeamWorkProfile): string {
   if (workProfile === "readonly")
     return "Run at most one compact read-only probe. Do not mutate files, install dependencies, start services, call the network, or list dependency/build/runtime trees. Keep command output and final summary short.";
   return "Execute only the approved task, stay within the approved runtime bounds, keep output concise, and report any missing context instead of guessing.";
+}
+
+function implementationBlockedByReadOnlyProvider(input: {
+  readonly runtime: AgentRuntime;
+  readonly workProfile: TeamWorkProfile;
+}): boolean {
+  return (
+    input.runtime === "codex" &&
+    input.workProfile === "implementation" &&
+    codexWorkerProvider() === "python-app-server"
+  );
 }
 
 export function approvalDigest(input: {
@@ -171,7 +182,12 @@ export function runEngagePreflight(args: EngagePreflightArguments): EngagePrefli
   });
   const floor = runtimeTokenFloor(worker);
   const budget = store.status(managed.team.team_id).tokens;
-  const providerLaunchable = !floor || worker.token_budget >= floor.minimum_token_budget;
+  const blockedByReadOnlyProvider = implementationBlockedByReadOnlyProvider({
+    runtime: worker.runtime,
+    workProfile: args.workProfile,
+  });
+  const providerLaunchable =
+    !blockedByReadOnlyProvider && (!floor || worker.token_budget >= floor.minimum_token_budget);
   const output = {
     schema: 1 as const,
     status: "ok" as const,
@@ -189,7 +205,9 @@ export function runEngagePreflight(args: EngagePreflightArguments): EngagePrefli
     budget,
     next_real_action: providerLaunchable
       ? "Run a managed manager or agent.engage from Team Control only after approving this policy and budget."
-      : "Do not launch this worker with the current CLI runtime budget. Use an SDK/lean worker runtime or raise the worker budget to the measured runtime floor.",
+      : blockedByReadOnlyProvider
+        ? "Do not launch implementation work with the current Python app-server runtime: it is intentionally read-only. Use a write-capable approved runner, or switch this task to review/readonly."
+        : "Do not launch this worker with the current CLI runtime budget. Use an SDK/lean worker runtime or raise the worker budget to the measured runtime floor.",
   };
   return { ...output, approval_digest: preflightApprovalDigest(output) };
 }
