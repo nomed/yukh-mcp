@@ -7,6 +7,7 @@ import {
 import { teamRuntimeEntrypoints } from "../../../packages/team-control/src/entrypoints.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
+import { inheritedWorkerActivityEnvironment } from "../../../packages/team-control/src/profile-environment.js";
 import { createTeamControlServer } from "./server.js";
 
 const workspace = process.env.YUKH_TEAM_WORKSPACE;
@@ -43,6 +44,7 @@ const profileEnvironment = {
       .filter((name) => process.env[name] !== undefined)
       .map((name) => [name, process.env[name]!] as const),
   ),
+  ...inheritedWorkerActivityEnvironment(),
 };
 const entrypoints = teamRuntimeEntrypoints();
 const supervisor = new TeamSupervisor({

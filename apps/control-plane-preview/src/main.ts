@@ -10,6 +10,7 @@ import {
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { teamRuntimeEntrypoints } from "../../../packages/team-control/src/entrypoints.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
+import { inheritedWorkerActivityEnvironment } from "../../../packages/team-control/src/profile-environment.js";
 import {
   WorkerActivityJetStreamBus,
   WORKER_ACTIVITY_SCHEMA,
@@ -169,6 +170,7 @@ function createConfiguredProviderRunner(
       ...(process.env.YUKH_CODEX_PYTHON_EXECUTABLE
         ? { YUKH_CODEX_PYTHON_EXECUTABLE: process.env.YUKH_CODEX_PYTHON_EXECUTABLE }
         : {}),
+      ...inheritedWorkerActivityEnvironment(),
     },
   });
 

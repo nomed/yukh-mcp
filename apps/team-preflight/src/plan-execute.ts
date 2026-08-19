@@ -8,6 +8,7 @@ import type { TeamControlOptions } from "../../team-control/src/server.js";
 import { teamRuntimeEntrypoints } from "../../../packages/team-control/src/entrypoints.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
 import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
+import { inheritedWorkerActivityEnvironment } from "../../../packages/team-control/src/profile-environment.js";
 
 export interface ApprovedPlanRunArguments {
   readonly workspace: string;
@@ -44,6 +45,7 @@ function profileEnvironment(args: ApprovedPlanRunArguments): Readonly<Record<str
     env.YUKH_CODEX_PYTHON_EXECUTABLE = process.env.YUKH_CODEX_PYTHON_EXECUTABLE;
   if (process.env.YUKH_COPILOT_WORKER_PROVIDER === "sdk") env.YUKH_COPILOT_WORKER_PROVIDER = "sdk";
   if (process.env.YUKH_PREVIEW_RUNTIME) env.YUKH_PREVIEW_RUNTIME = process.env.YUKH_PREVIEW_RUNTIME;
+  Object.assign(env, inheritedWorkerActivityEnvironment());
   return env;
 }
 
