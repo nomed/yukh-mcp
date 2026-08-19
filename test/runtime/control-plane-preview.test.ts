@@ -300,6 +300,20 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(blockedProviderProbe.status, 409);
     assert.equal((await blockedProviderProbe.json()).code, "worker_launch_preflight_required");
 
+    const invalidProviderAdapter = await fetch(`${base}/api/manager-plan/provider-adapters`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "Copilot SDK workers",
+        adapter_kind: "cli",
+        executable_path: "copilot",
+        models: ["copilot-sdk-default"],
+        max_run_token_budget: 120_000,
+      }),
+    });
+    assert.equal(invalidProviderAdapter.status, 400);
+    assert.equal((await invalidProviderAdapter.json()).code, "invalid_provider_adapter");
+
     const goal = "Persist this sensitive manager plan preview locally";
     const proposed = await fetch(`${base}/api/manager-plan/previews`, {
       method: "POST",
@@ -723,6 +737,28 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(workerPreflightsBody.schema, "yukh-control-plane-worker-launch-preflights-v1");
     assert.equal(workerPreflightsBody.preflights.length, 1);
 
+    const providerAdapter = await fetch(`${base}/api/manager-plan/provider-adapters`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "Copilot SDK workers",
+        adapter_kind: "sdk",
+        models: ["copilot-sdk-default", "copilot-sdk-small"],
+        max_run_token_budget: 120_000,
+      }),
+    });
+    assert.equal(providerAdapter.status, 201);
+    const providerAdapterBody = await providerAdapter.json();
+    assert.equal(providerAdapterBody.provider_adapter.provider, "Copilot SDK workers");
+    assert.equal(providerAdapterBody.provider_adapter.adapter_kind, "sdk");
+    assert.equal(providerAdapterBody.provider_adapter.command_policy, "bounded_control_plane_only");
+
+    const providerAdapters = await fetch(`${base}/api/manager-plan/provider-adapters`);
+    assert.equal(providerAdapters.status, 200);
+    const providerAdaptersBody = await providerAdapters.json();
+    assert.equal(providerAdaptersBody.schema, "yukh-control-plane-provider-adapters-v1");
+    assert.equal(providerAdaptersBody.adapters.length, 1);
+
     const providerProbe = await fetch(`${base}/api/manager-plan/provider-runtime-probes`, {
       method: "POST",
     });
@@ -753,20 +789,17 @@ test("control plane preview persists local manager plan previews without leaking
       providerProbeBody.provider_runtime_probe.probe_scope,
       "local_control_plane_configuration",
     );
-    assert.equal(providerProbeBody.provider_runtime_probe.provider_adapter, "not_configured");
-    assert.equal(providerProbeBody.provider_runtime_probe.executable_check, "not_performed");
-    assert.equal(providerProbeBody.provider_runtime_probe.capability_inventory, "not_requested");
+    assert.equal(providerProbeBody.provider_runtime_probe.provider_adapter, "configured");
+    assert.equal(providerProbeBody.provider_runtime_probe.executable_check, "not_required");
     assert.equal(
-      providerProbeBody.provider_runtime_probe.outcome,
-      "blocked_provider_adapter_not_configured",
+      providerProbeBody.provider_runtime_probe.capability_inventory,
+      "local_inventory_available",
     );
+    assert.equal(providerProbeBody.provider_runtime_probe.outcome, "ready_for_worker_launch");
     assert.equal(providerProbeBody.provider_runtime_probe.worker_launch, "not_performed");
     assert.equal(providerProbeBody.provider_runtime_probe.coordination_write, "not_performed");
     assert.equal(providerProbeBody.provider_runtime_probe.projects_write, "not_performed");
-    assert.equal(
-      providerProbeBody.provider_runtime_probe.next_required_action,
-      "configure_provider_adapter",
-    );
+    assert.equal(providerProbeBody.provider_runtime_probe.next_required_action, "launch_workers");
     assert.match(
       providerProbeBody.provider_runtime_probe.provider_runtime_probe_id,
       /^provider-runtime-probe-/u,
@@ -858,6 +891,12 @@ test("control plane preview persists local manager plan previews without leaking
     });
     assert.equal(providerProbeDenied.status, 405);
     assert.equal(providerProbeDenied.headers.get("allow"), "GET, POST");
+
+    const providerAdapterDenied = await fetch(`${base}/api/manager-plan/provider-adapters`, {
+      method: "DELETE",
+    });
+    assert.equal(providerAdapterDenied.status, 405);
+    assert.equal(providerAdapterDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -879,6 +918,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(html, /Team detail/u);
   assert.match(html, /Plan, workers, tokens and next action/u);
   assert.match(html, /manager-plan-form/u);
+  assert.match(html, /provider-adapter-form/u);
   assert.match(html, /plan-preview/u);
   assert.match(html, /Yukh Projects/u);
   assert.match(html, /Yukh MCP/u);
@@ -905,6 +945,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/worker-delegation-approvals/u);
   assert.match(data, /api\/manager-plan\/worker-launch-preflights/u);
   assert.match(data, /api\/manager-plan\/provider-runtime-probes/u);
+  assert.match(data, /api\/manager-plan\/provider-adapters/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
@@ -915,6 +956,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /Worker delegation approved/u);
   assert.match(data, /Worker launch preflight/u);
   assert.match(data, /Provider runtime probe/u);
+  assert.match(data, /Provider adapter configured/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
   assert.match(data, /worker_launch/u);

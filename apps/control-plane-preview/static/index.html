@@ -262,6 +262,30 @@
                 <h3>New team</h3>
               </div>
             </div>
+            <form class="start-form provider-adapter-form" id="provider-adapter-form">
+              <label
+                >Provider adapter<select id="adapter-provider">
+                  <option>Copilot SDK workers</option>
+                  <option>Codex manager CLI</option>
+                  <option>Codex SDK, planned</option>
+                </select></label
+              >
+              <label
+                >Kind<select id="adapter-kind">
+                  <option>sdk</option>
+                  <option>cli</option>
+                </select></label
+              >
+              <label
+                >Executable path<input id="adapter-executable" placeholder="/absolute/path/for-cli"
+              /></label>
+              <label>Models<input id="adapter-models" value="copilot-sdk-default" /></label>
+              <label
+                >Max tokens<input id="adapter-budget" value="120000" inputmode="numeric"
+              /></label>
+              <button type="submit" class="secondary">Configure provider adapter</button>
+            </form>
+            <div id="provider-adapter-status" class="plan-preview" aria-live="polite"></div>
             <form class="start-form" id="manager-plan-form">
               <label
                 >Goal<textarea id="plan-goal">
