@@ -811,6 +811,38 @@ test("Codex Python app-server does not launch implementation workers while read-
   }
 });
 
+test("Codex Python workspace-write app-server can preflight implementation workers", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-codex-python-write-")));
+  const previous = process.env.YUKH_CODEX_WORKER_PROVIDER;
+  try {
+    process.env.YUKH_CODEX_WORKER_PROVIDER = "python-app-server-workspace-write";
+    const output = runEngagePreflight({
+      workspace: root,
+      goal: "Edit one named file and run one focused test",
+      role: "backend-developer",
+      workProfile: "implementation",
+      preferredRuntime: "codex",
+      teamBudget: 90_000,
+      managerBudget: 20_000,
+      workerBudget: 45_000,
+      workerMaxCommands: 1,
+      workerTimeoutMs: 180_000,
+      codexModels: ["default"],
+      copilotModels: ["default"],
+      codexSkills: ["api-design", "testing"],
+      copilotSkills: ["frontend"],
+    });
+    assert.equal(output.runtime_token_floor?.provider, "python-app-server-workspace-write");
+    assert.equal(output.runtime_token_floor?.minimum_token_budget, 18_000);
+    assert.equal(output.provider_launchable, true);
+    assert.match(output.next_real_action, /Run a managed manager or agent\.engage/u);
+  } finally {
+    if (previous === undefined) delete process.env.YUKH_CODEX_WORKER_PROVIDER;
+    else process.env.YUKH_CODEX_WORKER_PROVIDER = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("approved preflight refuses read-only Python app-server implementation launch", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-python-readonly-launch-")));
   const previous = process.env.YUKH_CODEX_WORKER_PROVIDER;
@@ -1926,6 +1958,56 @@ test("codex python app-server worker captures final response and token accountin
       total_tokens: 115,
       budget_outcome: "within",
     });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("codex python app-server worker forwards workspace-write sandbox explicitly", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "yukh-codex-python-sandbox-")));
+  try {
+    const store = new TeamStore(root);
+    const team = store.create("Codex Python sandbox probe", "codex");
+    const agent = store.spawn(team.team_id, {
+      runtime: "codex",
+      role: "python-developer",
+      task: "Edit one file",
+      profile: {
+        schema: 1,
+        mission: "Implement",
+        model: "codex-test-model",
+        skills: [],
+        instructions: "Be brief",
+      },
+      model_tool_mode: "none",
+      token_budget: 1_000,
+    });
+    const outcome = await runCodexPythonWorker({
+      executable: "/bin/codex",
+      python: process.env.PYTHON ?? "python3",
+      workspace: root,
+      prompt: "Do the task",
+      agent,
+      timeoutMs: 1_000,
+      sandbox: "workspace_write",
+      workerSource: [
+        "import json",
+        "import os",
+        "print(json.dumps({",
+        "  'schema': 1,",
+        "  'status': 'completed',",
+        "  'final_response': os.environ['YUKH_CODEX_PYTHON_SANDBOX'],",
+        "  'usage_last': {",
+        "    'input_tokens': 1,",
+        "    'cached_input_tokens': 0,",
+        "    'output_tokens': 1,",
+        "    'reasoning_output_tokens': 0,",
+        "  },",
+        "}))",
+      ].join("\n"),
+    });
+    assert.equal(outcome.exitCode, 0);
+    assert.equal(outcome.output.summary(), "workspace_write");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

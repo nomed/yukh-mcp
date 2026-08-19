@@ -124,10 +124,18 @@ into the lower-overhead Python app-server provider only after installing
 env = { YUKH_CODEX_WORKER_PROVIDER = "python-app-server", YUKH_CODEX_PYTHON_EXECUTABLE = "/absolute/path/to/python3" }
 ```
 
-This provider is used only when the worker runs with `tool_mode: none`; workers
-that need Coordination or team-control tools stay on the CLI path. The preflight
-token floor remains 120k for the CLI and becomes 18k for the opt-in Python
-app-server path.
+`python-app-server` is read-only and is suitable for review/verification. For an
+approved micro implementation worker, use the explicit workspace-write variant:
+
+```toml
+env = { YUKH_CODEX_WORKER_PROVIDER = "python-app-server-workspace-write", YUKH_CODEX_PYTHON_EXECUTABLE = "/absolute/path/to/python3" }
+```
+
+Both Python providers are used only when the worker runs with `tool_mode: none`;
+workers that need Coordination or team-control tools stay on the CLI path. The
+preflight token floor remains 120k for the CLI and becomes 18k for the opt-in
+Python app-server path. Treat the workspace-write floor as a launch guard until
+the first real edit cycle records fresh usage.
 
 Start work with `manager.start`, not `team.create`. It creates the team and a
 depth-zero manager runtime together, reserves the manager budget and returns a
