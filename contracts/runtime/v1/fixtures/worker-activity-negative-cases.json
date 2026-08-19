@@ -1,0 +1,39 @@
+[
+  {
+    "name": "rejects wildcard publish subjects",
+    "set": {
+      "/subject": "yukh.local.tenant-local.runtime.worker.worker-demo-01.*.v1"
+    },
+    "expected_keyword": "pattern"
+  },
+  {
+    "name": "rejects path-like subject data",
+    "set": {
+      "/subject": "yukh.local.tenant-local.runtime.worker./tmp/worker.log.log-chunked.v1"
+    },
+    "expected_keyword": "pattern"
+  },
+  {
+    "name": "rejects oversized inline log chunks",
+    "set": {
+      "/data/activity_kind": "log-chunked",
+      "/data/log_chunk": "__OVERSIZED_LOG_CHUNK__"
+    },
+    "expected_keyword": "maxLength"
+  },
+  {
+    "name": "requires object-store reference for large artifacts",
+    "set": {
+      "/data/activity_kind": "artifact-recorded"
+    },
+    "delete": ["/data/artifact_ref"],
+    "expected_keyword": "required"
+  },
+  {
+    "name": "rejects mutable projection marker as source of truth",
+    "set": {
+      "/data/projection_source": "kv"
+    },
+    "expected_keyword": "additionalProperties"
+  }
+]

@@ -67,6 +67,7 @@ nav:
   - Explanation:
       - Why Yukh MCP: concepts/why-yukh.md
       - Architecture: architecture/overview.md
+      - Event and subject policy: architecture/event-subject-policy.md
       - Project charter: concepts/project-charter.md
   - Security:
       - Security model: security/security-model.md

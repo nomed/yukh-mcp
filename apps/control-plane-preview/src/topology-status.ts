@@ -44,8 +44,8 @@ const runtimes: readonly TopologyRuntime[] = [
     name: "JetStream runtime",
     owner: "NATS",
     state: "shared_service",
-    writes: "separate stream and bucket namespaces",
-    rule: "May be one physical runtime, never one shared logical contract.",
+    writes: "bounded streams, rebuildable KV projections and object artifacts",
+    rule: "May be one physical runtime, never one shared logical contract or node-local log contract.",
   },
 ];
 

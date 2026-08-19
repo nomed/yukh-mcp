@@ -42,3 +42,11 @@ Post-start writer failure crosses only a bounded recovery-fact interface,
 withholds success, and does not retry provider work. No audit package is wired
 into the gateway, and no durable store, checkpoint authority, recovery profile,
 provider, credential, or mutation is selected.
+
+## Event and subject policy
+
+Distributed runtime state must not depend on node-local log files. Yukh uses
+bounded event streams, CloudEvents-like envelopes and NATS subjects as routing
+keys. The [event and subject policy](event-subject-policy.md) defines the
+Projects, Orchestration, Coordination and Runtime streams, including the
+`worker.activity.v1` runtime event contract.
