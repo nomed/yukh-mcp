@@ -7,10 +7,13 @@ import {
   discoverCopilotModelCatalog,
 } from "../../../packages/team-control/src/model-discovery.js";
 import { TeamStore } from "../../../packages/team-control/src/store.js";
+import { teamRuntimeEntrypoints } from "../../../packages/team-control/src/entrypoints.js";
+import { TeamSupervisor } from "../../../packages/team-control/src/supervisor.js";
 import {
   ControlPlanePlanPreviewStore,
   type ControlPlaneProviderAdapterInput,
   type ControlPlaneProviderModelDiscoverer,
+  type ControlPlaneProviderRunner,
   type ControlPlanePlanPreviewInput,
 } from "./plan-preview-store.js";
 import { createTeamStatus } from "./team-status.js";
@@ -48,6 +51,7 @@ const API_PROVIDER_CAPABILITY_INVENTORIES_PATH =
 const API_WORKER_LAUNCH_CANDIDATES_PATH = "/api/manager-plan/worker-launch-candidates";
 const API_WORKER_LAUNCH_RECEIPTS_PATH = "/api/manager-plan/worker-launch-receipts";
 const API_PROVIDER_WORKER_PROCESSES_PATH = "/api/manager-plan/provider-worker-processes";
+const API_PROVIDER_RUNNER_ATTACHMENTS_PATH = "/api/manager-plan/provider-runner-attachments";
 
 export function parseArguments(argv: readonly string[]): ControlPlaneOptions {
   const options = { host: "127.0.0.1", port: 7345 } as {
@@ -120,6 +124,80 @@ export const discoverConfiguredProviderModels: ControlPlaneProviderModelDiscover
   }
   return undefined;
 };
+
+function runtimeForProvider(provider: string): "codex" | "copilot" {
+  return provider === "Copilot SDK workers" ? "copilot" : "codex";
+}
+
+function createConfiguredProviderRunner(
+  workspace: string,
+  teamStore: TeamStore,
+): ControlPlaneProviderRunner | undefined {
+  const launcher = process.env.YUKH_COORDINATION_LAUNCHER;
+  const codex = process.env.YUKH_CODEX_EXECUTABLE;
+  const copilot = process.env.YUKH_COPILOT_EXECUTABLE;
+  if (!launcher || !codex || !copilot) return undefined;
+
+  const entrypoints = teamRuntimeEntrypoints();
+  const supervisor = new TeamSupervisor({
+    node: process.execPath,
+    worker: entrypoints.worker,
+    coordinationMcp: entrypoints.coordinationMcp,
+    teamControlMcp: entrypoints.teamControlMcp,
+    launcher,
+    codex,
+    copilot,
+    workspace,
+    profileEnvironment: {
+      ...(process.env.YUKH_PREVIEW_RUNTIME
+        ? { YUKH_PREVIEW_RUNTIME: process.env.YUKH_PREVIEW_RUNTIME }
+        : {}),
+      ...(process.env.YUKH_COPILOT_WORKER_PROVIDER
+        ? { YUKH_COPILOT_WORKER_PROVIDER: process.env.YUKH_COPILOT_WORKER_PROVIDER }
+        : {}),
+      ...(process.env.YUKH_CODEX_WORKER_PROVIDER
+        ? { YUKH_CODEX_WORKER_PROVIDER: process.env.YUKH_CODEX_WORKER_PROVIDER }
+        : {}),
+      ...(process.env.YUKH_CODEX_PYTHON_EXECUTABLE
+        ? { YUKH_CODEX_PYTHON_EXECUTABLE: process.env.YUKH_CODEX_PYTHON_EXECUTABLE }
+        : {}),
+    },
+  });
+
+  return async ({ process: providerProcess }) => {
+    const runtime = runtimeForProvider(providerProcess.provider);
+    const tokenBudget = providerProcess.approved_worker_token_budget;
+    const team = teamStore.create(
+      `Control Plane provider runner attachment ${providerProcess.provider_worker_process_id}`,
+      runtime,
+      Math.max(1, providerProcess.approved_worker_count),
+      1,
+      tokenBudget,
+    );
+    const workerBudget = Math.max(
+      1_000,
+      Math.floor(tokenBudget / providerProcess.approved_worker_count),
+    );
+    const agent = teamStore.spawn(team.team_id, {
+      runtime,
+      role: "provider-runner",
+      task: "Attach the provider worker runtime to the Yukh Control Plane. Do not modify files. Confirm readiness and report the Coordination identity, runtime and next observable status.",
+      can_spawn: false,
+      token_budget: workerBudget,
+      model_tool_mode: "none",
+      max_commands: 0,
+      timeout_ms: 60_000,
+    });
+    const launched = supervisor.launch(agent);
+    return {
+      runtime,
+      team_id: team.team_id,
+      agent_id: agent.agent_id,
+      pid: launched.pid,
+      log_path: launched.log,
+    };
+  };
+}
 
 export function createControlPlaneServer(
   staticRoot = defaultStaticRoot(),
@@ -248,6 +326,60 @@ export function createControlPlaneServer(
               code: "worker_launch_receipt_required",
             }),
           );
+        }
+        return;
+      }
+      response.writeHead(405, {
+        allow: "GET, POST",
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+      return;
+    }
+
+    if (
+      request.url &&
+      new URL(request.url, "http://127.0.0.1").pathname === API_PROVIDER_RUNNER_ATTACHMENTS_PATH
+    ) {
+      if (!options.planPreviewStore) {
+        response.writeHead(503, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ schema: 1, status: "error", code: "store_unconfigured" }));
+        return;
+      }
+      if (request.method === "GET") {
+        response.writeHead(200, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify(options.planPreviewStore.providerRunnerAttachments()));
+        return;
+      }
+      if (request.method === "POST") {
+        try {
+          const record = await options.planPreviewStore.attachProviderRunner();
+          response.writeHead(201, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(
+            JSON.stringify({ schema: 1, status: "ok", provider_runner_attachment: record }),
+          );
+        } catch (error) {
+          const code =
+            error instanceof Error && error.message === "provider_runner_unconfigured"
+              ? "provider_runner_unconfigured"
+              : error instanceof TypeError
+                ? "provider_worker_process_required"
+                : "provider_runner_attachment_failed";
+          response.writeHead(409, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(JSON.stringify({ schema: 1, status: "error", code }));
         }
         return;
       }
@@ -985,12 +1117,16 @@ export function createControlPlaneServer(
 export async function startControlPlane(options: ControlPlaneOptions): Promise<Server> {
   const workspace =
     options.workspace ?? process.env.YUKH_CONVERSATION_WORKSPACE ?? process.env.YUKH_TEAM_WORKSPACE;
+  const teamStore = workspace ? new TeamStore(workspace) : undefined;
+  const providerRunner =
+    workspace && teamStore ? createConfiguredProviderRunner(workspace, teamStore) : undefined;
   const server = createControlPlaneServer(options.staticRoot, {
-    ...(workspace ? { teamStore: new TeamStore(workspace) } : {}),
-    ...(workspace
+    ...(teamStore ? { teamStore } : {}),
+    ...(workspace && teamStore
       ? {
           planPreviewStore: new ControlPlanePlanPreviewStore(workspace, {
             discoverProviderModels: discoverConfiguredProviderModels,
+            ...(providerRunner ? { providerRunner } : {}),
           }),
         }
       : {}),

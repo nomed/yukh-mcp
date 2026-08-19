@@ -875,6 +875,21 @@ const createProviderWorkerProcess = async () => {
   }
 };
 
+const attachProviderRunner = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/provider-runner-attachments", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.provider_runner_attachment ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderProviderAdapter = (adapter) => {
   if (!adapter) return "";
   return `
@@ -1113,6 +1128,25 @@ const renderProviderWorkerProcess = (process) => {
       </div>
       <p class="muted">Coordination write: ${escapeHtml(process.coordination_write)} · Projects write: ${escapeHtml(process.projects_write)}.</p>
       <p class="muted">Next required action: ${escapeHtml(process.next_required_action)}.</p>
+      <button type="button" class="secondary provider-runner-attachment-button">Attach provider runner</button>
+    </div>
+  `;
+};
+
+const renderProviderRunnerAttachment = (attachment) => {
+  if (!attachment) return "";
+  return `
+    <div class="provider-runner-attachment">
+      <span>Provider runner attached</span>
+      <strong>${escapeHtml(attachment.provider_runner_attachment_id)}</strong>
+      <p class="muted">${escapeHtml(attachment.runtime)} · pid ${attachment.pid.toLocaleString()} · team ${escapeHtml(attachment.team_id)}.</p>
+      <div class="preflight-grid">
+        <article><span>Agent</span><strong>${escapeHtml(attachment.agent_id)}</strong></article>
+        <article><span>Process</span><strong>${escapeHtml(attachment.provider_process_start)}</strong></article>
+        <article><span>Launch</span><strong>${escapeHtml(attachment.worker_launch)}</strong></article>
+      </div>
+      <p class="muted">Log: ${escapeHtml(attachment.log_path)}</p>
+      <p class="muted">Tokens reserved: ${attachment.token_budget.toLocaleString()} · next: ${escapeHtml(attachment.next_required_action)}.</p>
     </div>
   `;
 };
@@ -1458,6 +1492,22 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".worker-launch-receipt")
     ?.insertAdjacentHTML("afterend", renderProviderWorkerProcess(process));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".provider-runner-attachment-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const attachment = await attachProviderRunner();
+  if (!attachment) {
+    button.removeAttribute("disabled");
+    button.textContent = "Provider runner unavailable";
+    return;
+  }
+  button.textContent = "Provider runner attached";
+  button
+    .closest(".provider-worker-process")
+    ?.insertAdjacentHTML("afterend", renderProviderRunnerAttachment(attachment));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
