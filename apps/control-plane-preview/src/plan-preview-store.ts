@@ -90,6 +90,26 @@ export type ControlPlaneManagerRunStatus = {
   readonly runs: readonly ControlPlaneManagerRunRecord[];
 };
 
+export type ControlPlaneManagerRuntimeConnectionRecord = {
+  readonly schema: 1;
+  readonly runtime_connection_id: string;
+  readonly receipt_id: string;
+  readonly state: "connected";
+  readonly manager_run_id: string;
+  readonly launch_intent_id: string;
+  readonly provider: string;
+  readonly manager_token_budget: number;
+  readonly command_policy: "not_started";
+  readonly created_at: string;
+  readonly next_required_action: "start_manager_process";
+};
+
+export type ControlPlaneManagerRuntimeConnectionStatus = {
+  readonly schema: "yukh-control-plane-manager-runtime-connections-v1";
+  readonly source: "local-control-plane-store";
+  readonly connections: readonly ControlPlaneManagerRuntimeConnectionRecord[];
+};
+
 export type ControlPlanePlanPreviewInput = {
   readonly goal: string;
   readonly mode: string;
@@ -103,6 +123,7 @@ type Document = {
   readonly previews: readonly ControlPlanePlanPreviewRecord[];
   readonly launch_intents?: readonly ControlPlaneLaunchIntentRecord[];
   readonly manager_runs?: readonly ControlPlaneManagerRunRecord[];
+  readonly manager_runtime_connections?: readonly ControlPlaneManagerRuntimeConnectionRecord[];
 };
 
 const validMode = new Set(["plan-first", "delegate, explicit workers"]);
@@ -242,6 +263,50 @@ export class ControlPlanePlanPreviewStore {
     };
   }
 
+  managerRuntimeConnections(): ControlPlaneManagerRuntimeConnectionStatus {
+    return {
+      schema: "yukh-control-plane-manager-runtime-connections-v1",
+      source: "local-control-plane-store",
+      connections: this.#read().manager_runtime_connections ?? [],
+    };
+  }
+
+  connectManagerRuntime(): ControlPlaneManagerRuntimeConnectionRecord {
+    const document = this.#read();
+    const managerRun = document.manager_runs?.[0];
+    if (!managerRun) {
+      throw new TypeError("missing manager run");
+    }
+    const existing = document.manager_runtime_connections?.find(
+      (connection) => connection.manager_run_id === managerRun.manager_run_id,
+    );
+    if (existing) return existing;
+    const record: ControlPlaneManagerRuntimeConnectionRecord = {
+      schema: 1,
+      runtime_connection_id: `manager-runtime-${randomUUID()}`,
+      receipt_id: `manager-runtime-receipt-${randomUUID()}`,
+      state: "connected",
+      manager_run_id: managerRun.manager_run_id,
+      launch_intent_id: managerRun.launch_intent_id,
+      provider: managerRun.provider,
+      manager_token_budget: managerRun.manager_token_budget,
+      command_policy: "not_started",
+      created_at: new Date().toISOString(),
+      next_required_action: "start_manager_process",
+    };
+    this.#write({
+      schema: 1,
+      previews: document.previews,
+      launch_intents: document.launch_intents ?? [],
+      manager_runs: document.manager_runs ?? [],
+      manager_runtime_connections: [record, ...(document.manager_runtime_connections ?? [])].slice(
+        0,
+        20,
+      ),
+    });
+    return record;
+  }
+
   createManagerRun(): ControlPlaneManagerRunRecord {
     const document = this.#read();
     const launchIntent = document.launch_intents?.[0];
@@ -275,6 +340,7 @@ export class ControlPlanePlanPreviewStore {
       previews: document.previews,
       launch_intents: document.launch_intents ?? [],
       manager_runs: [record, ...(document.manager_runs ?? [])].slice(0, 20),
+      manager_runtime_connections: document.manager_runtime_connections ?? [],
     });
     return record;
   }
@@ -308,6 +374,7 @@ export class ControlPlanePlanPreviewStore {
       previews: document.previews,
       launch_intents: [record, ...(document.launch_intents ?? [])].slice(0, 20),
       manager_runs: document.manager_runs ?? [],
+      manager_runtime_connections: document.manager_runtime_connections ?? [],
     });
     return record;
   }
@@ -341,6 +408,7 @@ export class ControlPlanePlanPreviewStore {
       previews: [record, ...document.previews].slice(0, 20),
       launch_intents: document.launch_intents ?? [],
       manager_runs: document.manager_runs ?? [],
+      manager_runtime_connections: document.manager_runtime_connections ?? [],
     });
     return record;
   }
@@ -360,9 +428,18 @@ export class ControlPlanePlanPreviewStore {
         manager_runs: Array.isArray(parsed.manager_runs)
           ? parsed.manager_runs.filter((item) => item?.schema === 1)
           : [],
+        manager_runtime_connections: Array.isArray(parsed.manager_runtime_connections)
+          ? parsed.manager_runtime_connections.filter((item) => item?.schema === 1)
+          : [],
       };
     } catch {
-      return { schema: 1, previews: [], launch_intents: [], manager_runs: [] };
+      return {
+        schema: 1,
+        previews: [],
+        launch_intents: [],
+        manager_runs: [],
+        manager_runtime_connections: [],
+      };
     }
   }
 
