@@ -890,6 +890,21 @@ const attachProviderRunner = async () => {
   }
 };
 
+const observeProviderWorker = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/provider-worker-observations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.provider_worker_observation ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const renderProviderAdapter = (adapter) => {
   if (!adapter) return "";
   return `
@@ -1147,6 +1162,25 @@ const renderProviderRunnerAttachment = (attachment) => {
       </div>
       <p class="muted">Log: ${escapeHtml(attachment.log_path)}</p>
       <p class="muted">Tokens reserved: ${attachment.token_budget.toLocaleString()} · next: ${escapeHtml(attachment.next_required_action)}.</p>
+      <button type="button" class="secondary provider-worker-observation-button">Observe worker completion</button>
+    </div>
+  `;
+};
+
+const renderProviderWorkerObservation = (observation) => {
+  if (!observation) return "";
+  return `
+    <div class="provider-worker-observation">
+      <span>Provider worker observation</span>
+      <strong>${escapeHtml(observation.provider_worker_observation_id)}</strong>
+      <p class="muted">${escapeHtml(observation.worker_state)} · launch ${escapeHtml(observation.worker_launch)} · tokens ${observation.observed_tokens.toLocaleString()}/${observation.token_budget.toLocaleString()}.</p>
+      <div class="preflight-grid">
+        <article><span>Runtime</span><strong>${escapeHtml(observation.runtime)}</strong></article>
+        <article><span>Agent</span><strong>${escapeHtml(observation.agent_id)}</strong></article>
+        <article><span>Budget</span><strong>${escapeHtml(observation.budget_outcome ?? "pending")}</strong></article>
+      </div>
+      <p class="muted">Outcome: ${escapeHtml(observation.completion_outcome ?? "pending")} · next: ${escapeHtml(observation.next_required_action)}.</p>
+      <p class="muted">Log: ${escapeHtml(observation.log_path)}</p>
     </div>
   `;
 };
@@ -1508,6 +1542,26 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".provider-worker-process")
     ?.insertAdjacentHTML("afterend", renderProviderRunnerAttachment(attachment));
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".provider-worker-observation-button");
+  if (!button) return;
+  button.setAttribute("disabled", "true");
+  const observation = await observeProviderWorker();
+  if (!observation) {
+    button.removeAttribute("disabled");
+    button.textContent = "Worker observation unavailable";
+    return;
+  }
+  button.removeAttribute("disabled");
+  button.textContent =
+    observation.next_required_action === "continue_observing"
+      ? "Observe worker again"
+      : "Worker output ready";
+  button
+    .closest(".provider-runner-attachment")
+    ?.insertAdjacentHTML("afterend", renderProviderWorkerObservation(observation));
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {

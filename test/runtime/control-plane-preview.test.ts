@@ -213,6 +213,7 @@ test("control plane preview persists local manager plan previews without leaking
 
   const workspace = await mkdtemp(join(tmpdir(), "yukh-control-plane-plan-workspace-"));
   let providerRunnerCalls = 0;
+  let providerObserverCalls = 0;
   const planPreviewStore = new ControlPlanePlanPreviewStore(workspace, {
     providerRunner: async ({ process }) => {
       providerRunnerCalls += 1;
@@ -223,6 +224,23 @@ test("control plane preview persists local manager plan previews without leaking
         agent_id: "worker-22222222-2222-4222-8222-222222222222",
         pid: 12345,
         log_path: join(workspace, ".yukh", "teams", "fake.log"),
+      };
+    },
+    providerWorkerObserver: async ({ attachment }) => {
+      providerObserverCalls += 1;
+      assert.equal(attachment.provider_process_start, "attached");
+      if (providerObserverCalls === 1) {
+        return {
+          worker_state: "running",
+          observed_tokens: 12_000,
+          budget_outcome: "within",
+        };
+      }
+      return {
+        worker_state: "completed",
+        completion_outcome: "succeeded",
+        observed_tokens: 18_000,
+        budget_outcome: "within",
       };
     },
   });
@@ -358,6 +376,16 @@ test("control plane preview persists local manager plan previews without leaking
     assert.equal(
       (await blockedProviderRunnerAttachment.json()).code,
       "provider_worker_process_required",
+    );
+
+    const blockedProviderWorkerObservation = await fetch(
+      `${base}/api/manager-plan/provider-worker-observations`,
+      { method: "POST" },
+    );
+    assert.equal(blockedProviderWorkerObservation.status, 409);
+    assert.equal(
+      (await blockedProviderWorkerObservation.json()).code,
+      "provider_runner_attachment_required",
     );
 
     const invalidProviderAdapter = await fetch(`${base}/api/manager-plan/provider-adapters`, {
@@ -1204,6 +1232,89 @@ test("control plane preview persists local manager plan previews without leaking
     );
     assert.equal(providerRunnerAttachmentsBody.attachments.length, 1);
 
+    const providerWorkerObservation = await fetch(
+      `${base}/api/manager-plan/provider-worker-observations`,
+      { method: "POST" },
+    );
+    assert.equal(providerWorkerObservation.status, 201);
+    const providerWorkerObservationBody = await providerWorkerObservation.json();
+    assert.equal(providerObserverCalls, 1);
+    assert.equal(
+      providerWorkerObservationBody.provider_worker_observation.provider_runner_attachment_id,
+      providerRunnerAttachmentBody.provider_runner_attachment.provider_runner_attachment_id,
+    );
+    assert.equal(
+      providerWorkerObservationBody.provider_worker_observation.provider_worker_process_id,
+      providerWorkerProcessBody.provider_worker_process.provider_worker_process_id,
+    );
+    assert.equal(
+      providerWorkerObservationBody.provider_worker_observation.worker_launch_receipt_id,
+      workerLaunchReceiptBody.worker_launch_receipt.worker_launch_receipt_id,
+    );
+    assert.equal(providerWorkerObservationBody.provider_worker_observation.runtime, "copilot");
+    assert.equal(
+      providerWorkerObservationBody.provider_worker_observation.team_id,
+      "team-11111111-1111-4111-8111-111111111111",
+    );
+    assert.equal(
+      providerWorkerObservationBody.provider_worker_observation.agent_id,
+      "worker-22222222-2222-4222-8222-222222222222",
+    );
+    assert.equal(providerWorkerObservationBody.provider_worker_observation.worker_state, "running");
+    assert.equal(
+      providerWorkerObservationBody.provider_worker_observation.worker_launch,
+      "running",
+    );
+    assert.equal(providerWorkerObservationBody.provider_worker_observation.observed_tokens, 12_000);
+    assert.equal(providerWorkerObservationBody.provider_worker_observation.token_budget, 66_000);
+    assert.equal(
+      providerWorkerObservationBody.provider_worker_observation.budget_outcome,
+      "within",
+    );
+    assert.equal(
+      providerWorkerObservationBody.provider_worker_observation.next_required_action,
+      "continue_observing",
+    );
+
+    const completedProviderWorkerObservation = await fetch(
+      `${base}/api/manager-plan/provider-worker-observations`,
+      { method: "POST" },
+    );
+    assert.equal(completedProviderWorkerObservation.status, 201);
+    const completedProviderWorkerObservationBody = await completedProviderWorkerObservation.json();
+    assert.equal(providerObserverCalls, 2);
+    assert.equal(
+      completedProviderWorkerObservationBody.provider_worker_observation.worker_state,
+      "completed",
+    );
+    assert.equal(
+      completedProviderWorkerObservationBody.provider_worker_observation.worker_launch,
+      "completed",
+    );
+    assert.equal(
+      completedProviderWorkerObservationBody.provider_worker_observation.completion_outcome,
+      "succeeded",
+    );
+    assert.equal(
+      completedProviderWorkerObservationBody.provider_worker_observation.observed_tokens,
+      18_000,
+    );
+    assert.equal(
+      completedProviderWorkerObservationBody.provider_worker_observation.next_required_action,
+      "review_worker_output",
+    );
+
+    const providerWorkerObservations = await fetch(
+      `${base}/api/manager-plan/provider-worker-observations`,
+    );
+    assert.equal(providerWorkerObservations.status, 200);
+    const providerWorkerObservationsBody = await providerWorkerObservations.json();
+    assert.equal(
+      providerWorkerObservationsBody.schema,
+      "yukh-control-plane-provider-worker-observations-v1",
+    );
+    assert.equal(providerWorkerObservationsBody.observations.length, 2);
+
     const persisted = await fetch(`${base}/api/manager-plan/previews`);
     const persistedBody = await persisted.json();
     assert.equal(persistedBody.previews.length, 2);
@@ -1315,6 +1426,13 @@ test("control plane preview persists local manager plan previews without leaking
     );
     assert.equal(providerRunnerAttachmentDenied.status, 405);
     assert.equal(providerRunnerAttachmentDenied.headers.get("allow"), "GET, POST");
+
+    const providerWorkerObservationDenied = await fetch(
+      `${base}/api/manager-plan/provider-worker-observations`,
+      { method: "DELETE" },
+    );
+    assert.equal(providerWorkerObservationDenied.status, 405);
+    assert.equal(providerWorkerObservationDenied.headers.get("allow"), "GET, POST");
   } finally {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
@@ -1416,6 +1534,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/worker-launch-receipts/u);
   assert.match(data, /api\/manager-plan\/provider-worker-processes/u);
   assert.match(data, /api\/manager-plan\/provider-runner-attachments/u);
+  assert.match(data, /api\/manager-plan\/provider-worker-observations/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
@@ -1436,6 +1555,8 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /provider-worker-process-button/u);
   assert.match(data, /Provider runner attached/u);
   assert.match(data, /provider-runner-attachment-button/u);
+  assert.match(data, /Provider worker observation/u);
+  assert.match(data, /provider-worker-observation-button/u);
   assert.match(data, /provider_process/u);
   assert.match(data, /worker_delegation/u);
   assert.match(data, /worker_launch/u);
@@ -1502,6 +1623,7 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.worker-launch-receipt/u);
   assert.match(css, /\.provider-worker-process/u);
   assert.match(css, /\.provider-runner-attachment/u);
+  assert.match(css, /\.provider-worker-observation/u);
   assert.match(css, /\.preflight-grid/u);
   assert.match(css, /@media \(max-width: 640px\)/u);
 });

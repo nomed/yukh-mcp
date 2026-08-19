@@ -14,6 +14,7 @@ import {
   type ControlPlaneProviderAdapterInput,
   type ControlPlaneProviderModelDiscoverer,
   type ControlPlaneProviderRunner,
+  type ControlPlaneProviderWorkerObserver,
   type ControlPlanePlanPreviewInput,
 } from "./plan-preview-store.js";
 import { createTeamStatus } from "./team-status.js";
@@ -52,6 +53,7 @@ const API_WORKER_LAUNCH_CANDIDATES_PATH = "/api/manager-plan/worker-launch-candi
 const API_WORKER_LAUNCH_RECEIPTS_PATH = "/api/manager-plan/worker-launch-receipts";
 const API_PROVIDER_WORKER_PROCESSES_PATH = "/api/manager-plan/provider-worker-processes";
 const API_PROVIDER_RUNNER_ATTACHMENTS_PATH = "/api/manager-plan/provider-runner-attachments";
+const API_PROVIDER_WORKER_OBSERVATIONS_PATH = "/api/manager-plan/provider-worker-observations";
 
 export function parseArguments(argv: readonly string[]): ControlPlaneOptions {
   const options = { host: "127.0.0.1", port: 7345 } as {
@@ -195,6 +197,20 @@ function createConfiguredProviderRunner(
       agent_id: agent.agent_id,
       pid: launched.pid,
       log_path: launched.log,
+    };
+  };
+}
+
+function createConfiguredProviderWorkerObserver(
+  teamStore: TeamStore,
+): ControlPlaneProviderWorkerObserver {
+  return async ({ attachment }) => {
+    const agent = teamStore.agent(attachment.team_id, attachment.agent_id);
+    return {
+      worker_state: agent.state,
+      ...(agent.completion ? { completion_outcome: agent.completion.outcome } : {}),
+      observed_tokens: agent.usage?.total_tokens ?? 0,
+      ...(agent.usage ? { budget_outcome: agent.usage.budget_outcome } : {}),
     };
   };
 }
@@ -375,6 +391,60 @@ export function createControlPlaneServer(
               : error instanceof TypeError
                 ? "provider_worker_process_required"
                 : "provider_runner_attachment_failed";
+          response.writeHead(409, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(JSON.stringify({ schema: 1, status: "error", code }));
+        }
+        return;
+      }
+      response.writeHead(405, {
+        allow: "GET, POST",
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+      return;
+    }
+
+    if (
+      request.url &&
+      new URL(request.url, "http://127.0.0.1").pathname === API_PROVIDER_WORKER_OBSERVATIONS_PATH
+    ) {
+      if (!options.planPreviewStore) {
+        response.writeHead(503, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ schema: 1, status: "error", code: "store_unconfigured" }));
+        return;
+      }
+      if (request.method === "GET") {
+        response.writeHead(200, {
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify(options.planPreviewStore.providerWorkerObservations()));
+        return;
+      }
+      if (request.method === "POST") {
+        try {
+          const record = await options.planPreviewStore.observeProviderWorker();
+          response.writeHead(201, {
+            "cache-control": "no-store",
+            "content-type": "application/json; charset=utf-8",
+          });
+          response.end(
+            JSON.stringify({ schema: 1, status: "ok", provider_worker_observation: record }),
+          );
+        } catch (error) {
+          const code =
+            error instanceof Error && error.message === "provider_worker_observer_unconfigured"
+              ? "provider_worker_observer_unconfigured"
+              : error instanceof TypeError
+                ? "provider_runner_attachment_required"
+                : "provider_worker_observation_failed";
           response.writeHead(409, {
             "cache-control": "no-store",
             "content-type": "application/json; charset=utf-8",
@@ -1127,6 +1197,7 @@ export async function startControlPlane(options: ControlPlaneOptions): Promise<S
           planPreviewStore: new ControlPlanePlanPreviewStore(workspace, {
             discoverProviderModels: discoverConfiguredProviderModels,
             ...(providerRunner ? { providerRunner } : {}),
+            providerWorkerObserver: createConfiguredProviderWorkerObserver(teamStore),
           }),
         }
       : {}),
