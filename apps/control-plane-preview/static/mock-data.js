@@ -1355,6 +1355,19 @@ const renderWorkerActivityFeed = (status) => {
   `;
 };
 
+const renderGuidedRunStatus = ({ state, title, detail }) => `
+  <div class="guided-run-status ${escapeHtml(state)}">
+    <span>Guided start</span>
+    <strong>${escapeHtml(title)}</strong>
+    <p class="muted">${escapeHtml(detail)}</p>
+  </div>
+`;
+
+const appendGuidedRunStep = (anchor, html) => {
+  anchor?.insertAdjacentHTML("afterend", html);
+  return anchor?.nextElementSibling ?? anchor;
+};
+
 const readinessPanel = (readiness) => {
   if (!readiness) return "";
   const runtime = readiness.preview_runtime;
@@ -1378,13 +1391,139 @@ const readinessPanel = (readiness) => {
       }
       ${
         canRecordLaunchIntent
-          ? '<button type="button" class="secondary launch-intent-button">Record launch intent</button>'
+          ? '<button type="button" class="secondary launch-intent-button">Record launch intent</button><button type="button" class="primary guided-team-run-button">Start guided team run</button>'
           : runtimeBlocksLaunch
             ? '<button type="button" class="secondary" disabled>Runtime attention required</button>'
             : ""
       }
     </div>
   `;
+};
+
+const startGuidedTeamRun = async (button) => {
+  button.setAttribute("disabled", "true");
+  button.textContent = "Starting guided run…";
+  let anchor = button.closest(".readiness-panel");
+  const runStep = async (title, action, render, blockedDetail) => {
+    const result = await action();
+    if (!result) {
+      anchor = appendGuidedRunStep(
+        anchor,
+        renderGuidedRunStatus({
+          state: "blocked",
+          title: `${title} blocked`,
+          detail: blockedDetail,
+        }),
+      );
+      return null;
+    }
+    anchor = appendGuidedRunStep(anchor, render(result));
+    return result;
+  };
+
+  const intent = await runStep(
+    "Launch intent",
+    createLaunchIntent,
+    renderLaunchIntent,
+    "Launch readiness is blocked. Recheck runtime and approval receipts.",
+  );
+  if (!intent) return;
+  const run = await runStep(
+    "Manager run",
+    createManagerRun,
+    renderManagerRun,
+    "Launch intent is missing or already inconsistent.",
+  );
+  if (!run) return;
+  const connection = await runStep(
+    "Manager runtime",
+    connectManagerRuntime,
+    renderRuntimeConnection,
+    "Manager run must exist before runtime connection.",
+  );
+  if (!connection) return;
+  const manager = await runStep(
+    "Manager process",
+    startManagerProcess,
+    renderManagerProcess,
+    "Provider runner is not configured for manager process start.",
+  );
+  if (!manager) return;
+  const ready = await runStep(
+    "Manager ready receipt",
+    recordManagerReadyReceipt,
+    renderManagerReadyReceipt,
+    "Manager process must start before ready receipt.",
+  );
+  if (!ready) return;
+  const delegation = await runStep(
+    "Worker delegation plan",
+    prepareWorkerDelegationPlan,
+    renderWorkerDelegationPlan,
+    "Manager ready receipt is required before worker delegation.",
+  );
+  if (!delegation) return;
+  const approval = await runStep(
+    "Worker delegation approval",
+    approveWorkerDelegationPlan,
+    renderWorkerDelegationApproval,
+    "Worker delegation plan must be available before approval.",
+  );
+  if (!approval) return;
+  const preflight = await runStep(
+    "Worker launch preflight",
+    preflightApprovedWorkerLaunch,
+    renderWorkerLaunchPreflight,
+    "Worker delegation approval is required before preflight.",
+  );
+  if (!preflight) return;
+  const probe = await runStep(
+    "Provider runtime probe",
+    probeProviderRuntime,
+    renderProviderRuntimeProbe,
+    "Configure a provider adapter before probing runtime capability.",
+  );
+  if (!probe) return;
+  const inventory = await runStep(
+    "Provider capability inventory",
+    inventoryProviderCapabilities,
+    renderProviderCapabilityInventory,
+    "Configure a provider adapter and model catalog before launch candidate creation.",
+  );
+  if (!inventory) return;
+  const candidate = await runStep(
+    "Worker launch candidate",
+    createWorkerLaunchCandidate,
+    renderWorkerLaunchCandidate,
+    "Runtime probe and provider capability inventory are required.",
+  );
+  if (!candidate) return;
+  const receipt = await runStep(
+    "Worker launch receipt",
+    createWorkerLaunchReceipt,
+    renderWorkerLaunchReceipt,
+    "Worker launch candidate must be recorded first.",
+  );
+  if (!receipt) return;
+  const process = await runStep(
+    "Provider worker process",
+    createProviderWorkerProcess,
+    renderProviderWorkerProcess,
+    "Worker launch receipt is required before provider process start.",
+  );
+  if (!process) return;
+  const attachment = await runStep(
+    "Provider runner attachment",
+    attachProviderRunner,
+    renderProviderRunnerAttachment,
+    "Provider runner is not configured or the provider process failed to start.",
+  );
+  if (!attachment) return;
+  const activity = await recordWorkerActivity();
+  if (activity) {
+    anchor = appendGuidedRunStep(anchor, renderWorkerActivity(activity));
+  }
+  button.textContent = "Guided run started";
 };
 
 const renderPersistedPlanPreview = (preview, readiness = null) => {
@@ -1518,6 +1657,12 @@ byId("plan-preview").addEventListener("click", async (event) => {
   if (readiness) {
     card?.insertAdjacentHTML("beforeend", readinessPanel(readiness));
   }
+});
+
+byId("plan-preview").addEventListener("click", async (event) => {
+  const button = event.target.closest(".guided-team-run-button");
+  if (!button) return;
+  await startGuidedTeamRun(button);
 });
 
 byId("plan-preview").addEventListener("click", async (event) => {
