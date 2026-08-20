@@ -1713,6 +1713,11 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   const data = await readFile("apps/control-plane-preview/static/mock-data.js", "utf8");
 
   assert.match(html, /Runtime topology/u);
+  assert.match(html, /Local suite status/u);
+  assert.match(html, /Stack acceso\. Worker runner non ancora collegato/u);
+  assert.match(html, /Operator checklist/u);
+  assert.match(html, /Cosa guardare adesso/u);
+  assert.match(html, /Start team disabled/u);
   assert.match(html, /Who owns what/u);
   assert.match(html, /Command center/u);
   assert.match(html, /Managers, teams and work in motion/u);
@@ -1838,6 +1843,8 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.doesNotMatch(`${html}\n${data}`, /mermaid/iu);
 
   const styles = await readFile("apps/control-plane-preview/static/styles.css", "utf8");
+  assert.match(styles, /\.operator-checklist/u);
+  assert.match(styles, /button:disabled/u);
   assert.match(styles, /\.worker-activity/u);
   assert.match(styles, /\.preview-runtime-panel/u);
   assert.match(styles, /\.real-readiness/u);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { connect } from "node:net";
 import { URL } from "node:url";
 
@@ -51,17 +51,24 @@ report("launcher: compose-local-suite");
 checks.set("runtime_mode", "compose-volume");
 
 for (const file of [
+  "runtime-ready.json",
   "coordinator.json",
   "server.crt",
-  "server.key",
-  "supervisor.token",
-  "receipt-signing.key",
 ]) {
   try {
     await readFile(`${runtime}/${file}`);
     checks.set(file, "present");
   } catch {
-    problem(`missing ${runtime}/${file}`);
+    problem(`missing or unreadable public runtime file ${runtime}/${file}`);
+  }
+}
+
+for (const file of ["server.key", "supervisor.token", "receipt-signing.key"]) {
+  try {
+    await stat(`${runtime}/${file}`);
+    checks.set(file, "present-private");
+  } catch {
+    warning(`private runtime file is not visible from Control Plane: ${runtime}/${file}`);
   }
 }
 

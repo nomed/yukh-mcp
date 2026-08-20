@@ -20,7 +20,9 @@
 
     <main class="shell">
       <aside class="sidebar" aria-label="Projects">
-        <button class="primary">Start team</button>
+        <button class="primary" disabled title="Worker runner is not configured in compose yet">
+          Start team
+        </button>
         <nav>
           <a class="active" href="#dashboard">Command center</a>
           <a href="#topology">Runtime topology</a>
@@ -41,16 +43,52 @@
       <section class="content" id="dashboard">
         <section class="hero card">
           <div>
-            <p class="eyebrow">Manager-first run</p>
-            <h2>Use Yukh without manual agent ping-pong.</h2>
+            <p class="eyebrow">Local suite status</p>
+            <h2>Stack acceso. Worker runner non ancora collegato.</h2>
             <p>
-              Start from a goal, inspect the manager plan, approve delegation only when budget,
-              worker roles and provider choices are clear.
+              Questa compose avvia UI, NATS JetStream, gateway e Coordination. Per usare davvero
+              manager e worker serve il prossimo collegamento: SDK/host runner verso Codex e
+              Copilot.
             </p>
           </div>
           <div class="hero-actions">
-            <button class="primary">New plan-first run</button>
-            <button class="secondary">Open latest logs</button>
+            <button class="primary" disabled title="Provider runner missing in local compose">
+              Start team disabled
+            </button>
+            <a class="secondary button-link" href="#operator-checklist">Cosa posso fare ora</a>
+          </div>
+        </section>
+
+        <section class="card operator-checklist-card" id="operator-checklist">
+          <div class="section-title">
+            <div>
+              <p class="eyebrow">Operator checklist</p>
+              <h3>Cosa guardare adesso</h3>
+            </div>
+            <span class="status-pill small"><span class="dot warn"></span>compose preview</span>
+          </div>
+          <div class="operator-checklist">
+            <article>
+              <strong>1. Stack locale</strong>
+              <p class="muted">
+                Conferma che runtime, Coordination e JetStream siano disponibili. Se qui c’è un
+                problema, non ha senso provare agenti.
+              </p>
+            </article>
+            <article>
+              <strong>2. Control Plane</strong>
+              <p class="muted">
+                Questa UI ora serve a osservare e configurare. I dati team sotto sono preview finché
+                il runner non viene collegato.
+              </p>
+            </article>
+            <article>
+              <strong>3. Prossimo blocco reale</strong>
+              <p class="muted">
+                Collegare manager/worker tramite Codex/Copilot SDK o host bridge. Solo dopo “Start
+                team” deve diventare cliccabile.
+              </p>
+            </article>
           </div>
         </section>
 

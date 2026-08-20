@@ -33,6 +33,16 @@ test("local suite compose starts runtime, gateway and Control Plane UI", () => {
     assert.match(compose, new RegExp(`^  ${service}:$`, "mu"));
   }
   assert.match(compose, /--jetstream/u);
+  assert.match(compose, /install -d -m 0755 \/run\/yukh/u);
+  assert.match(compose, /runtime-ready\.json/u);
+  assert.match(
+    compose,
+    /chmod 0644 \/run\/yukh\/coordinator\.json \/run\/yukh\/runtime-ready\.json \/run\/yukh\/server\.crt/u,
+  );
+  assert.match(
+    compose,
+    /chmod 0600 \/run\/yukh\/server\.key \/run\/yukh\/supervisor\.token \/run\/yukh\/receipt-signing\.key/u,
+  );
   assert.match(compose, /grep -Eq '\^\[A-Za-z0-9_-\]\{43\}\$' \/run\/yukh\/supervisor\.token/u);
   assert.match(
     compose,
@@ -58,6 +68,8 @@ test("Control Plane image carries compose runtime check and project policy", () 
   assert.match(dockerfile, /\.yukh\/project\.yaml/u);
   assert.match(check, /YUKH_COORDINATION_SUPERVISOR_URL/u);
   assert.match(check, /NATS unavailable/u);
+  assert.match(check, /runtime-ready\.json/u);
+  assert.match(check, /present-private/u);
   assert.match(check, /status: ok/u);
   assert.match(previewRuntimeStatus, /YUKH_PREVIEW_RUNTIME_CHECK_SCRIPT/u);
   assert.doesNotMatch(

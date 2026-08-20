@@ -196,6 +196,15 @@ nav a:hover {
   background: #202938;
   color: var(--text);
 }
+.button-link {
+  display: inline-flex;
+  text-decoration: none;
+}
+button:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.45);
+  opacity: 0.58;
+}
 .small-button {
   padding: 8px 10px;
 }
@@ -320,6 +329,19 @@ nav a:hover {
 .manager-detail {
   display: grid;
   gap: 14px;
+}
+.operator-checklist {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.operator-checklist article {
+  background: var(--panel-2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
 }
 .preview-runtime-panel {
   display: grid;
