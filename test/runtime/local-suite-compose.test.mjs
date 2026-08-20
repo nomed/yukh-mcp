@@ -26,6 +26,7 @@ test("local suite compose starts runtime, gateway and Control Plane UI", () => {
     assert.match(compose, new RegExp(`^  ${service}:$`, "mu"));
   }
   assert.match(compose, /--jetstream/u);
+  assert.match(compose, /grep -Eq '\^\[A-Za-z0-9_-\]\{43\}\$' \/run\/yukh\/supervisor\.token/u);
   assert.match(
     compose,
     /openssl rand 32 \| openssl base64 -A \| tr '\+\/' '-_' \| tr -d '=' > \/run\/yukh\/supervisor\.token/u,
