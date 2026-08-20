@@ -26,6 +26,18 @@ services:
       - preview-runtime:/run/yukh
     restart: "no"
 
+  workspace-init:
+    image: alpine:3.22.1@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        install -d -m 0700 -o 1000 -g 1000 /workspace/.yukh
+        chown -R 1000:1000 /workspace
+    volumes:
+      - control-plane-workspace:/workspace
+    restart: "no"
+
   nats:
     image: nats:2.12.0-alpine@sha256:5ef5cab0ec8057c0b2017e0579f1de7ff01c9ef6d506b07cfef1e63037854776
     command: ["--jetstream", "--store_dir", "/data", "--name", "yukh-local-suite"]
@@ -110,6 +122,8 @@ services:
         "/workspace",
       ]
     depends_on:
+      workspace-init:
+        condition: service_completed_successfully
       coordinator:
         condition: service_started
       nats:

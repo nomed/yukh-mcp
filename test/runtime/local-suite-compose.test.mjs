@@ -22,7 +22,14 @@ const rfc = readFileSync(
 );
 
 test("local suite compose starts runtime, gateway and Control Plane UI", () => {
-  for (const service of ["preview-init", "nats", "coordinator", "gateway", "control-plane"]) {
+  for (const service of [
+    "preview-init",
+    "workspace-init",
+    "nats",
+    "coordinator",
+    "gateway",
+    "control-plane",
+  ]) {
     assert.match(compose, new RegExp(`^  ${service}:$`, "mu"));
   }
   assert.match(compose, /--jetstream/u);
@@ -35,6 +42,8 @@ test("local suite compose starts runtime, gateway and Control Plane UI", () => {
   assert.match(compose, /YUKH_WORKER_ACTIVITY_JETSTREAM: "1"/u);
   assert.match(compose, /YUKH_PREVIEW_RUNTIME_CHECK_SCRIPT/u);
   assert.match(compose, /dist\/apps\/control-plane-preview\/src\/main\.js/u);
+  assert.match(compose, /install -d -m 0700 -o 1000 -g 1000 \/workspace\/\.yukh/u);
+  assert.match(compose, /workspace-init:\n\s+condition: service_completed_successfully/u);
 });
 
 test("local suite compose binds local ports only", () => {
