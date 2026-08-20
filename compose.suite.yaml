@@ -14,7 +14,7 @@ services:
           -out /run/yukh/server.crt \
           -subj "/CN=localhost" \
           -addext "subjectAltName=DNS:localhost,DNS:coordinator,IP:127.0.0.1" >/dev/null 2>&1
-        [ -f /run/yukh/supervisor.token ] || openssl rand -base64 32 > /run/yukh/supervisor.token
+        [ -f /run/yukh/supervisor.token ] || openssl rand 32 | openssl base64 -A | tr '+/' '-_' | tr -d '=' > /run/yukh/supervisor.token
         [ -f /run/yukh/receipt-signing.key ] || openssl rand 32 > /run/yukh/receipt-signing.key
         cat > /run/yukh/coordinator.json <<'JSON'
         {"profile":"yukh-coordination/local-preview-runtime-v1","public_base_uri":"https://127.0.0.1:7443","public_bind":"0.0.0.0:7443","supervisor_bind":"0.0.0.0:7444","nats_url":"nats://nats:4222","tls_certificate":"/run/yukh/server.crt","tls_private_key":"/run/yukh/server.key","supervisor_token":"/run/yukh/supervisor.token","receipt_signing_key":"/run/yukh/receipt-signing.key"}

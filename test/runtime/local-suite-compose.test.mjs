@@ -26,6 +26,11 @@ test("local suite compose starts runtime, gateway and Control Plane UI", () => {
     assert.match(compose, new RegExp(`^  ${service}:$`, "mu"));
   }
   assert.match(compose, /--jetstream/u);
+  assert.match(
+    compose,
+    /openssl rand 32 \| openssl base64 -A \| tr '\+\/' '-_' \| tr -d '=' > \/run\/yukh\/supervisor\.token/u,
+  );
+  assert.doesNotMatch(compose, /supervisor\.token \] \|\| openssl rand -base64/u);
   assert.match(compose, /YUKH_WORKER_ACTIVITY_JETSTREAM: "1"/u);
   assert.match(compose, /YUKH_PREVIEW_RUNTIME_CHECK_SCRIPT/u);
   assert.match(compose, /dist\/apps\/control-plane-preview\/src\/main\.js/u);
