@@ -1,5 +1,9 @@
 .git
 .github
+!.github
+!.github/scripts
+.github/scripts/*
+!.github/scripts/check-compose-runtime.mjs
 .context
 coverage
 dist

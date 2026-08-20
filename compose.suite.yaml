@@ -1,0 +1,143 @@
+name: yukh-local-suite
+
+services:
+  preview-init:
+    image: alpine:3.22.1@sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        apk add --no-cache openssl >/dev/null
+        install -d -m 0700 /run/yukh
+        [ -f /run/yukh/server.key ] || openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 2 \
+          -keyout /run/yukh/server.key \
+          -out /run/yukh/server.crt \
+          -subj "/CN=localhost" \
+          -addext "subjectAltName=DNS:localhost,DNS:coordinator,IP:127.0.0.1" >/dev/null 2>&1
+        [ -f /run/yukh/supervisor.token ] || openssl rand -base64 32 > /run/yukh/supervisor.token
+        [ -f /run/yukh/receipt-signing.key ] || openssl rand 32 > /run/yukh/receipt-signing.key
+        cat > /run/yukh/coordinator.json <<'JSON'
+        {"profile":"yukh-coordination/local-preview-runtime-v1","public_base_uri":"https://127.0.0.1:7443","public_bind":"0.0.0.0:7443","supervisor_bind":"0.0.0.0:7444","nats_url":"nats://nats:4222","tls_certificate":"/run/yukh/server.crt","tls_private_key":"/run/yukh/server.key","supervisor_token":"/run/yukh/supervisor.token","receipt_signing_key":"/run/yukh/receipt-signing.key"}
+        JSON
+        chmod 0600 /run/yukh/*
+    volumes:
+      - preview-runtime:/run/yukh
+    restart: "no"
+
+  nats:
+    image: nats:2.12.0-alpine@sha256:5ef5cab0ec8057c0b2017e0579f1de7ff01c9ef6d506b07cfef1e63037854776
+    command: ["--jetstream", "--store_dir", "/data", "--name", "yukh-local-suite"]
+    ports:
+      - "127.0.0.1:14222:4222"
+    volumes:
+      - jetstream:/data
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "kill -0 1"]
+      interval: 2s
+      timeout: 1s
+      retries: 15
+    restart: "no"
+
+  coordinator:
+    build:
+      context: ${YUKH_COORDINATION_REPO:-../yukh-coordination}
+      dockerfile: .github/preview/Dockerfile.coordinator
+    command: ["/run/yukh/coordinator.json"]
+    depends_on:
+      preview-init:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:7443:7443"
+      - "127.0.0.1:7444:7444"
+    volumes:
+      - preview-runtime:/run/yukh:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    restart: "no"
+
+  gateway:
+    build:
+      context: .
+    environment:
+      YUKH_HOST: 0.0.0.0
+      YUKH_ALLOWED_HOSTS: localhost,127.0.0.1
+    ports:
+      - "127.0.0.1:3000:3000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 1.0
+    restart: "no"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  control-plane:
+    build:
+      context: .
+    command:
+      [
+        "node",
+        "dist/apps/control-plane-preview/src/main.js",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "7345",
+        "--workspace",
+        "/workspace",
+      ]
+    depends_on:
+      coordinator:
+        condition: service_started
+      nats:
+        condition: service_healthy
+    environment:
+      YUKH_CONVERSATION_WORKSPACE: /workspace
+      YUKH_PREVIEW_RUNTIME: /run/yukh
+      YUKH_PREVIEW_RUNTIME_CHECK_SCRIPT: /app/.github/scripts/check-compose-runtime.mjs
+      YUKH_COORDINATION_SUPERVISOR_URL: https://coordinator:7444/local-preview/v1/config
+      YUKH_NATS_URL: nats://nats:4222
+      YUKH_WORKER_ACTIVITY_JETSTREAM: "1"
+      YUKH_WORKER_ACTIVITY_CREATE_STREAM: "1"
+    ports:
+      - "127.0.0.1:7345:7345"
+    volumes:
+      - control-plane-workspace:/workspace
+      - preview-runtime:/run/yukh:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 384m
+    cpus: 1.0
+    restart: "no"
+
+volumes:
+  control-plane-workspace:
+  jetstream:
+  preview-runtime:
