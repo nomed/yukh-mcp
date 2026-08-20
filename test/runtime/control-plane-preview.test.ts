@@ -1650,6 +1650,12 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /Preview runtime gate:/u);
   assert.match(data, /Runtime attention required/u);
   assert.match(data, /canRecordLaunchIntent/u);
+  assert.match(data, /runtimeFixHints/u);
+  assert.match(data, /refreshPreviewRuntime/u);
+  assert.match(data, /preview-runtime-recheck-button/u);
+  assert.match(data, /Fix then recheck/u);
+  assert.match(data, /Start Docker or fix Docker access/u);
+  assert.match(data, /Bootstrap\/join a preview profile/u);
   assert.match(data, /missing_required_actions/u);
   assert.match(data, /task-board/u);
   assert.match(data, /conversation-feed/u);

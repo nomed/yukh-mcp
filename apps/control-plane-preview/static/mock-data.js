@@ -276,6 +276,49 @@ byId("metric-budget").textContent =
   allocated > 0 ? `${Math.round((used / allocated) * 100)}% used` : "no budget";
 byId("metric-providers").textContent = "CLI + SDK";
 
+const runtimeFixHints = (runtimeStatus) => {
+  if (!runtimeStatus) return ["Reload the Control Plane or verify the preview runtime endpoint."];
+  const text = [...(runtimeStatus.problems ?? []), ...(runtimeStatus.warnings ?? [])].join(" ");
+  const hints = [];
+  if (/docker/i.test(text)) {
+    hints.push("Start Docker or fix Docker access for this host.");
+  }
+  if (/tls|certificate/i.test(text)) {
+    hints.push("Refresh the local preview TLS material, then recheck.");
+  }
+  if (/runtime directory|missing .*local-preview|mode 0700/i.test(text)) {
+    hints.push("Recreate or repair the local preview runtime custody directory.");
+  }
+  if (/coordination_replay|replay/i.test(text)) {
+    hints.push("Bootstrap/join a preview profile, then recheck Coordination replay.");
+  }
+  if (/launcher/i.test(text)) {
+    hints.push("Point YUKH_COORDINATION_LAUNCHER at the active local-agent launcher.");
+  }
+  return [
+    ...new Set(
+      hints.length > 0
+        ? hints
+        : ["Review the listed problems, fix the host runtime, then recheck."],
+    ),
+  ];
+};
+
+const refreshLaunchReadinessPanel = async () => {
+  const panel = document.querySelector(".readiness-panel");
+  if (!panel) return;
+  const readiness = await loadLaunchReadiness();
+  if (!readiness) return;
+  panel.outerHTML = readinessPanel(readiness);
+};
+
+const refreshPreviewRuntime = async (button = null) => {
+  button?.setAttribute("disabled", "true");
+  if (button) button.textContent = "Checking…";
+  renderPreviewRuntimeStatus(await loadPreviewRuntimeStatus());
+  await refreshLaunchReadinessPanel();
+};
+
 const renderPreviewRuntimeStatus = (runtimeStatus) => {
   const status = runtimeStatus?.status ?? "attention-required";
   const statusDot = status === "ok" ? "ok" : "warn";
@@ -285,8 +328,11 @@ const renderPreviewRuntimeStatus = (runtimeStatus) => {
   if (!runtimeStatus) {
     byId("preview-runtime-panel").innerHTML = `
       <article class="preview-runtime-summary attention-required">
-        <strong>Runtime status unavailable</strong>
-        <p class="muted">The Control Plane could not read the preview runtime check endpoint.</p>
+        <div>
+          <strong>Runtime status unavailable</strong>
+          <p class="muted">The Control Plane could not read the preview runtime check endpoint.</p>
+        </div>
+        <button type="button" class="secondary preview-runtime-recheck-button">Recheck runtime</button>
       </article>
     `;
     return;
@@ -295,6 +341,7 @@ const renderPreviewRuntimeStatus = (runtimeStatus) => {
   const checks = Object.entries(runtimeStatus.checks ?? {});
   const warnings = runtimeStatus.warnings ?? [];
   const problems = runtimeStatus.problems ?? [];
+  const fixHints = runtimeFixHints(runtimeStatus);
   const launchMessage =
     status === "ok"
       ? "Safe to continue with a plan-first run."
@@ -343,11 +390,22 @@ const renderPreviewRuntimeStatus = (runtimeStatus) => {
             : problems.map((problem) => `<p class="muted">${escapeHtml(problem)}</p>`).join("")
         }
       </section>
+      <section>
+        <h4>Fix then recheck</h4>
+        ${fixHints.map((hint) => `<p class="muted">${escapeHtml(hint)}</p>`).join("")}
+        <button type="button" class="secondary preview-runtime-recheck-button">Recheck runtime</button>
+      </section>
     </div>
   `;
 };
 
 renderPreviewRuntimeStatus(await loadPreviewRuntimeStatus());
+
+byId("preview-runtime-panel").addEventListener("click", (event) => {
+  const button = event.target.closest(".preview-runtime-recheck-button");
+  if (!button) return;
+  void refreshPreviewRuntime(button);
+});
 
 byId("manager-count").textContent = `${activeTeams.length} active`;
 byId("manager-list").innerHTML = teams
