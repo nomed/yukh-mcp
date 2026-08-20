@@ -1057,6 +1057,64 @@ const loadWorkerActivities = async () => {
   }
 };
 
+const loadRealProjectReadiness = async () => {
+  try {
+    const response = await fetch("./api/manager-plan/real-project-readiness", {
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const status = await response.json();
+    if (status?.schema !== "yukh-control-plane-real-project-readiness-v1") return null;
+    return status;
+  } catch {
+    return null;
+  }
+};
+
+const renderRealProjectReadiness = (status) => {
+  if (!status) {
+    byId("real-readiness-panel").innerHTML =
+      '<p class="muted">Real project readiness is unavailable from this Control Plane server.</p>';
+    return;
+  }
+  const dot = status.outcome === "ready-for-micro-task" ? "ok" : "warn";
+  byId("real-readiness-panel").innerHTML = `
+    <article class="real-readiness-summary">
+      <span class="status-pill small"><span class="dot ${dot}"></span>${escapeHtml(status.outcome)}</span>
+      <p class="muted">${escapeHtml(status.next_required_action)}</p>
+    </article>
+    <div class="real-readiness-gates">
+      ${status.gates
+        .map(
+          (gate) => `
+            <article class="${escapeHtml(gate.status)}">
+              <span>${escapeHtml(gate.gate)}</span>
+              <strong>${escapeHtml(gate.status)}</strong>
+              <p class="muted">${escapeHtml(gate.detail)}</p>
+            </article>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+};
+
+const refreshRealProjectReadiness = async (button = null) => {
+  button?.setAttribute("disabled", "true");
+  if (button) button.textContent = "Checking…";
+  renderRealProjectReadiness(await loadRealProjectReadiness());
+  if (button) {
+    button.removeAttribute("disabled");
+    button.textContent = "Refresh";
+  }
+};
+
+await refreshRealProjectReadiness();
+
+byId("real-readiness-refresh").addEventListener("click", (event) => {
+  void refreshRealProjectReadiness(event.target.closest("button"));
+});
+
 const renderProviderAdapter = (adapter) => {
   if (!adapter) return "";
   return `
@@ -1523,6 +1581,7 @@ const startGuidedTeamRun = async (button) => {
   if (activity) {
     anchor = appendGuidedRunStep(anchor, renderWorkerActivity(activity));
   }
+  await refreshRealProjectReadiness();
   button.textContent = "Guided run started";
 };
 
@@ -1867,6 +1926,7 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".provider-worker-process")
     ?.insertAdjacentHTML("afterend", renderProviderRunnerAttachment(attachment));
+  await refreshRealProjectReadiness();
 });
 
 byId("plan-preview").addEventListener("click", async (event) => {
@@ -1884,6 +1944,7 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".provider-runner-attachment")
     ?.insertAdjacentHTML("beforeend", renderWorkerActivityFeed(status));
+  await refreshRealProjectReadiness();
 });
 
 byId("plan-preview").addEventListener("click", async (event) => {
@@ -1901,6 +1962,7 @@ byId("plan-preview").addEventListener("click", async (event) => {
   button
     .closest(".provider-runner-attachment")
     ?.insertAdjacentHTML("afterend", renderWorkerActivity(activity));
+  await refreshRealProjectReadiness();
 });
 
 byId("manager-plan-form").addEventListener("submit", (event) => {
@@ -1928,6 +1990,7 @@ byId("provider-adapter-form").addEventListener("submit", async (event) => {
   byId("provider-adapter-status").innerHTML = adapter
     ? renderProviderAdapter(adapter)
     : '<div class="provider-adapter"><span>Provider adapter rejected</span><p class="muted">Check provider, adapter kind, absolute CLI path and model list.</p></div>';
+  await refreshRealProjectReadiness();
 });
 
 byId("provider-adapter-status").addEventListener("click", async (event) => {
@@ -1944,6 +2007,7 @@ byId("provider-adapter-status").addEventListener("click", async (event) => {
   button
     .closest(".provider-adapter")
     ?.insertAdjacentHTML("afterend", renderProviderCapabilityInventory(inventory));
+  await refreshRealProjectReadiness();
 });
 
 const persistedPlan = await loadPersistedPlanPreview();

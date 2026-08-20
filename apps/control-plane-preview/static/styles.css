@@ -1044,6 +1044,54 @@ nav a:hover {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.real-readiness {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+}
+.real-readiness-summary {
+  background: rgba(125, 211, 252, 0.08);
+  border: 1px solid rgba(125, 211, 252, 0.26);
+  border-radius: 16px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 12px;
+}
+.real-readiness-gates {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.real-readiness-gates article {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 10px;
+}
+.real-readiness-gates article.pass {
+  border-color: rgba(119, 240, 178, 0.36);
+}
+.real-readiness-gates article.warning {
+  border-color: rgba(255, 209, 102, 0.36);
+}
+.real-readiness-gates article.blocked {
+  border-color: rgba(251, 113, 133, 0.42);
+}
+.real-readiness-gates span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .provider-capability-inventory {
   background: rgba(119, 240, 178, 0.08);
   border: 1px solid rgba(119, 240, 178, 0.28);

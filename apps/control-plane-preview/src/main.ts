@@ -32,6 +32,7 @@ import {
   type PreviewRuntimeCheck,
   type PreviewRuntimeStatusResponse,
 } from "./preview-runtime-status.js";
+import { createRealProjectReadiness } from "./real-project-readiness.js";
 
 type ControlPlaneOptions = {
   readonly host: string;
@@ -68,6 +69,7 @@ const API_WORKER_LAUNCH_RECEIPTS_PATH = "/api/manager-plan/worker-launch-receipt
 const API_PROVIDER_WORKER_PROCESSES_PATH = "/api/manager-plan/provider-worker-processes";
 const API_PROVIDER_RUNNER_ATTACHMENTS_PATH = "/api/manager-plan/provider-runner-attachments";
 const API_WORKER_ACTIVITIES_PATH = "/api/manager-plan/worker-activities";
+const API_REAL_PROJECT_READINESS_PATH = "/api/manager-plan/real-project-readiness";
 
 export function parseArguments(argv: readonly string[]): ControlPlaneOptions {
   const options = { host: "127.0.0.1", port: 7345 } as {
@@ -576,6 +578,35 @@ export function createControlPlaneServer(
         "content-type": "application/json; charset=utf-8",
       });
       response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+      return;
+    }
+
+    if (
+      request.url &&
+      new URL(request.url, "http://127.0.0.1").pathname === API_REAL_PROJECT_READINESS_PATH
+    ) {
+      if (request.method !== "GET") {
+        response.writeHead(405, {
+          allow: "GET",
+          "cache-control": "no-store",
+          "content-type": "application/json; charset=utf-8",
+        });
+        response.end(JSON.stringify({ schema: 1, status: "error", code: "method_not_allowed" }));
+        return;
+      }
+      response.writeHead(200, {
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+      });
+      response.end(
+        JSON.stringify(
+          await createRealProjectReadiness({
+            repoRoot: process.cwd(),
+            previewRuntime: previewRuntimeCheck(),
+            ...(options.planPreviewStore ? { planPreviewStore: options.planPreviewStore } : {}),
+          }),
+        ),
+      );
       return;
     }
 

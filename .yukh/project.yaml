@@ -74,3 +74,26 @@ safety:
   overwrite_human_values: false
   fail_on_unknown_values: true
   comment_on_validation_error: true
+
+real_use:
+  first_micro_task:
+    max_team_token_budget: 120000
+    max_worker_count: 2
+    allowed_runtimes:
+      - codex
+    required_gates:
+      - project_policy
+      - preview_runtime
+      - provider_adapter
+      - launch_readiness
+      - worker_activity
+  branch_policy:
+    strategy: feature_branch_pr
+    base: main
+    commit_author: producing_agent
+    require_human_merge_approval: true
+  definition_of_done:
+    - tests_passed
+    - diff_reviewed
+    - activity_recorded
+    - token_usage_recorded
