@@ -8,13 +8,21 @@ services:
       - -euc
       - |
         apk add --no-cache openssl >/dev/null
+        runtime_uid="$${YUKH_RUNTIME_UID:-1000}"
+        runtime_gid="$${YUKH_RUNTIME_GID:-1000}"
         install -d -m 0755 /run/yukh
         [ -f /run/yukh/server.key ] || openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 2 \
           -keyout /run/yukh/server.key \
           -out /run/yukh/server.crt \
           -subj "/CN=localhost" \
           -addext "subjectAltName=DNS:localhost,DNS:coordinator,IP:127.0.0.1" >/dev/null 2>&1
-        if ! [ -f /run/yukh/supervisor.token ] || ! grep -Eq '^[A-Za-z0-9_-]{43}$' /run/yukh/supervisor.token; then
+        token_size="0"
+        token_invalid_chars="1"
+        if [ -f /run/yukh/supervisor.token ]; then
+          token_size="$$(wc -c < /run/yukh/supervisor.token | tr -d ' ')"
+          token_invalid_chars="$$(tr -d 'A-Za-z0-9_-' < /run/yukh/supervisor.token | wc -c | tr -d ' ')"
+        fi
+        if [ "$${token_size}" != "43" ] || [ "$${token_invalid_chars}" != "0" ]; then
           openssl rand 32 | openssl base64 -A | tr '+/' '-_' | tr -d '=' > /run/yukh/supervisor.token
         fi
         [ -f /run/yukh/receipt-signing.key ] || openssl rand 32 > /run/yukh/receipt-signing.key
@@ -26,8 +34,12 @@ services:
         JSON
         chmod 0644 /run/yukh/coordinator.json /run/yukh/runtime-ready.json /run/yukh/server.crt
         chmod 0600 /run/yukh/server.key /run/yukh/supervisor.token /run/yukh/receipt-signing.key
+        chown -R "$${runtime_uid}:$${runtime_gid}" /run/yukh
+    environment:
+      YUKH_RUNTIME_UID: ${YUKH_UID:-1000}
+      YUKH_RUNTIME_GID: ${YUKH_GID:-1000}
     volumes:
-      - preview-runtime:/run/yukh
+      - ${YUKH_PREVIEW_RUNTIME:-./.yukh/runtime/local-suite}:/run/yukh
     restart: "no"
 
   workspace-init:
@@ -70,7 +82,7 @@ services:
       - "127.0.0.1:7443:7443"
       - "127.0.0.1:7444:7444"
     volumes:
-      - preview-runtime:/run/yukh:ro
+      - ${YUKH_PREVIEW_RUNTIME:-./.yukh/runtime/local-suite}:/run/yukh:ro
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=0700
@@ -144,7 +156,7 @@ services:
       - "127.0.0.1:7345:7345"
     volumes:
       - control-plane-workspace:/workspace
-      - preview-runtime:/run/yukh:ro
+      - ${YUKH_PREVIEW_RUNTIME:-./.yukh/runtime/local-suite}:/run/yukh:ro
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -160,4 +172,3 @@ services:
 volumes:
   control-plane-workspace:
   jetstream:
-  preview-runtime:
