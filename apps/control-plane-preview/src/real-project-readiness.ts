@@ -3,6 +3,14 @@ import { join } from "node:path";
 import type { ControlPlanePlanPreviewStore } from "./plan-preview-store.js";
 import type { PreviewRuntimeStatusResponse } from "./preview-runtime-status.js";
 
+export type RealProjectReadinessPlanReader = Pick<
+  ControlPlanePlanPreviewStore,
+  | "providerAdapters"
+  | "providerCapabilityInventories"
+  | "providerRunnerAttachments"
+  | "workerActivities"
+>;
+
 export type RealProjectReadinessStatus = {
   readonly schema: "yukh-control-plane-real-project-readiness-v1";
   readonly source: "control-plane-preview";
@@ -74,7 +82,7 @@ export async function createRealProjectReadiness(
   input: {
     readonly repoRoot: string;
     readonly previewRuntime: PreviewRuntimeStatusResponse;
-    readonly planPreviewStore?: ControlPlanePlanPreviewStore;
+    readonly planPreviewStore?: RealProjectReadinessPlanReader;
   },
   now = new Date(),
 ): Promise<RealProjectReadinessStatus> {
