@@ -187,6 +187,82 @@ test("control plane preview parses runtime diagnostic output", () => {
   assert.deepEqual(parsed.warnings, ["coordination replay unavailable for a fresh profile"]);
 });
 
+test("control plane launch readiness blocks launch intents when preview runtime needs attention", async () => {
+  const root = await mkdtemp(join(tmpdir(), "yukh-control-plane-preview-runtime-gated-api-"));
+  await writeFile(join(root, "index.html"), "<h1>Control</h1>");
+  await writeFile(join(root, "styles.css"), "body{}");
+  await writeFile(join(root, "mock-data.js"), "export {};");
+
+  const workspace = await mkdtemp(join(tmpdir(), "yukh-control-plane-runtime-gated-workspace-"));
+  const planPreviewStore = new ControlPlanePlanPreviewStore(workspace);
+  const server = createControlPlaneServer(root, {
+    planPreviewStore,
+    previewRuntimeCheck: () => ({
+      schema: "yukh-control-plane-preview-runtime-status-v1",
+      source: "preview-runtime-check",
+      checked_at: "2026-08-19T12:00:00.000Z",
+      side_effects: "none",
+      status: "attention-required",
+      runtime: "/tmp/yukh-preview",
+      launcher: ".github/scripts/yukh-local-agent.py",
+      checks: { docker: "unavailable", tls: "ok" },
+      warnings: [],
+      problems: ["docker daemon unavailable to current user"],
+    }),
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  try {
+    const address = server.address();
+    if (typeof address !== "object" || address === null) {
+      throw new TypeError("expected TCP server address");
+    }
+    const base = `http://127.0.0.1:${address.port}`;
+
+    const approved = await fetch(`${base}/api/manager-plan/previews`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        goal: "Approved but runtime-gated launch",
+        mode: "plan-first",
+        provider: "Codex manager CLI",
+        token_budget: 80_000,
+        state: "approved-preview",
+      }),
+    });
+    assert.equal(approved.status, 201);
+
+    const readiness = await fetch(`${base}/api/manager-plan/launch-readiness`);
+    assert.equal(readiness.status, 200);
+    const readinessBody = await readiness.json();
+    assert.equal(readinessBody.outcome, "blocked");
+    assert.equal(readinessBody.preview_runtime.status, "attention-required");
+    assert.equal(readinessBody.preview_runtime.problems_count, 1);
+    assert.ok(
+      readinessBody.reasons.some(
+        (reason: { code: string }) => reason.code === "preview_runtime_attention_required",
+      ),
+    );
+    assert.doesNotMatch(JSON.stringify(readinessBody), /docker daemon unavailable/iu);
+
+    const intent = await fetch(`${base}/api/manager-plan/launch-intents`, { method: "POST" });
+    assert.equal(intent.status, 409);
+    const intentBody = await intent.json();
+    assert.equal(intentBody.code, "preview_runtime_attention_required");
+    assert.equal(intentBody.preview_runtime.status, "attention-required");
+    assert.equal(intentBody.preview_runtime.problems_count, 1);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
 test("control plane preview exposes redacted live team status", async () => {
   const root = await mkdtemp(join(tmpdir(), "yukh-control-plane-preview-team-"));
   await writeFile(join(root, "index.html"), "<h1>Control</h1>");
@@ -338,7 +414,21 @@ test("control plane preview persists local manager plan previews without leaking
       };
     },
   });
-  const server = createControlPlaneServer(root, { planPreviewStore });
+  const server = createControlPlaneServer(root, {
+    planPreviewStore,
+    previewRuntimeCheck: () => ({
+      schema: "yukh-control-plane-preview-runtime-status-v1",
+      source: "preview-runtime-check",
+      checked_at: "2026-08-19T12:00:00.000Z",
+      side_effects: "none",
+      status: "ok",
+      runtime: "/tmp/yukh-preview",
+      launcher: ".github/scripts/yukh-local-agent.py",
+      checks: { docker: "ok", tls: "ok", coordination_replay: "ok" },
+      warnings: [],
+      problems: [],
+    }),
+  });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -1557,6 +1647,9 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /yukh-control-plane-preview-runtime-status-v1/u);
   assert.match(data, /renderPreviewRuntimeStatus/u);
   assert.match(data, /Fix the listed problems before relying on worker launch/u);
+  assert.match(data, /Preview runtime gate:/u);
+  assert.match(data, /Runtime attention required/u);
+  assert.match(data, /canRecordLaunchIntent/u);
   assert.match(data, /missing_required_actions/u);
   assert.match(data, /task-board/u);
   assert.match(data, /conversation-feed/u);
