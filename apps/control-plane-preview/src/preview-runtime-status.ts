@@ -85,7 +85,9 @@ export function createPreviewRuntimeCheck(
 ): PreviewRuntimeCheck {
   const repoRoot = options.repoRoot ?? process.cwd();
   const timeoutMs = options.timeoutMs ?? 5_000;
-  const script = join(repoRoot, ".github", "scripts", "check-preview-runtime.sh");
+  const script =
+    process.env.YUKH_PREVIEW_RUNTIME_CHECK_SCRIPT ??
+    join(repoRoot, ".github", "scripts", "check-preview-runtime.sh");
 
   return () => {
     const checkedAt = new Date().toISOString();
