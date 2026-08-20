@@ -39,7 +39,7 @@ services:
       YUKH_RUNTIME_UID: ${YUKH_UID:-1000}
       YUKH_RUNTIME_GID: ${YUKH_GID:-1000}
     volumes:
-      - ${YUKH_PREVIEW_RUNTIME:-./.yukh/runtime/local-suite}:/run/yukh
+      - ${YUKH_PREVIEW_RUNTIME:-${HOME}/.yukh/yukh-local-suite}:/run/yukh
     restart: "no"
 
   workspace-init:
@@ -82,7 +82,7 @@ services:
       - "127.0.0.1:7443:7443"
       - "127.0.0.1:7444:7444"
     volumes:
-      - ${YUKH_PREVIEW_RUNTIME:-./.yukh/runtime/local-suite}:/run/yukh:ro
+      - ${YUKH_PREVIEW_RUNTIME:-${HOME}/.yukh/yukh-local-suite}:/run/yukh:ro
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=0700
@@ -156,7 +156,7 @@ services:
       - "127.0.0.1:7345:7345"
     volumes:
       - control-plane-workspace:/workspace
-      - ${YUKH_PREVIEW_RUNTIME:-./.yukh/runtime/local-suite}:/run/yukh:ro
+      - ${YUKH_PREVIEW_RUNTIME:-${HOME}/.yukh/yukh-local-suite}:/run/yukh:ro
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777

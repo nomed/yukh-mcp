@@ -22,7 +22,7 @@ if [[ ! -x "$LAUNCHER" ]]; then
   exit 2
 fi
 
-export YUKH_PREVIEW_RUNTIME="${YUKH_PREVIEW_RUNTIME:-$ROOT/.yukh/runtime/local-suite}"
+export YUKH_PREVIEW_RUNTIME="${YUKH_PREVIEW_RUNTIME:-$HOME/.yukh/yukh-local-suite}"
 export YUKH_CONVERSATION_WORKSPACE="${YUKH_CONVERSATION_WORKSPACE:-$ROOT}"
 export YUKH_COORDINATION_LAUNCHER="$LAUNCHER"
 export YUKH_CODEX_EXECUTABLE="$(realpath_for "$CODEX_BIN")"

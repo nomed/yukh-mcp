@@ -33,6 +33,8 @@ From `yukh-mcp`:
 ```bash
 export YUKH_UID="$(id -u)"
 export YUKH_GID="$(id -g)"
+export YUKH_PREVIEW_RUNTIME="$HOME/.yukh/yukh-local-suite"
+mkdir -p "$YUKH_PREVIEW_RUNTIME"
 docker compose -f compose.suite.yaml up -d --build
 ```
 
@@ -73,7 +75,9 @@ cd /Users/nomed/Code/yulh-workspace/yukh-mcp
 
 export YUKH_UID="$(id -u)"
 export YUKH_GID="$(id -g)"
+export YUKH_PREVIEW_RUNTIME="$HOME/.yukh/yukh-local-suite"
 export YUKH_CONVERSATION_WORKSPACE=/Users/nomed/Code/yulh-workspace/yukh-task-board
+mkdir -p "$YUKH_PREVIEW_RUNTIME"
 
 docker compose -f compose.suite.yaml up -d --build nats coordinator gateway
 
@@ -94,7 +98,7 @@ docker compose -f compose.suite.yaml stop control-plane
 .github/scripts/start-host-control-plane-macos.sh
 ```
 
-This host mode uses the same preview runtime at `.yukh/runtime/local-suite`, the
+This host mode uses the same preview runtime at `$HOME/.yukh/yukh-local-suite`, the
 same NATS JetStream endpoint on `127.0.0.1:14222`, and your host `codex` /
 `copilot` executables.
 
@@ -106,7 +110,7 @@ docker compose -f compose.suite.yaml down --volumes --remove-orphans
 
 This removes JetStream data and Control Plane workspace state created by this
 Compose project. The host-readable runtime directory remains under
-`.yukh/runtime/local-suite`; remove it only when you want fresh local identities.
+`$HOME/.yukh/yukh-local-suite`; remove it only when you want fresh local identities.
 
 ## Current limit
 

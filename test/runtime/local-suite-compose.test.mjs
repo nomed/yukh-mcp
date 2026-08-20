@@ -39,7 +39,7 @@ test("local suite compose starts runtime, gateway and Control Plane UI", () => {
   assert.match(compose, /--jetstream/u);
   assert.match(
     compose,
-    /\$\{YUKH_PREVIEW_RUNTIME:-\.\/\.yukh\/runtime\/local-suite\}:\/run\/yukh/u,
+    /\$\{YUKH_PREVIEW_RUNTIME:-\$\{HOME\}\/\.yukh\/yukh-local-suite\}:\/run\/yukh/u,
   );
   assert.match(compose, /YUKH_RUNTIME_UID: \$\{YUKH_UID:-1000\}/u);
   assert.match(compose, /YUKH_RUNTIME_GID: \$\{YUKH_GID:-1000\}/u);
@@ -100,6 +100,8 @@ test("Control Plane image carries compose runtime check and project policy", () 
 test("local suite docs and host bridge explain real local worker mode", () => {
   assert.match(guide, /docker compose -f compose\.suite\.yaml up -d --build/u);
   assert.match(guide, /Real local workers from your Mac/u);
+  assert.match(guide, /YUKH_PREVIEW_RUNTIME="\$HOME\/\.yukh\/yukh-local-suite"/u);
+  assert.match(guide, /mkdir -p "\$YUKH_PREVIEW_RUNTIME"/u);
   assert.match(guide, /start-host-control-plane-macos\.sh/u);
   assert.match(
     guide,
@@ -111,6 +113,7 @@ test("local suite docs and host bridge explain real local worker mode", () => {
   assert.match(hostControl, /YUKH_COPILOT_EXECUTABLE/u);
   assert.match(hostControl, /YUKH_COPILOT_WORKER_PROVIDER/u);
   assert.match(hostControl, /YUKH_CODEX_WORKER_PROVIDER/u);
+  assert.match(hostControl, /\$HOME\/\.yukh\/yukh-local-suite/u);
   assert.match(hostControl, /YUKH_NATS_URL:-nats:\/\/127\.0\.0\.1:14222/u);
   assert.match(rfc, /^# RFC-0026 — Local suite Compose preview$/mu);
   assert.match(rfc, /SDK-based workers running inside containers/u);
