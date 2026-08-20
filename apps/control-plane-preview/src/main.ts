@@ -232,6 +232,19 @@ function createConfiguredProviderRunner(
   };
 }
 
+export function providerRunnerConfigurationStatus(environment: NodeJS.ProcessEnv): {
+  readonly configured: boolean;
+  readonly missing: readonly string[];
+} {
+  const required = [
+    "YUKH_COORDINATION_LAUNCHER",
+    "YUKH_CODEX_EXECUTABLE",
+    "YUKH_COPILOT_EXECUTABLE",
+  ] as const;
+  const missing = required.filter((name) => !environment[name]);
+  return { configured: missing.length === 0, missing };
+}
+
 function createConfiguredWorkerActivityAdapter(
   teamStore: TeamStore,
 ): ControlPlaneWorkerActivityAdapter {
@@ -1391,9 +1404,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const server = await startControlPlane(options);
   const address = server.address();
   const port = typeof address === "object" && address !== null ? address.port : options.port;
+  const runner = providerRunnerConfigurationStatus(process.env);
   process.stdout.write(
     `Yukh Control Plane preview: http://${options.host}:${port}\n` +
-      "Bounded preview controls only: no provider calls or worker launches are exposed.\n",
+      (runner.configured
+        ? "Provider runner: configured from host environment; guided worker launch flow is available.\n"
+        : `Provider runner: not configured; missing ${runner.missing.join(", ")}.\n`),
   );
 }
 

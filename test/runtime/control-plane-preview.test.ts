@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   createControlPlaneServer,
   parseArguments,
+  providerRunnerConfigurationStatus,
 } from "../../apps/control-plane-preview/src/main.js";
 import { parsePreviewRuntimeCheckOutput } from "../../apps/control-plane-preview/src/preview-runtime-status.js";
 import { ControlPlanePlanPreviewStore } from "../../apps/control-plane-preview/src/plan-preview-store.js";
@@ -19,6 +20,21 @@ test("control plane preview parses bounded local server options", () => {
   });
   assert.throws(() => parseArguments(["--port", "70000"]), /invalid control plane port/u);
   assert.throws(() => parseArguments(["--open"]), /invalid control plane arguments/u);
+});
+
+test("control plane reports whether host provider runner is configured", () => {
+  assert.deepEqual(providerRunnerConfigurationStatus({}), {
+    configured: false,
+    missing: ["YUKH_COORDINATION_LAUNCHER", "YUKH_CODEX_EXECUTABLE", "YUKH_COPILOT_EXECUTABLE"],
+  });
+  assert.deepEqual(
+    providerRunnerConfigurationStatus({
+      YUKH_COORDINATION_LAUNCHER: "/tmp/launcher",
+      YUKH_CODEX_EXECUTABLE: "/tmp/codex",
+      YUKH_COPILOT_EXECUTABLE: "/tmp/copilot",
+    }),
+    { configured: true, missing: [] },
+  );
 });
 
 test("control plane preview serves only fixed static assets", async () => {
@@ -1714,10 +1730,11 @@ test("control plane preview explains runtime topology without Mermaid", async ()
 
   assert.match(html, /Runtime topology/u);
   assert.match(html, /Local suite status/u);
-  assert.match(html, /Stack acceso\. Worker runner non ancora collegato/u);
+  assert.match(html, /Stack acceso\. Avvia un team dal flow guidato/u);
   assert.match(html, /Operator checklist/u);
   assert.match(html, /Cosa guardare adesso/u);
-  assert.match(html, /Start team disabled/u);
+  assert.match(html, /Start team flow/u);
+  assert.match(html, /Apri Start \/ Providers/u);
   assert.match(html, /Who owns what/u);
   assert.match(html, /Command center/u);
   assert.match(html, /Managers, teams and work in motion/u);

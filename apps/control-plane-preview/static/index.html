@@ -20,9 +20,7 @@
 
     <main class="shell">
       <aside class="sidebar" aria-label="Projects">
-        <button class="primary" disabled title="Worker runner is not configured in compose yet">
-          Start team
-        </button>
+        <a class="primary button-link" href="#settings">Start team flow</a>
         <nav>
           <a class="active" href="#dashboard">Command center</a>
           <a href="#topology">Runtime topology</a>
@@ -44,17 +42,14 @@
         <section class="hero card">
           <div>
             <p class="eyebrow">Local suite status</p>
-            <h2>Stack acceso. Worker runner non ancora collegato.</h2>
+            <h2>Stack acceso. Avvia un team dal flow guidato.</h2>
             <p>
-              Questa compose avvia UI, NATS JetStream, gateway e Coordination. Per usare davvero
-              manager e worker serve il prossimo collegamento: SDK/host runner verso Codex e
-              Copilot.
+              Compose avvia NATS JetStream, gateway e Coordination. Se questa UI è partita tramite
+              host bridge, può agganciare i tuoi binari Codex e Copilot per il primo run reale.
             </p>
           </div>
           <div class="hero-actions">
-            <button class="primary" disabled title="Provider runner missing in local compose">
-              Start team disabled
-            </button>
+            <a class="primary button-link" href="#settings">Apri Start / Providers</a>
             <a class="secondary button-link" href="#operator-checklist">Cosa posso fare ora</a>
           </div>
         </section>
@@ -78,15 +73,15 @@
             <article>
               <strong>2. Control Plane</strong>
               <p class="muted">
-                Questa UI ora serve a osservare e configurare. I dati team sotto sono preview finché
-                il runner non viene collegato.
+                La UI container è solo preview. La UI host bridge può creare manager run e tentare
+                l’attach del provider runner.
               </p>
             </article>
             <article>
               <strong>3. Prossimo blocco reale</strong>
               <p class="muted">
-                Collegare manager/worker tramite Codex/Copilot SDK o host bridge. Solo dopo “Start
-                team” deve diventare cliccabile.
+                Vai in Providers, configura/verifica adapter e crea un manager plan. Il guided run
+                mostra ogni step prima di lanciare worker.
               </p>
             </article>
           </div>
