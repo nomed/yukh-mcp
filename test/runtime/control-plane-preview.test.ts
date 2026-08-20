@@ -165,6 +165,97 @@ test("control plane preview exposes read-only preview runtime gate", async () =>
   }
 });
 
+test("control plane preview exposes real project readiness gates", async () => {
+  const root = await mkdtemp(join(tmpdir(), "yukh-control-plane-real-readiness-api-"));
+  await writeFile(join(root, "index.html"), "<h1>Control</h1>");
+  await writeFile(join(root, "styles.css"), "body{}");
+  await writeFile(join(root, "mock-data.js"), "export {};");
+
+  const workspace = await mkdtemp(join(tmpdir(), "yukh-control-plane-real-readiness-workspace-"));
+  const planPreviewStore = new ControlPlanePlanPreviewStore(workspace);
+  const server = createControlPlaneServer(root, {
+    planPreviewStore,
+    previewRuntimeCheck: () => ({
+      schema: "yukh-control-plane-preview-runtime-status-v1",
+      source: "preview-runtime-check",
+      checked_at: "2026-08-19T12:00:00.000Z",
+      side_effects: "none",
+      status: "ok",
+      runtime: "/tmp/yukh-preview",
+      launcher: ".github/scripts/yukh-local-agent.py",
+      checks: { docker: "ok", tls: "ok", coordination_replay: "ok" },
+      warnings: [],
+      problems: [],
+    }),
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  try {
+    const address = server.address();
+    if (typeof address !== "object" || address === null) {
+      throw new TypeError("expected TCP server address");
+    }
+    const base = `http://127.0.0.1:${address.port}`;
+
+    const blocked = await fetch(`${base}/api/manager-plan/real-project-readiness`);
+    assert.equal(blocked.status, 200);
+    assert.equal(blocked.headers.get("cache-control"), "no-store");
+    const blockedBody = await blocked.json();
+    assert.equal(blockedBody.schema, "yukh-control-plane-real-project-readiness-v1");
+    assert.equal(blockedBody.outcome, "blocked");
+    assert.equal(
+      blockedBody.gates.find((gate: { gate: string }) => gate.gate === "project_policy")?.status,
+      "pass",
+    );
+    assert.equal(
+      blockedBody.gates.find((gate: { gate: string }) => gate.gate === "provider_adapter")?.status,
+      "blocked",
+    );
+    assert.doesNotMatch(JSON.stringify(blockedBody), /token|secret|credential|private/iu);
+
+    const adapter = await fetch(`${base}/api/manager-plan/provider-adapters`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "Codex SDK, planned",
+        adapter_kind: "sdk",
+        models: ["codex-sdk-default"],
+        max_run_token_budget: 120_000,
+      }),
+    });
+    assert.equal(adapter.status, 201);
+
+    const ready = await fetch(`${base}/api/manager-plan/real-project-readiness`);
+    assert.equal(ready.status, 200);
+    const readyBody = await ready.json();
+    assert.equal(readyBody.outcome, "ready-for-micro-task");
+    assert.equal(
+      readyBody.gates.find((gate: { gate: string }) => gate.gate === "provider_adapter")?.status,
+      "pass",
+    );
+    assert.equal(
+      readyBody.gates.find((gate: { gate: string }) => gate.gate === "worker_activity")?.status,
+      "warning",
+    );
+    assert.match(readyBody.next_required_action, /Run one bounded real micro-task/u);
+
+    const mutation = await fetch(`${base}/api/manager-plan/real-project-readiness`, {
+      method: "POST",
+    });
+    assert.equal(mutation.status, 405);
+    assert.equal(mutation.headers.get("allow"), "GET");
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
+
 test("control plane preview parses runtime diagnostic output", () => {
   const parsed = parsePreviewRuntimeCheckOutput(
     [
@@ -1632,6 +1723,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(html, /Plan, workers, tokens and next action/u);
   assert.match(html, /Preview runtime gate/u);
   assert.match(html, /Can this host launch Yukh work safely/u);
+  assert.match(html, /Real project readiness/u);
   assert.match(html, /manager-plan-form/u);
   assert.match(html, /provider-adapter-form/u);
   assert.match(html, /plan-preview/u);
@@ -1680,6 +1772,10 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /api\/manager-plan\/provider-worker-processes/u);
   assert.match(data, /api\/manager-plan\/provider-runner-attachments/u);
   assert.match(data, /api\/manager-plan\/worker-activities/u);
+  assert.match(data, /api\/manager-plan\/real-project-readiness/u);
+  assert.match(data, /yukh-control-plane-real-project-readiness-v1/u);
+  assert.match(data, /renderRealProjectReadiness/u);
+  assert.match(data, /ready-for-micro-task/u);
   assert.match(data, /Launch readiness/u);
   assert.match(data, /Launch intent recorded/u);
   assert.match(data, /Manager run planned/u);
@@ -1744,6 +1840,7 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   const styles = await readFile("apps/control-plane-preview/static/styles.css", "utf8");
   assert.match(styles, /\.worker-activity/u);
   assert.match(styles, /\.preview-runtime-panel/u);
+  assert.match(styles, /\.real-readiness/u);
 });
 
 test("control plane preview has bounded text containers for operator UI", async () => {
@@ -1784,6 +1881,8 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.provider-worker-process/u);
   assert.match(css, /\.provider-runner-attachment/u);
   assert.match(css, /\.worker-activity/u);
+  assert.match(css, /\.real-readiness-summary/u);
+  assert.match(css, /\.real-readiness-gates/u);
   assert.match(css, /\.preview-runtime-summary/u);
   assert.match(css, /\.preview-runtime-grid/u);
   assert.match(css, /\.preflight-grid/u);

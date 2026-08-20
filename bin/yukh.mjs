@@ -21,6 +21,10 @@ if (process.argv[2] === "conversation" && process.argv[3] === "watch") {
   process.argv.splice(2, 2);
   const { main } = await import("../dist/apps/control-plane-preview/src/main.js");
   main(process.argv.slice(2));
+} else if (process.argv[2] === "control" && process.argv[3] === "readiness") {
+  process.argv.splice(2, 2);
+  const { main } = await import("../dist/apps/control-plane-readiness/src/main.js");
+  main(process.argv.slice(2));
 } else if (process.argv[2] === "team" && process.argv[3] === "preflight-engage") {
   process.argv.splice(2, 2);
   await import("../dist/apps/team-preflight/src/main.js");
@@ -45,7 +49,7 @@ if (process.argv[2] === "conversation" && process.argv[3] === "watch") {
       "       yukh team start --goal text [--workspace path] [--mode plan-first|delegate] [--runtime codex|copilot] [--team-budget N] [--manager-budget N] [--format json|text]\n" +
       "       yukh team start-from-handoff --handoff file [--workspace path] [--goal text] [--dry-run true] [--allow-dynamic-workers true] [--format json|text]\n" +
       "       yukh team run-plan-approved --team team-... --plan plan-... --approved-digest sha-256:... [--format json|text]\n" +
-      "       yukh team status --team team-... [--workspace path] [--format json|text]\n       yukh team stop --team team-... [--workspace path] [--format json|text]\n       yukh control start [--host 127.0.0.1] [--port 7345]\n",
+      "       yukh team status --team team-... [--workspace path] [--format json|text]\n       yukh team stop --team team-... [--workspace path] [--format json|text]\n       yukh control start [--host 127.0.0.1] [--port 7345]\n       yukh control readiness [--workspace path] [--repo-root path] [--format json|text]\n",
   );
   process.exitCode = 2;
 }

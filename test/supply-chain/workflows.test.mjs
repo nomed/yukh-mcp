@@ -116,6 +116,13 @@ test("Yukh Projects shadow policy is versioned with its workflow", () => {
   assert.doesNotMatch(source, /^  area:\n    project_field: Component$/mu);
   assert.match(source, /^  status:\n    project_field: Status\n    derived: true$/mu);
   assert.match(source, /^  overwrite_human_values: false$/mu);
+  assert.match(source, /^real_use:\n  first_micro_task:$/mu);
+  assert.match(source, /^    max_team_token_budget: 120000$/mu);
+  assert.match(source, /^    max_worker_count: 2$/mu);
+  assert.match(source, /^    strategy: feature_branch_pr$/mu);
+  assert.match(source, /^    require_human_merge_approval: true$/mu);
+  assert.match(source, /^    - token_usage_recorded$/mu);
+  assert.doesNotMatch(source, /GH_TOKEN|github-token|https?:\/\//iu);
 });
 
 test("Yukh Projects controlled-apply contract remains inert", () => {
