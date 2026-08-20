@@ -1703,6 +1703,13 @@ test("control plane preview explains runtime topology without Mermaid", async ()
   assert.match(data, /worker\.activity\.v1/u);
   assert.match(data, /worker-activity-refresh-button/u);
   assert.match(data, /worker-activity-button/u);
+  assert.match(data, /guided-team-run-button/u);
+  assert.match(data, /startGuidedTeamRun/u);
+  assert.match(data, /Guided start/u);
+  assert.match(data, /Provider runner is not configured/u);
+  assert.match(data, /createLaunchIntent/u);
+  assert.match(data, /attachProviderRunner/u);
+  assert.match(data, /recordWorkerActivity/u);
   assert.match(data, /JetStream live activity/u);
   assert.match(data, /Preview activity fallback/u);
   assert.match(data, /provider_process/u);
@@ -1762,6 +1769,7 @@ test("control plane preview has bounded text containers for operator UI", async 
   assert.match(css, /\.approved-preview/u);
   assert.match(css, /\.readiness-panel/u);
   assert.match(css, /\.launch-intent/u);
+  assert.match(css, /\.guided-run-status/u);
   assert.match(css, /\.manager-run/u);
   assert.match(css, /\.runtime-connection/u);
   assert.match(css, /\.manager-process/u);
